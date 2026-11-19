@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import Autocomplete from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -8,12 +8,23 @@ import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
+import FormControl from '@mui/material/FormControl'
 import IconButton from '@mui/material/IconButton'
+import InputLabel from '@mui/material/InputLabel'
+import MenuItem from '@mui/material/MenuItem'
+import Select from '@mui/material/Select'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { DataGrid, type GridColDef, type GridRowParams } from '@mui/x-data-grid'
+import type {
+  GridColDef,
+  GridRenderCellParams,
+  GridRowParams,
+  GridRowSelectionModel,
+} from '@mui/x-data-grid'
+import { DataGrid } from './lazy-widgets'
 import { useRouter } from 'next/navigation'
+import { erpPath } from '../navigation'
 import { useT } from '../i18n/translate'
 import { moduleRegistry } from '../registry'
 import {
@@ -22,11 +33,17 @@ import {
   type RelationDescriptor,
   type ViewDescriptor,
 } from './descriptor'
+import { useCompanyStore } from './company-store'
+import { ColorDot, ColorTagDialog, isHex6Color } from './color-tags'
 import { useEntityRefreshStore } from './entity-refresh-store'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
+import { serializeError } from '../api/errors'
+import { BannerScope, BannerSlot, ViewBanner } from './banner'
+import { ErrorAlert } from './error-alert'
 import { LayoutForm } from './layout-renderer'
 import { useNumberFormat } from './format-store'
 import { useRelationOps, type RelationOps, type RelationRecord } from './relation-ops'
+import { useHasLinksStore } from './required-relation-store'
 import { createFormStore, useFormDraft, useFormError } from './stores'
 import { layout, tabularNums } from './tokens'
 import type { WidgetProps } from './widgets'
@@ -61,6 +78,10 @@ const SEARCH_DEBOUNCE_MS = 250
 // 6 result rows; the create-from-search line below them is the 7th.
 const SEARCH_PAGE_SIZE = 6
 const EMBED_PAGE_SIZE = 100
+// The one2many grid pages through the server: a short first page, larger ones
+// only when the user picks them in the grid's footer.
+const EMBED_DEFAULT_PAGE_SIZE = 10
+const EMBED_PAGE_SIZE_OPTIONS = [10, 25, 50, 100]
 
 /**
  * The synthetic 7th dropdown option: "Create a new <entity>". A reserved id no
@@ -91,8 +112,36 @@ export function relationOf(field: FieldDescriptor): RelationDescriptor {
   return field.relation as RelationDescriptor
 }
 
-/** Debounced related-entity search, bound to one relation target. */
-function useRelationSearch(ops: RelationOps | null, rel: RelationDescriptor) {
+/** `rel` with its `filterFields` resolved from the draft into `filter`
+ * (stable while the resolved values don't change, so reads aren't re-run). */
+function useScopedRelation(rel: RelationDescriptor, draft?: Record<string, unknown>): RelationDescriptor {
+  const scope: Record<string, string> = {}
+  for (const [column, own] of Object.entries(rel.filterFields ?? {})) {
+    const v = draft?.[own]
+    if (v != null && v !== '') scope[column] = String(v)
+  }
+  const key = JSON.stringify(scope)
+  return useMemo(
+    () => (key === '{}' ? rel : { ...rel, filter: { ...rel.filter, ...scope } }),
+    // `scope` is captured by `key`.
+    [rel, key],
+  )
+}
+
+/**
+ * Debounced related-entity search, bound to one relation target.
+ * `excludeId` (by design, on every relation field, no per-field opt-in —
+ * same posture as click-to-navigate below) drops the CURRENT record's own
+ * id from the results: a record can never sensibly pick itself as its own
+ * related value (a role "belonging to" itself, a category nesting under
+ * itself, ...). Harmless no-op for a relation pointing at a different
+ * entity — its rows' ids never collide with this record's own.
+ */
+function useRelationSearch(
+  ops: RelationOps | null,
+  rel: RelationDescriptor,
+  excludeId?: string | null,
+) {
   const labelField = rel.labelField ?? 'name'
   const [options, setOptions] = useState<RelationRecord[]>([])
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -104,6 +153,9 @@ function useRelationSearch(ops: RelationOps | null, rel: RelationDescriptor) {
     [],
   )
 
+  // A new scope (filterFields) invalidates the options found under the old one.
+  useEffect(() => setOptions([]), [rel.filter])
+
   const search = (text: string) => {
     if (!ops) return
     if (timer.current) clearTimeout(timer.current)
@@ -112,9 +164,10 @@ function useRelationSearch(ops: RelationOps | null, rel: RelationDescriptor) {
       ops
         .list(rel.entity, {
           search: text ? { [labelField]: text } : undefined,
+          filter: rel.filter,
           pageSize: SEARCH_PAGE_SIZE,
         })
-        .then(setOptions)
+        .then((found) => setOptions(excludeId ? found.filter((o) => o.id !== excludeId) : found))
         .catch(() => setOptions([]))
     }, SEARCH_DEBOUNCE_MS)
   }
@@ -135,22 +188,34 @@ function useRelationSearch(ops: RelationOps | null, rel: RelationDescriptor) {
  * out of layout flow entirely (not just invisible) so the tag is exactly as
  * wide as its text. On hover/keyboard focus: the label makes room on the
  * right (padding transition) while the cross fades in over that space —
- * activating it unlinks (m2o -> null, m2m -> junction row removed).
+ * activating it unlinks (m2o -> null, m2m -> junction row removed). Clicking
+ * anywhere else on the tag navigates to the linked record's own form
+ * (`onNavigate`, omitted when the target entity has no registered form
+ * route) — MUI's Chip wires its delete icon's click with its own
+ * `stopPropagation` before the icon click ever reaches the root, so the two
+ * handlers never fire off the same click.
  */
 function RelationTag({
   label,
   onUnlink,
+  onNavigate,
   disabled,
+  color,
 }: {
   label: string
   onUnlink: () => void
+  onNavigate?: () => void
   disabled?: boolean
+  /** relation/colortags: a dot in this color before the label. */
+  color?: string
 }) {
   return (
     <Chip
       label={label}
+      icon={color ? <ColorDot color={color} /> : undefined}
       size="small"
       onDelete={disabled ? undefined : onUnlink}
+      onClick={onNavigate}
       sx={{
         position: 'relative',
         '& .MuiChip-label': { textAlign: 'center', transition: 'padding-right 120ms' },
@@ -182,7 +247,14 @@ function relatedColumns(
   t: (s: string) => string,
   extraHidden: string[] = [],
 ): GridColDef[] {
-  const hidden = new Set(['id', 'tenant_id', 'created_at', 'updated_at', 'deleted_at', ...extraHidden])
+  const hidden = new Set([
+    'id',
+    'tenant_id',
+    'created_at',
+    'updated_at',
+    'deleted_at',
+    ...extraHidden,
+  ])
   const keys = new Set<string>([labelField])
   for (const row of rows) {
     for (const key of Object.keys(row)) {
@@ -196,6 +268,61 @@ function relatedColumns(
     headerName: key === labelField ? t('Name') : key,
     flex: 1,
   }))
+}
+
+/** RelationListWidget's widgetOptions.columns override — the Name/labelField
+ * column always leads (same convention relatedColumns follows), then every
+ * declared column verbatim, in order. See RelationListWidget's own doc
+ * comment on why a table ever needs this instead of the generic derivation. */
+function explicitRelationColumns(
+  columns: { key: string; label: string }[],
+  labelField: string,
+  t: (s: string) => string,
+): GridColDef[] {
+  return [
+    { field: labelField, headerName: t('Name'), flex: 1 },
+    ...columns.map((c) => ({ field: c.key, headerName: c.label, flex: 1 })),
+  ]
+}
+
+/** RelationListWidget's widgetOptions.deletable column — always last, a
+ * fixed-width trash icon rather than a flex column like the rest, since it
+ * carries no data of its own. `hiddenRowId` (opt-in — RelationListWidget's
+ * own synthetic preview row) renders no button at all for that one row: a
+ * row nothing was ever created for has nothing to delete. */
+function deleteColumn(
+  t: (s: string) => string,
+  disabled: boolean | undefined,
+  deletingId: string | null,
+  onDelete: (id: string) => void,
+  hiddenRowId?: string,
+): GridColDef {
+  return {
+    field: '__delete',
+    headerName: '',
+    sortable: false,
+    filterable: false,
+    disableColumnMenu: true,
+    width: 56,
+    align: 'center',
+    headerAlign: 'center',
+    renderCell: (params: GridRenderCellParams) => {
+      if (hiddenRowId !== undefined && String(params.id) === hiddenRowId) return null
+      return (
+        <IconButton
+          size="small"
+          disabled={disabled || deletingId === String(params.id)}
+          aria-label={t('Delete')}
+          onClick={(e) => {
+            e.stopPropagation() // don't also trigger the row's own onRowClick navigation
+            onDelete(String(params.id))
+          }}
+        >
+          <FontAwesomeIcon icon={byPrefixAndName.fas['trash']} size="xs" />
+        </IconButton>
+      )
+    },
+  }
 }
 
 /** Exported so other relation-backed widgets (carousel-widget.tsx,
@@ -262,12 +389,18 @@ function creationDescriptor(rel: RelationDescriptor): ViewDescriptor {
  * text as the label); preset FK fields are hidden — the wizard never asks for
  * what the context already decided. Mount only while open: each opening gets a
  * fresh store, so drafts never leak between creations.
+ *
+ * Given a `record` (a one2many row double-clicked in its table), the same
+ * dialog edits it instead: the draft starts from the record and Save goes
+ * through RelationOps.update (required then). A loaded record runs computes
+ * only, never on_change, like any form opening an existing record.
  */
-function RelationCreateWizard({
+export function RelationCreateWizard({
   rel,
   ops,
   preset = {},
   hidden = [],
+  record,
   onClose,
   onCreated,
 }: {
@@ -275,6 +408,7 @@ function RelationCreateWizard({
   ops: RelationOps
   preset?: Record<string, unknown>
   hidden?: string[]
+  record?: RelationRecord
   onClose: () => void
   onCreated: (record: RelationRecord) => void
 }) {
@@ -287,11 +421,12 @@ function RelationCreateWizard({
       descriptor as ViewDescriptor<RelationRecord>,
       {
         create: (body) => ops.create(rel.entity, body as Record<string, unknown>),
-        update: () => {
-          throw new Error('unreachable: creation drafts have no id')
+        update: (id, body) => {
+          if (!ops.update) throw new Error('RelationOps.update is not bound on this host')
+          return ops.update(rel.entity, id, body as Record<string, unknown>)
         },
       },
-      preset as Partial<RelationRecord>,
+      (record ?? preset) as Partial<RelationRecord>,
     ),
   )
   const draft = useFormDraft(store)
@@ -315,30 +450,224 @@ function RelationCreateWizard({
 
   return (
     <Dialog open onClose={onClose} maxWidth={false} sx={wizardDialogSx}>
-      <Box>
-        <DialogTitle>
-          {t('Create a new')} {t(entityDisplayName(rel.entity))}
-        </DialogTitle>
-        <DialogContent>
-          <Stack spacing={2.5} sx={{ pt: 1 }}>
-            {error ? (
-              <Typography variant="caption" color="error">
-                {error.message}
-              </Typography>
-            ) : null}
-            {/* Same entry point the main FormRenderer uses (layout-renderer.tsx):
+      {/* The wizard's own banner scope: its errors (and its fields') stay in
+          the dialog instead of going to the form behind it. */}
+      <BannerScope>
+        <Box>
+          <DialogTitle>
+            {record ? t('Edit') : t('Create a new')} {t(entityDisplayName(rel.entity))}
+          </DialogTitle>
+          <DialogContent>
+            <Stack spacing={2.5} sx={{ pt: 1 }}>
+              <BannerSlot sx={{ mb: 0 }} />
+              <ErrorAlert error={error ? serializeError(error) : null} fields={descriptor.fields} />
+              {/* Same entry point the main FormRenderer uses (layout-renderer.tsx):
                 walks the target descriptor's normalized layout tree, so a
                 registered form's grouping/rows render here too, not just a
                 flat field dump. `hidden` skips the preset inverse FK (o2m). */}
-            <LayoutForm
-              descriptor={descriptor}
-              draft={draft as Record<string, unknown>}
-              onFieldChange={(name, value) => setField(name, value)}
-              entity={rel.entity}
-              // No id yet: service-backed widgets (picture/signature) and
-              // o2m/m2m render their unsaved-record hint, as on any new form.
-              recordId={null}
-              hidden={hiddenSet}
+              <LayoutForm
+                descriptor={descriptor}
+                draft={draft as Record<string, unknown>}
+                onFieldChange={(name, value) => setField(name, value)}
+                entity={rel.entity}
+                // No id yet (creation): service-backed widgets (picture/signature)
+                // and o2m/m2m render their unsaved-record hint, as on any new form.
+                recordId={record?.id ?? null}
+                hidden={hiddenSet}
+              />
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button color="inherit" onClick={onClose} disabled={submitting}>
+              {t('Cancel')}
+            </Button>
+            <Button variant="contained" onClick={submit} disabled={submitting}>
+              {record ? t('Save') : t('Create')}
+            </Button>
+          </DialogActions>
+        </Box>
+      </BannerScope>
+    </Dialog>
+  )
+}
+
+/**
+ * A one2many field's OPT-IN bulk-create dialog (`widgetOptions.multiCreate:
+ * { field, groupByModule? }`) — the Role form's "Views" table is the first
+ * user (`field: 'entity'`, `groupByModule: true`), but this is generic
+ * engine machinery, not Roles-specific: any one2many whose child rows are
+ * "this record + one picked value" can opt in. `field` names the many2one on
+ * the CHILD entity's own registered form (`role_view_permission`'s `entity`,
+ * pointing at the `views` catalog) — its OWN `relation` block says which
+ * entity's rows to offer. Unlike the single-record RelationCreateWizard
+ * (a real form store, one commit = one row), this creates MANY rows in one
+ * submission: check several, hit Add, one `ops.create` per pick.
+ *
+ * The target list is fetched ONCE (`EMBED_PAGE_SIZE`) and filtered
+ * CLIENT-SIDE from there — a deliberate departure from useRelationSearch's
+ * per-keystroke server debounce, since what this backs (a view catalog, an
+ * account-role-types list, ...) is a small, fully-loadable reference table,
+ * not a potentially-huge one; re-fetching per keystroke would just be
+ * network chatter for no benefit here.
+ *
+ * `groupByModule` adds an "App" filter dropdown (moduleRegistry.
+ * moduleForEntity, entirely client-side) — checking DataGrid's own built-in
+ * header checkbox while filtered to one app is "select an entire app": still
+ * just ordinary rows getting checked, no live/dynamic group is ever created
+ * — regenerating a role's rights later means reopening this dialog, exactly
+ * like adding one more view by hand.
+ */
+function RelationMultiCreateWizard({
+  rel,
+  targetField,
+  groupByModule,
+  ops,
+  preset = {},
+  excludeIds = [],
+  onClose,
+  onCreated,
+}: {
+  rel: RelationDescriptor
+  targetField: string
+  groupByModule: boolean
+  ops: RelationOps
+  preset?: Record<string, unknown>
+  /** Already-used target ids (e.g. views this role already has a row for) —
+   * dropped from the pickable list so the same one can't be added twice. */
+  excludeIds?: unknown[]
+  onClose: () => void
+  onCreated: (records: RelationRecord[]) => void
+}) {
+  const t = useT()
+  const targetRel = (() => {
+    const child = moduleRegistry.formDescriptorFor(rel.entity)
+    const field = child?.fields.find((f) => f.name === targetField)
+    if (!field?.relation)
+      throw new Error(`multiCreate: "${rel.entity}"."${targetField}" has no relation block`)
+    return field.relation
+  })()
+  const targetLabelField = targetRel.labelField ?? 'name'
+  const excluded = new Set(excludeIds.map(String))
+
+  const [rows, setRows] = useState<RelationRecord[]>([])
+  const [text, setText] = useState('')
+  const [app, setApp] = useState<string>('')
+  const [selection, setSelection] = useState<GridRowSelectionModel>({
+    type: 'include',
+    ids: new Set(),
+  })
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    ops
+      .list(targetRel.entity, { pageSize: EMBED_PAGE_SIZE })
+      .then((found) => {
+        if (!cancelled) setRows(found.filter((r) => !excluded.has(String(r.id))))
+      })
+      .catch(() => {
+        if (!cancelled) setRows([])
+      })
+    return () => {
+      cancelled = true
+    }
+    // excludeIds/excluded intentionally NOT a dependency — it's a snapshot of
+    // what's already used when the dialog opened; re-deriving it from a
+    // fresh array identity every render would refetch in a loop.
+  }, [ops, targetRel.entity])
+
+  const apps = groupByModule
+    ? [
+        ...new Set(
+          rows
+            .map((r) => moduleRegistry.moduleForEntity(String(r.id))?.name)
+            .filter((n) => n != null),
+        ),
+      ]
+    : []
+
+  const visible = rows.filter((r) => {
+    if (
+      text &&
+      !String(r[targetLabelField] ?? r.id)
+        .toLowerCase()
+        .includes(text.toLowerCase())
+    )
+      return false
+    if (app && moduleRegistry.moduleForEntity(String(r.id))?.name !== app) return false
+    return true
+  })
+
+  const selectedIds =
+    selection.type === 'include'
+      ? [...selection.ids].map(String)
+      : visible.map((r) => r.id).filter((id) => !selection.ids.has(id))
+
+  async function submit() {
+    setSubmitting(true)
+    setError(null)
+    try {
+      const created = await Promise.all(
+        selectedIds.map((id) => ops.create(rel.entity, { ...preset, [targetField]: id })),
+      )
+      onCreated(created)
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Dialog open onClose={onClose} maxWidth={false} sx={wizardDialogSx}>
+      {/* Its own banner scope, like RelationCreateWizard's. */}
+      <BannerScope>
+        <DialogTitle>
+          {t('Add')} {t(entityDisplayName(targetRel.entity))}
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            <BannerSlot sx={{ mb: 0 }} />
+            <ViewBanner status="error" open={Boolean(error)}>
+              {error}
+            </ViewBanner>
+            <Stack direction="row" spacing={2}>
+              <TextField
+                label={t('Search')}
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                fullWidth
+                autoFocus
+              />
+              {groupByModule && apps.length > 0 ? (
+                <FormControl sx={{ minWidth: 200 }}>
+                  <InputLabel id="multi-create-app-filter">{t('App')}</InputLabel>
+                  <Select
+                    labelId="multi-create-app-filter"
+                    label={t('App')}
+                    value={app}
+                    onChange={(e) => setApp(e.target.value)}
+                  >
+                    <MenuItem value="">{t('All apps')}</MenuItem>
+                    {apps.map((name) => (
+                      <MenuItem key={name} value={name}>
+                        {t(moduleRegistry.displayNameFor(name as string) ?? (name as string))}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              ) : null}
+            </Stack>
+            <DataGrid
+              rows={visible}
+              columns={relatedColumns(visible, targetLabelField, t)}
+              autoHeight
+              hideFooter
+              checkboxSelection
+              rowSelectionModel={selection}
+              onRowSelectionModelChange={setSelection}
             />
           </Stack>
         </DialogContent>
@@ -346,11 +675,15 @@ function RelationCreateWizard({
           <Button color="inherit" onClick={onClose} disabled={submitting}>
             {t('Cancel')}
           </Button>
-          <Button variant="contained" onClick={submit} disabled={submitting}>
-            {t('Create')}
+          <Button
+            variant="contained"
+            onClick={submit}
+            disabled={submitting || selectedIds.length === 0}
+          >
+            {t('Add')} {selectedIds.length > 0 ? `(${selectedIds.length})` : ''}
           </Button>
         </DialogActions>
-      </Box>
+      </BannerScope>
     </Dialog>
   )
 }
@@ -376,12 +709,15 @@ function RelationWizard({
   onPick,
   rel,
   ops,
+  excludeId,
 }: {
   open: boolean
   onClose: () => void
   onPick: (record: RelationRecord) => void
   rel: RelationDescriptor
   ops: RelationOps
+  /** By design, no per-field opt-in — see useRelationSearch's doc comment. */
+  excludeId?: string | null
 }) {
   const t = useT()
   const labelField = rel.labelField ?? 'name'
@@ -394,10 +730,11 @@ function RelationWizard({
     ops
       .list(rel.entity, {
         search: text ? { [labelField]: text } : undefined,
+        filter: rel.filter,
         pageSize: EMBED_PAGE_SIZE,
       })
       .then((found) => {
-        if (!cancelled) setRows(found)
+        if (!cancelled) setRows(excludeId ? found.filter((o) => o.id !== excludeId) : found)
       })
       .catch(() => {
         if (!cancelled) setRows([])
@@ -405,7 +742,7 @@ function RelationWizard({
     return () => {
       cancelled = true
     }
-  }, [open, text, rel.entity, labelField, ops])
+  }, [open, text, rel.entity, rel.filter, labelField, ops])
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth={false} sx={wizardDialogSx}>
@@ -436,11 +773,21 @@ function RelationWizard({
   )
 }
 
-export function RelationSearchWidget({ field, value, onChange, disabled }: WidgetProps) {
+export function RelationSearchWidget({
+  field,
+  value,
+  onChange,
+  onChangeField,
+  disabled,
+  recordId,
+  draft,
+}: WidgetProps) {
   const t = useT()
   const ops = useRelationOps()
-  const rel = relationOf(field)
-  const { labelField, options, search, prefill } = useRelationSearch(ops, rel)
+  const rel = useScopedRelation(relationOf(field), draft)
+  const router = useRouter()
+  const formPath = moduleRegistry.formPathFor(rel.entity)
+  const { labelField, options, search, prefill } = useRelationSearch(ops, rel, recordId)
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null)
   const [wizardOpen, setWizardOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
@@ -471,19 +818,45 @@ export function RelationSearchWidget({ field, value, onChange, disabled }: Widge
 
   if (!ops) return <MissingOpsHint label={field.hideLabel ? null : t(fieldLabel(field))} />
 
+  // widgetOptions.fillFields (opt-in, e.g. sale's invoice/quote customer_id
+  // picking a contact): a plain { sourceColumn: targetFieldName } map,
+  // mirroring SelectionLinkedWidget's own widgetOptions.presets — patches
+  // sibling fields via onChangeField the moment a record is picked, using
+  // columns ALREADY on the picked record (the search list()/create-wizard
+  // result), never a second fetch. Lets a "capture at document time"
+  // snapshot (customer_name/customer_email, printed on the PDF, deliberately
+  // never live-resolved through the FK later — see sale/module.go's Invoice
+  // doc comment) still start from a real contact's current data instead of
+  // being retyped by hand, while staying just as editable/overridable
+  // afterward as it always was.
+  const fillFields = field.widgetOptions?.fillFields as Record<string, string> | undefined
+
   const pick = (record: RelationRecord) => {
     setSelectedLabel(labelOf(record, labelField))
     onChange(record.id)
+    if (fillFields && onChangeField) {
+      for (const [sourceColumn, targetField] of Object.entries(fillFields)) {
+        onChangeField(targetField, record[sourceColumn])
+      }
+    }
   }
 
   return (
-    <Box>
+    // Styled to match MUI's own outlined TextField border: a fixed height
+    // (tuned to this theme's actual rendered metrics, not MUI's textbook
+    // default — a sibling number/text field renders shorter than that here)
+    // with the label absolutely positioned over the top border line — never
+    // a legend in normal flow, which would add its own height on top of the
+    // box instead of sitting IN it.
+    // The border itself stays even with hideLabel, same as an unlabelled
+    // TextField still draws its outline with no floating label inside it.
+    <Box sx={outlinedFieldSx}>
       {!field.hideLabel && (
-        <Typography variant="caption" color="text.secondary" component="legend">
+        <Typography variant="caption" color="text.secondary" sx={floatingLabelSx}>
           {t(fieldLabel(field))}
         </Typography>
       )}
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', width: '100%' }}>
         {selectedId ? (
           <RelationTag
             label={selectedLabel ?? selectedId}
@@ -492,6 +865,9 @@ export function RelationSearchWidget({ field, value, onChange, disabled }: Widge
               setSelectedLabel(null)
               onChange(null)
             }}
+            onNavigate={
+              formPath ? () => router.push(erpPath(formPath.replace(':id', selectedId))) : undefined
+            }
           />
         ) : (
           <Autocomplete<RelationRecord>
@@ -539,7 +915,16 @@ export function RelationSearchWidget({ field, value, onChange, disabled }: Widge
             disabled={disabled}
             fullWidth
             size="small"
-            renderInput={(params) => <TextField {...params} placeholder={t('Search…')} />}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                placeholder={t('Search…')}
+                // No own border — the outer fieldset (this field's label
+                // box) is the only box drawn; a nested outlined input here
+                // would double up two borders around one field.
+                sx={{ '& .MuiOutlinedInput-notchedOutline': { border: 'none' } }}
+              />
+            )}
           />
         )}
         {/* The wizard affordance sits at the field's RIGHT (spec). */}
@@ -558,6 +943,7 @@ export function RelationSearchWidget({ field, value, onChange, disabled }: Widge
         onPick={pick}
         rel={rel}
         ops={ops}
+        excludeId={recordId}
       />
       {createOpen ? (
         <RelationCreateWizard
@@ -573,6 +959,31 @@ export function RelationSearchWidget({ field, value, onChange, disabled }: Widge
     </Box>
   )
 }
+
+// The outlined frame both relation pickers draw: MUI's outlined TextField
+// look at this theme's rendered height, label sitting on the top border
+// (never a legend in normal flow, which would add its own height).
+const outlinedFieldSx = {
+  position: 'relative',
+  border: '1px solid',
+  borderColor: 'divider',
+  borderRadius: 1,
+  minHeight: '36px',
+  boxSizing: 'border-box',
+  display: 'flex',
+  alignItems: 'center',
+  px: 1.75,
+} as const
+
+const floatingLabelSx = {
+  position: 'absolute',
+  top: 0,
+  left: 10,
+  transform: 'translateY(-50%)',
+  bgcolor: 'background.paper',
+  px: 0.5,
+  lineHeight: 1,
+} as const
 
 // ── relation/tags (many2many) ─────────────────────────────────────────────────
 
@@ -624,10 +1035,18 @@ export async function resolveManyToManyLinks(
   relatedEntity: string,
   cols: { own: string; related: string },
   ownRecordId: string,
+  /** Junction sort, e.g. 'created_at' (link order); omitted = Go's order. */
+  order?: string,
 ): Promise<TagLink[]> {
-  const junctions = await ops.list(via, { filter: { [cols.own]: ownRecordId }, pageSize: EMBED_PAGE_SIZE })
+  const junctions = await ops.list(via, {
+    filter: { [cols.own]: ownRecordId },
+    ...(order ? { order } : {}),
+    pageSize: EMBED_PAGE_SIZE,
+  })
   const relatedIds = [
-    ...new Set(junctions.map((row) => row[cols.related]).filter((v): v is string => typeof v === 'string')),
+    ...new Set(
+      junctions.map((row) => row[cols.related]).filter((v): v is string => typeof v === 'string'),
+    ),
   ]
   const related =
     relatedIds.length > 0
@@ -665,7 +1084,10 @@ export async function loadSubRelation(
   ownRecordId: string,
 ): Promise<RelationRecord[]> {
   if (subRel.kind === 'one2many' && subRel.inverseField) {
-    return ops.list(subRel.entity, { filter: { [subRel.inverseField]: ownRecordId }, pageSize: EMBED_PAGE_SIZE })
+    return ops.list(subRel.entity, {
+      filter: { [subRel.inverseField]: ownRecordId },
+      pageSize: EMBED_PAGE_SIZE,
+    })
   }
   if (subRel.kind === 'many2many' && subRel.via) {
     const cols = junctionColumns(subRel, ownEntity)
@@ -675,13 +1097,33 @@ export async function loadSubRelation(
   return []
 }
 
-export function RelationTagsWidget({ field, value, onChange, disabled, entity, recordId }: WidgetProps) {
+/** relation/colortags (many2many): the tags widget over records carrying a
+ * color (`widgetOptions.colorField`, default 'color') — chips with a color dot
+ * in link order, a create dialog asking only a name and a color, chips only
+ * when read-only. `onLinksChange` runs after each link/unlink (the Gantt's
+ * color picker reloads the bars' colors with it). */
+export function RelationColorTagsWidget(props: WidgetProps & { onLinksChange?: () => void }) {
+  return <RelationTagsWidget {...props} colors />
+}
+
+export function RelationTagsWidget({
+  field,
+  value,
+  onChange,
+  disabled,
+  entity,
+  recordId,
+  colors = false,
+  onLinksChange,
+}: WidgetProps & { colors?: boolean; onLinksChange?: () => void }) {
   const t = useT()
   const ops = useRelationOps()
   const rel = relationOf(field)
+  const router = useRouter()
+  const formPath = moduleRegistry.formPathFor(rel.entity)
   const via = rel.via as string // registration validated presence
   const cols = junctionColumns(rel, entity ?? '')
-  const { labelField, options, search, prefill } = useRelationSearch(ops, rel)
+  const { labelField, options, search, prefill } = useRelationSearch(ops, rel, recordId)
   const [links, setLinks] = useState<TagLink[]>([])
   const [error, setError] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
@@ -693,9 +1135,23 @@ export function RelationTagsWidget({ field, value, onChange, disabled, entity, r
   // Every other many2many field keeps the original write-on-interaction
   // behavior, unchanged — this is read only when opted in.
   const deferred = field.widgetOptions?.deferred === true
-  const pending: PendingManyToMany = (deferred ? (value as PendingManyToMany | undefined) : undefined) ?? {
+  const pending: PendingManyToMany = (deferred
+    ? (value as PendingManyToMany | undefined)
+    : undefined) ?? {
     toLink: [],
     toUnlinkJunctionIds: [],
+  }
+  // Bumped by FormRenderer's onSubmit right after it flushes a deferred m2m
+  // field's staged diff into real junction rows (renderers.tsx) — without
+  // this, a deferred field's own re-fetch below never re-runs after Save
+  // (recordId doesn't change), so it would keep showing its stale, mount-time
+  // `links` once the post-commit reconcile wipes `pending` back to empty
+  // (e.g. a just-removed tag reappearing). See entity-refresh-store.ts.
+  const refreshSignal = useEntityRefreshStore((s) => s.bumps[via])
+  const colorField = typeof field.widgetOptions?.colorField === 'string' ? field.widgetOptions.colorField : 'color'
+  const colorOf = (r: RelationRecord) => {
+    const c = r[colorField]
+    return isHex6Color(c) ? c : undefined
   }
 
   // Links are junction rows: load them, then resolve their related records
@@ -703,7 +1159,7 @@ export function RelationTagsWidget({ field, value, onChange, disabled, entity, r
   useEffect(() => {
     if (!ops || !recordId) return
     let cancelled = false
-    resolveManyToManyLinks(ops, via, rel.entity, cols, recordId)
+    resolveManyToManyLinks(ops, via, rel.entity, cols, recordId, colors ? 'created_at' : undefined)
       .then((resolved) => {
         if (!cancelled) setLinks(resolved)
       })
@@ -713,11 +1169,31 @@ export function RelationTagsWidget({ field, value, onChange, disabled, entity, r
     return () => {
       cancelled = true
     }
-    // Load once per anchor — links then evolve through add/unlink below.
-  }, [ops, via, recordId, rel.entity, cols.own, cols.related])
+    // Re-runs on the anchor OR a post-save refresh bump — links otherwise
+    // evolve through add/unlink below.
+  }, [ops, via, recordId, rel.entity, cols.own, cols.related, refreshSignal, colors])
+
+  // Publishes this field's live "has at least one link" state — existing
+  // junction rows minus staged unlinks, plus staged links — for
+  // requiredMissing() (descriptor.ts) to consult on an EXISTING record, the
+  // one case its own pure draft-only check can't resolve by itself. Only
+  // required fields bother reporting; nothing depends on this signal
+  // otherwise. See required-relation-store.ts.
+  useEffect(() => {
+    if (field.required !== true) return
+    const hasAny =
+      links.some((l) => !pending.toUnlinkJunctionIds.includes(l.junctionId)) ||
+      pending.toLink.length > 0
+    useHasLinksStore.getState().setHasLinks(field.name, hasAny)
+  }, [field.required, field.name, links, pending.toUnlinkJunctionIds, pending.toLink])
 
   if (!ops) return <MissingOpsHint label={field.hideLabel ? null : t(fieldLabel(field))} />
-  if (!recordId) return <UnsavedHint label={field.hideLabel ? null : t(fieldLabel(field))} />
+  // A deferred field (widgetOptions.deferred, above) stages its diff in the
+  // draft instead of writing junction rows, precisely so it's usable before
+  // the record has an id — so unlike a normal (eager) m2m field, it does NOT
+  // fall back to the "Available once the record has been saved." hint here.
+  if (!recordId && !deferred)
+    return <UnsavedHint label={field.hideLabel ? null : t(fieldLabel(field))} />
 
   // Deferred: the persisted set minus anything staged for removal, plus
   // anything staged for addition (marked `staged` so unlink knows which side
@@ -725,10 +1201,19 @@ export function RelationTagsWidget({ field, value, onChange, disabled, entity, r
   const visible: (TagLink & { staged?: boolean })[] = deferred
     ? [
         ...links.filter((l) => !pending.toUnlinkJunctionIds.includes(l.junctionId)),
-        ...pending.toLink.map((related) => ({ junctionId: `pending:${related.id}`, related, staged: true })),
+        ...pending.toLink.map((related) => ({
+          junctionId: `pending:${related.id}`,
+          related,
+          staged: true,
+        })),
       ]
     : links
   const linkedIds = new Set(visible.map((l) => l.related.id))
+
+  const clearInput = () => {
+    setInputText('')
+    search('')
+  }
 
   const add = (option: RelationRecord) => {
     if (deferred) {
@@ -740,6 +1225,7 @@ export function RelationTagsWidget({ field, value, onChange, disabled, entity, r
       .then((junction) => {
         setLinks((prev) => [...prev, { junctionId: junction.id, related: option }])
         setError(null)
+        onLinksChange?.()
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
   }
@@ -749,7 +1235,10 @@ export function RelationTagsWidget({ field, value, onChange, disabled, entity, r
       if (link.staged) {
         onChange({ ...pending, toLink: pending.toLink.filter((o) => o.id !== link.related.id) })
       } else {
-        onChange({ ...pending, toUnlinkJunctionIds: [...pending.toUnlinkJunctionIds, link.junctionId] })
+        onChange({
+          ...pending,
+          toUnlinkJunctionIds: [...pending.toUnlinkJunctionIds, link.junctionId],
+        })
       }
       return
     }
@@ -758,85 +1247,136 @@ export function RelationTagsWidget({ field, value, onChange, disabled, entity, r
       .then(() => {
         setLinks((prev) => prev.filter((l) => l.junctionId !== link.junctionId))
         setError(null)
+        onLinksChange?.()
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
   }
 
   return (
     <Box>
-      {!field.hideLabel && (
-        <Typography variant="caption" color="text.secondary" component="legend">
-          {t(fieldLabel(field))}
-        </Typography>
-      )}
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 0.5 }}>
-        {visible.map((link) => (
-          <RelationTag
-            key={link.junctionId}
-            label={labelOf(link.related, labelField)}
-            disabled={disabled}
-            onUnlink={() => unlink(link)}
-          />
-        ))}
-        <Autocomplete<RelationRecord>
-          options={withCreateOption(options.filter((o) => !linkedIds.has(o.id)))}
-          filterOptions={(x) => x}
-          getOptionLabel={(o) =>
-            isCreateOption(o)
-              ? `${t('Create a new')} ${t(entityDisplayName(rel.entity))}`
-              : labelOf(o, labelField)
-          }
-          // See the m2o search widget: same primary-colored create row.
-          renderOption={(props, option) => {
-            const { key, ...optionProps } = props
-            return (
-              <li key={key} {...optionProps}>
-                {isCreateOption(option) ? (
-                  <Typography component="span" color="primary">
-                    {t('Create a new')} {t(entityDisplayName(rel.entity))}
-                  </Typography>
-                ) : (
-                  labelOf(option, labelField)
-                )}
-              </li>
-            )
+      {/* Same outlined frame as the many2one, so the row lines up with its neighbours. */}
+      <Box sx={outlinedFieldSx}>
+        {!field.hideLabel && (
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            component="legend"
+            sx={floatingLabelSx}
+          >
+            {t(fieldLabel(field))}
+          </Typography>
+        )}
+        <Stack
+          direction="row"
+          spacing={1}
+          sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 0.5, width: '100%' }}
+        >
+          {visible.map((link) => (
+            <RelationTag
+              key={link.junctionId}
+              label={labelOf(link.related, labelField)}
+              disabled={disabled}
+              color={colors ? (colorOf(link.related) ?? 'transparent') : undefined}
+              onUnlink={() => unlink(link)}
+              onNavigate={
+                formPath
+                  ? () => router.push(erpPath(formPath.replace(':id', link.related.id)))
+                  : undefined
+              }
+            />
+          ))}
+          {colors && disabled ? null : (
+            <Autocomplete<RelationRecord>
+              options={withCreateOption(options.filter((o) => !linkedIds.has(o.id)))}
+              filterOptions={(x) => x}
+              getOptionLabel={(o) =>
+                isCreateOption(o)
+                  ? `${t('Create a new')} ${t(entityDisplayName(rel.entity))}`
+                  : labelOf(o, labelField)
+              }
+              // See the m2o search widget: same primary-colored create row.
+              renderOption={(props, option) => {
+                const { key, ...optionProps } = props
+                return (
+                  <li key={key} {...optionProps}>
+                    {isCreateOption(option) ? (
+                      <Typography component="span" color="primary">
+                        {t('Create a new')} {t(entityDisplayName(rel.entity))}
+                      </Typography>
+                    ) : colors ? (
+                      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                        <ColorDot color={colorOf(option) ?? 'transparent'} />
+                        <span>{labelOf(option, labelField)}</span>
+                      </Stack>
+                    ) : (
+                      labelOf(option, labelField)
+                    )}
+                  </li>
+                )
+              }}
+              isOptionEqualToValue={(o, v) => o.id === v.id}
+              onOpen={prefill}
+              // Controlled: MUI keeps the typed text after a pick when the value
+              // stays null, so a pick clears it (and the search) itself.
+              inputValue={inputText}
+              onInputChange={(_e, text, reason) => {
+                // 'reset' (option selected) must not wipe the text the wizard reads.
+                if (reason === 'input' || reason === 'clear') {
+                  setInputText(text)
+                  search(text)
+                }
+              }}
+              // Selection immediately becomes a junction row; the input clears for
+              // the next link (value stays null on purpose).
+              value={null}
+              onChange={(_e, option) => {
+                if (!option) return
+                if (isCreateOption(option)) {
+                  setCreateOpen(true)
+                  return
+                }
+                add(option)
+                clearInput()
+              }}
+              disabled={disabled}
+              size="small"
+              sx={{ minWidth: 180, flexGrow: 1 }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  placeholder={t('Add…')}
+                  sx={{ '& .MuiOutlinedInput-notchedOutline': { border: 'none' } }}
+                />
+              )}
+            />
+          )}
+        </Stack>
+      </Box>
+      {/* In the form's banner slot (banner.tsx), not under the field. */}
+      <ViewBanner status="error" open={Boolean(error)}>
+        {error}
+      </ViewBanner>
+      {createOpen && colors ? (
+        <ColorTagDialog
+          title={`${t('Create a new')} ${t(entityDisplayName(rel.entity))}`}
+          initialName={inputText}
+          onClose={() => setCreateOpen(false)}
+          onSubmit={async (name, color) => {
+            add(await ops.create(rel.entity, { [labelField]: name, [colorField]: color }))
+            clearInput()
           }}
-          isOptionEqualToValue={(o, v) => o.id === v.id}
-          onOpen={prefill}
-          onInputChange={(_e, text, reason) => {
-            // 'reset' (option selected) must not wipe the text the wizard reads.
-            if (reason === 'input') {
-              setInputText(text)
-              search(text)
-            }
-          }}
-          // Selection immediately becomes a junction row; the input clears for
-          // the next link (value stays null on purpose).
-          value={null}
-          onChange={(_e, option) => {
-            if (!option) return
-            if (isCreateOption(option)) setCreateOpen(true)
-            else add(option)
-          }}
-          disabled={disabled}
-          size="small"
-          sx={{ minWidth: 180, flexGrow: 1 }}
-          renderInput={(params) => <TextField {...params} placeholder={t('Add…')} />}
         />
-      </Stack>
-      {error ? (
-        <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.5 }}>
-          {error}
-        </Typography>
-      ) : null}
-      {createOpen ? (
+      ) : createOpen ? (
         <RelationCreateWizard
           rel={rel}
           ops={ops}
           preset={inputText ? { [labelField]: inputText } : {}}
           onClose={() => setCreateOpen(false)}
           // The freshly created record links immediately: one junction row.
-          onCreated={add}
+          onCreated={(created) => {
+            add(created)
+            clearInput()
+          }}
         />
       ) : null}
     </Box>
@@ -845,25 +1385,85 @@ export function RelationTagsWidget({ field, value, onChange, disabled, entity, r
 
 // ── relation/list (one2many) ──────────────────────────────────────────────────
 
-export function RelationListWidget({ field, disabled, recordId }: WidgetProps) {
+/** widgetOptions.columns (opt-in) — see RelationListWidget's own doc comment. */
+interface RelationListColumnConfig {
+  key: string
+  label: string
+  /** A literal shown on EVERY row instead of reading `row[key]` — for a
+   * column with no real backing data at all (e.g. billing lines have no
+   * quantity column; every line is priced as a flat whole, always "1"). */
+  value?: string | number
+}
+
+/** widgetOptions.previewRow (opt-in) — see RelationListWidget's own doc comment. */
+interface RelationListPreviewRowConfig {
+  nameField: string
+  amountField: string
+  amountColumns: string[]
+}
+
+const PREVIEW_ROW_ID = '__preview__'
+
+export function RelationListWidget({ field, disabled, entity, recordId, draft }: WidgetProps) {
   const t = useT()
   const router = useRouter()
   const ops = useRelationOps()
   const rel = relationOf(field)
-  const inverseField = rel.inverseField as string // registration validated presence
+  // A zone relation (`rel.inside`) has no inverse FK: rows are matched by
+  // containment in this record's shape, so it is read-only and not creatable.
+  const inverseField = rel.inverseField ?? null
+  const insideRef =
+    rel.inside && entity && recordId ? `${entity}:${recordId}:${rel.inside.zone}` : null
   const labelField = rel.labelField ?? 'name'
   const [rows, setRows] = useState<RelationRecord[]>([])
   const [createOpen, setCreateOpen] = useState(false)
+  // The row being edited in the wizard (double-click), null when none.
+  const [editing, setEditing] = useState<RelationRecord | null>(null)
+
+  // widgetOptions.columns (opt-in, e.g. propertymanagement's billing_lines):
+  // an EXPLICIT, ordered column list replacing relatedColumns' generic
+  // row-key derivation — for a table whose real DB columns don't match the
+  // shape a user should see (a legacy scalar that shouldn't print, a
+  // many2many that needs relatedRelationField's resolution first, a column
+  // with no backing data at all). The Name/labelField column always leads,
+  // exactly as it does under the generic derivation.
+  const explicitColumns = Array.isArray(field.widgetOptions?.columns)
+    ? (field.widgetOptions.columns as unknown as RelationListColumnConfig[])
+    : null
+
+  // widgetOptions.previewRow (opt-in, e.g. propertymanagement's billing_lines
+  // showing the property's own rent_price as a leading "line" before any
+  // real billing line has been entered): a SYNTHETIC row, never persisted
+  // and never fetched, built from two SIBLING fields on this SAME record's
+  // draft (the read-side counterpart to a compute/on_change reading
+  // `WidgetProps.draft`) — `nameField`'s value becomes the row's label,
+  // `amountField`'s value is copied onto every column named in
+  // `amountColumns` (a flat, untaxed preview line has the same figure in
+  // its price/subtotal/total columns). Requires `draft` (present on every
+  // widget) and only ever prepends ONE row.
+  const previewRowConfig =
+    field.widgetOptions?.previewRow && typeof field.widgetOptions.previewRow === 'object'
+      ? (field.widgetOptions.previewRow as unknown as RelationListPreviewRowConfig)
+      : null
   // Bumped by a host action that created/changed rel.entity rows OUTSIDE
   // this widget's own create wizard (e.g. a header button using relationOps
   // directly) — see entity-refresh-store.ts.
   const refreshSignal = useEntityRefreshStore((s) => s.bumps[rel.entity])
+  // Set while this widget announces its own change (a created or edited row),
+  // so the bump refetches the current page instead of starting over at page 1.
+  const ownBump = useRef(false)
+  // A row was created or edited here: everything showing rel.entity rows
+  // refetches — this table (Go recomputes a line's totals) and the form's
+  // totals recap reading the same lines.
+  const announceChange = () => {
+    ownBump.current = true
+    useEntityRefreshStore.getState().bump(rel.entity)
+  }
 
   // widgetOptions.reverse (opt-in, e.g. propertymanagement's rent_receipts):
-  // flips the fetched page so the LAST row (most recently created — Go's
-  // list endpoint has no explicit ORDER BY, so this is insertion order)
-  // renders first. Every other one2many field keeps the original fetch
-  // order, unchanged.
+  // newest first — sorted server-side (`order=-created_at`) when the grid is
+  // paged, else the loaded rows are flipped. Every other one2many field is
+  // listed oldest first.
   const reverse = field.widgetOptions?.reverse === true
 
   // widgetOptions.relatedRelationField (opt-in, e.g. the Role form's "Views"
@@ -879,21 +1479,127 @@ export function RelationListWidget({ field, disabled, recordId }: WidgetProps) {
       : undefined
   const [expanded, setExpanded] = useState<Record<string, string>>({})
 
+  // widgetOptions.multiCreate (opt-in, e.g. the Role form's Views table):
+  // swaps the single-record "+ Create a new X" wizard for
+  // RelationMultiCreateWizard's checkbox picker — see that component's own
+  // doc comment for the full contract.
+  const multiCreate =
+    field.widgetOptions?.multiCreate && typeof field.widgetOptions.multiCreate === 'object'
+      ? (field.widgetOptions.multiCreate as { field: string; groupByModule?: boolean })
+      : null
+
+  // widgetOptions.deletable (opt-in, e.g. sale's sale_line/quote_line and
+  // propertymanagement's billing/rent-receipt lines): renders a trailing
+  // trash-icon column so a row can be removed inline instead of only
+  // through the row's own dedicated form. Off by default — every other
+  // one2many table (Role Views, notebook pages' own tables, ...) stays
+  // exactly as it was before this existed.
+  const deletable = field.widgetOptions?.deletable === true
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+
+  // The row is only ever dropped from local state AFTER ops.remove resolves
+  // — i.e. after Go's ORM has actually committed the delete — never
+  // optimistically. A failed request leaves the row exactly where it was,
+  // with the error surfaced below the grid.
+  const handleDeleteRow = (id: string) => {
+    if (!ops || id === PREVIEW_ROW_ID) return
+    setDeletingId(id)
+    ops
+      .remove(rel.entity, id)
+      .then(() => {
+        // Paged: reload the page so it refills from the next one and the total follows.
+        if (paged) setReloadKey((k) => k + 1)
+        else setRows((prev) => prev.filter((r) => r.id !== id))
+        setDeleteError(null)
+      })
+      .catch((e: unknown) => setDeleteError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setDeletingId(null))
+  }
+
+  // With RelationOps.listPage bound, the grid is server-paged: each page is ONE
+  // request (page + page_size, sorted by created_at — newest first under
+  // `reverse` — so pages are stable and every linked row is reachable), and
+  // the footer appears once the rows don't fit the smallest page. Without
+  // it, the first EMBED_PAGE_SIZE rows load once, as before.
+  const paged = Boolean(ops?.listPage)
+  const [paginationModel, setPaginationModel] = useState({
+    page: 0,
+    pageSize: EMBED_DEFAULT_PAGE_SIZE,
+  })
+  const [rowTotal, setRowTotal] = useState<number | null>(null)
+  const [loadingRows, setLoadingRows] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
+  // A different record (or an outside change to the rows) starts over at page 1.
+  useEffect(() => {
+    if (ownBump.current) {
+      ownBump.current = false
+      return
+    }
+    setPaginationModel((m) => (m.page === 0 ? m : { ...m, page: 0 }))
+  }, [recordId, insideRef, refreshSignal])
   useEffect(() => {
     if (!ops || !recordId) return
     let cancelled = false
-    ops
-      .list(rel.entity, { filter: { [inverseField]: recordId }, pageSize: EMBED_PAGE_SIZE })
-      .then((found) => {
-        if (!cancelled) setRows(reverse ? [...found].reverse() : found)
+    const scope = rel.inside
+      ? insideRef
+        ? { inside: { [rel.inside.field]: insideRef } }
+        : null
+      : { filter: { [inverseField as string]: recordId } }
+    if (!scope) return
+    const listPage = ops.listPage
+    const load = listPage
+      ? (() => {
+          const page = {
+            ...scope,
+            page: paginationModel.page + 1,
+            pageSize: paginationModel.pageSize,
+          }
+          // An entity without created_at answers 400 to the sort: page it unsorted.
+          return listPage(rel.entity, {
+            ...page,
+            order: reverse ? '-created_at' : 'created_at',
+          }).catch(() => listPage(rel.entity, page))
+        })()
+      : ops
+          .list(rel.entity, { ...scope, pageSize: EMBED_PAGE_SIZE })
+          .then((records) => ({ records: reverse ? [...records].reverse() : records, total: null }))
+    setLoadingRows(true)
+    load
+      .then(({ records: found, total }) => {
+        if (cancelled) return
+        // A delete emptied the last page: step back to the new last one.
+        if (listPage && found.length === 0 && paginationModel.page > 0 && total != null) {
+          setPaginationModel((m) => ({
+            ...m,
+            page: Math.max(0, Math.ceil(total / m.pageSize) - 1),
+          }))
+          return
+        }
+        setRows(found)
+        setRowTotal(total)
       })
       .catch(() => {
         if (!cancelled) setRows([])
       })
+      .finally(() => {
+        if (!cancelled) setLoadingRows(false)
+      })
     return () => {
       cancelled = true
     }
-  }, [ops, rel.entity, inverseField, recordId, refreshSignal, reverse])
+  }, [
+    ops,
+    rel.entity,
+    rel.inside,
+    insideRef,
+    inverseField,
+    recordId,
+    refreshSignal,
+    reverse,
+    paginationModel,
+    reloadKey,
+  ])
 
   useEffect(() => {
     if (!ops || !expandField || rows.length === 0) {
@@ -924,7 +1630,47 @@ export function RelationListWidget({ field, disabled, recordId }: WidgetProps) {
   if (!ops) return <MissingOpsHint label={field.hideLabel ? null : t(fieldLabel(field))} />
   if (!recordId) return <UnsavedHint label={field.hideLabel ? null : t(fieldLabel(field))} />
 
-  const displayRows = expandField ? rows.map((row) => ({ ...row, [expandField]: expanded[row.id] ?? '' })) : rows
+  const expandedRows = expandField
+    ? rows.map((row) => ({ ...row, [expandField]: expanded[row.id] ?? '' }))
+    : rows
+  // Literal-value columns (widgetOptions.columns' own `value`) apply to
+  // EVERY row, real or synthetic — same rule, no special case for either.
+  const literalRows = explicitColumns
+    ? expandedRows.map((row) => {
+        const patched = { ...row }
+        for (const col of explicitColumns) if (col.value !== undefined) patched[col.key] = col.value
+        return patched
+      })
+    : expandedRows
+  const previewRow: RelationRecord | null =
+    previewRowConfig && draft
+      ? {
+          id: PREVIEW_ROW_ID,
+          [labelField]: draft[previewRowConfig.nameField] ?? '',
+          ...Object.fromEntries(
+            previewRowConfig.amountColumns.map((col) => [
+              col,
+              draft[previewRowConfig.amountField] ?? 0,
+            ]),
+          ),
+          ...Object.fromEntries(
+            (explicitColumns ?? [])
+              .filter((c) => c.value !== undefined)
+              .map((c) => [c.key, c.value]),
+          ),
+        }
+      : null
+  // The preview line leads the table, so only the first page carries it.
+  const displayRows =
+    previewRow && paginationModel.page === 0 ? [previewRow, ...literalRows] : literalRows
+  const showFooter = paged && rowTotal != null && rowTotal > EMBED_PAGE_SIZE_OPTIONS[0]!
+  const columns = explicitColumns
+    ? explicitRelationColumns(explicitColumns, labelField, t)
+    : relatedColumns(displayRows, labelField, t, inverseField ? [inverseField] : [])
+  // Double-click a row to edit it in the creation wizard: rows this table
+  // owns (an inverse FK), when the host can update and the form is editable.
+  // A table with its own formPath navigates on click instead.
+  const editable = Boolean(inverseField && ops.update && !disabled && !rel.formPath)
 
   return (
     <Box>
@@ -933,45 +1679,133 @@ export function RelationListWidget({ field, disabled, recordId }: WidgetProps) {
           {t(fieldLabel(field))}
         </Typography>
       )}
-      {/* Rows stay read-only inline (inline edit is a later iteration); creation
-          goes through the wizard line below — the inverse FK is preset, so the
-          new record lands in this list by construction. rel.formPath (opt-in —
-          absent for sale_lines/quote_lines, which intentionally stay inert on
-          click) navigates to the clicked row's own dedicated form instead. */}
-      <DataGrid
-        rows={displayRows}
-        columns={relatedColumns(displayRows, labelField, t, [inverseField])}
-        autoHeight
-        hideFooter
-        disableRowSelectionOnClick
-        onRowClick={
-          rel.formPath
-            ? (params: GridRowParams) => router.push(rel.formPath!.replace(':id', String(params.id)))
-            : undefined
-        }
-        sx={rel.formPath ? { '& .MuiDataGrid-row': { cursor: 'pointer' } } : undefined}
-      />
-      {/* Explicit color="primary" — matches the m2o/m2m dropdown's create row
-          rather than relying on the Button default staying primary. */}
-      <Button
-        size="small"
-        color="primary"
-        onClick={() => setCreateOpen(true)}
-        disabled={disabled}
-        sx={{ mt: 0.5 }}
-      >
-        {t('Create a new')} {t(entityDisplayName(rel.entity))}
-      </Button>
-      {createOpen ? (
-        <RelationCreateWizard
-          rel={rel}
-          ops={ops}
-          // The context decides the link: preset the inverse FK, never ask for it.
-          preset={{ [inverseField]: recordId }}
-          hidden={[inverseField]}
-          onClose={() => setCreateOpen(false)}
-          onCreated={(record) => setRows((prev) => [...prev, record])}
+      {/* Rows stay read-only inline; creation goes through the wizard line
+          below — the inverse FK is preset, so the new record lands in this list
+          by construction — and a double-click edits a row in that same wizard.
+          rel.formPath (opt-in) navigates to the clicked row's own dedicated
+          form instead. */}
+      {/* overflowX: auto scopes the horizontal scrollbar to just this table
+          when its columns don't fit — the surrounding notebook page (and the
+          rest of the form) never scrolls sideways because of one wide grid. */}
+      <Box sx={{ overflowX: 'auto' }}>
+        <DataGrid
+          rows={displayRows}
+          columns={
+            deletable
+              ? [...columns, deleteColumn(t, disabled, deletingId, handleDeleteRow, PREVIEW_ROW_ID)]
+              : columns
+          }
+          autoHeight
+          hideFooter={!showFooter}
+          {...(paged
+            ? {
+                paginationMode: 'server' as const,
+                rowCount: rowTotal ?? 0,
+                paginationModel,
+                onPaginationModelChange: setPaginationModel,
+                pageSizeOptions: EMBED_PAGE_SIZE_OPTIONS,
+                loading: loadingRows,
+              }
+            : {})}
+          disableRowSelectionOnClick
+          onRowClick={
+            rel.formPath
+              ? (params: GridRowParams) => {
+                  if (params.id === PREVIEW_ROW_ID) return
+                  router.push(erpPath(rel.formPath!.replace(':id', String(params.id))))
+                }
+              : undefined
+          }
+          onRowDoubleClick={
+            editable
+              ? (params: GridRowParams) => {
+                  const row = rows.find((r) => r.id === params.id)
+                  if (row) setEditing(row)
+                }
+              : undefined
+          }
+          // A double-click would also select a word of the row: prevent the
+          // second press's default only, so a drag still selects text.
+          slotProps={
+            editable
+              ? {
+                  row: {
+                    onMouseDown: (e: ReactMouseEvent<HTMLDivElement>) => {
+                      if (e.detail > 1) e.preventDefault()
+                    },
+                  },
+                }
+              : undefined
+          }
+          sx={
+            rel.formPath || editable ? { '& .MuiDataGrid-row': { cursor: 'pointer' } } : undefined
+          }
         />
+      </Box>
+      <ViewBanner status="error" open={Boolean(deleteError)}>
+        {deleteError}
+      </ViewBanner>
+      {inverseField ? (
+        <>
+          {/* Explicit color="primary" — matches the m2o/m2m dropdown's create row
+          rather than relying on the Button default staying primary. */}
+          <Button
+            size="small"
+            color="primary"
+            onClick={() => setCreateOpen(true)}
+            disabled={disabled}
+            sx={{ mt: 0.5 }}
+          >
+            {multiCreate ? (
+              <>
+                {t('Add')} {t(fieldLabel(field))}
+              </>
+            ) : (
+              <>
+                {t('Create a new')} {t(entityDisplayName(rel.entity))}
+              </>
+            )}
+          </Button>
+          {createOpen && multiCreate ? (
+            <RelationMultiCreateWizard
+              rel={rel}
+              targetField={multiCreate.field}
+              groupByModule={multiCreate.groupByModule === true}
+              ops={ops}
+              preset={{ [inverseField as string]: recordId }}
+              excludeIds={rows.map((r) => r[multiCreate.field])}
+              onClose={() => setCreateOpen(false)}
+              onCreated={(records) => setRows((prev) => [...prev, ...records])}
+            />
+          ) : null}
+          {createOpen && !multiCreate ? (
+            <RelationCreateWizard
+              rel={rel}
+              ops={ops}
+              // The context decides the link: preset the inverse FK, never ask for it.
+              preset={{ [inverseField as string]: recordId }}
+              hidden={[inverseField as string]}
+              onClose={() => setCreateOpen(false)}
+              onCreated={(record) => {
+                setRows((prev) => [...prev, record])
+                announceChange()
+              }}
+            />
+          ) : null}
+          {editing ? (
+            <RelationCreateWizard
+              rel={rel}
+              ops={ops}
+              record={editing}
+              hidden={[inverseField as string]}
+              onClose={() => setEditing(null)}
+              onCreated={(saved) => {
+                setRows((prev) => prev.map((r) => (r.id === saved.id ? saved : r)))
+                announceChange()
+              }}
+            />
+          ) : null}
+        </>
       ) : null}
     </Box>
   )
@@ -993,13 +1827,20 @@ export function RelationListWidget({ field, disabled, recordId }: WidgetProps) {
  * round-trip behind what's actually on the form, and never reimplements tax
  * math on the client — only sums numbers Go already computed.
  */
-export function TaxTotalsWidget({ field, recordId }: WidgetProps) {
+export function TaxTotalsWidget({ field, recordId, draft }: WidgetProps) {
   const t = useT()
   const ops = useRelationOps()
   const { format } = useNumberFormat()
+  // Same active-company currency code every number/monetary field already
+  // decorates its value with (widgets.tsx's NumberMonetaryWidget) — this
+  // recap is three more monetary figures with nowhere else to pick it up
+  // from, since it computes them itself rather than reading stored fields.
+  const currency = useCompanyStore((s) => s.currency)
   const rel = relationOf(field)
   const inverseField = rel.inverseField as string
   const [rows, setRows] = useState<RelationRecord[]>([])
+  // The lines table beside it announces created/edited rows.
+  const refreshSignal = useEntityRefreshStore((s) => s.bumps[rel.entity])
 
   useEffect(() => {
     if (!ops || !recordId) {
@@ -1018,7 +1859,7 @@ export function TaxTotalsWidget({ field, recordId }: WidgetProps) {
     return () => {
       cancelled = true
     }
-  }, [ops, rel.entity, inverseField, recordId])
+  }, [ops, rel.entity, inverseField, recordId, refreshSignal])
 
   if (!ops || !recordId) return null
 
@@ -1041,7 +1882,21 @@ export function TaxTotalsWidget({ field, recordId }: WidgetProps) {
     // feature added — out of scope, see sale/module.go's own doc comment);
     // fall back to its own tax_rate applied inline, the exact math this
     // widget used everywhere before Total existed.
-    total += row.total === undefined ? amount + amount * (Number(row.tax_rate) || 0) : Number(row.total) || 0
+    total +=
+      row.total === undefined
+        ? amount + amount * (Number(row.tax_rate) || 0)
+        : Number(row.total) || 0
+  }
+  // widgetOptions.previewAmountField (opt-in, e.g. propertymanagement's
+  // rent_price): a SIBLING draft field folded into subtotal/total alongside
+  // the fetched lines, same untaxed treatment RelationListWidget's own
+  // widgetOptions.previewRow gives it when showing it as a leading row in
+  // the grid this recap sits under — the two stay consistent readings of
+  // the same "rent counts as a line too" rule.
+  if (typeof field.widgetOptions?.previewAmountField === 'string' && draft) {
+    const previewAmount = Number(draft[field.widgetOptions.previewAmountField]) || 0
+    subtotal += previewAmount
+    total += previewAmount
   }
   const taxAmount = total - subtotal
 
@@ -1051,23 +1906,29 @@ export function TaxTotalsWidget({ field, recordId }: WidgetProps) {
     // default align-items: stretch otherwise pins a maxWidth-capped item to
     // the START of the cross axis regardless of margin.
     <Stack spacing={0.5} sx={{ maxWidth: 360, alignSelf: 'flex-end' }}>
-      <Stack direction="row" sx={{ justifyContent: 'space-between' }}>
+      {/* gap: 1 (by design, not a one-off fix): justifyContent: 'space-between'
+          alone squeezes to near-zero once a row's label is long enough
+          relative to the Stack's own maxWidth (e.g. "Untaxed Amount" versus
+          "Tax") — label and value visually run together with no gap at all.
+          A fixed minimum gap keeps every row legible regardless of how much
+          space-between has left to work with. */}
+      <Stack direction="row" sx={{ justifyContent: 'space-between', gap: 1 }}>
         <Typography variant="body2">{t('Untaxed Amount')}:</Typography>
         <Typography variant="body2" sx={{ fontVariantNumeric: tabularNums }}>
-          {format(subtotal, { decimals: 2 })}
+          {format(subtotal, { decimals: 2 })} {currency}
         </Typography>
       </Stack>
-      <Stack direction="row" sx={{ justifyContent: 'space-between' }}>
+      <Stack direction="row" sx={{ justifyContent: 'space-between', gap: 1 }}>
         <Typography variant="body2">{t('Tax')}:</Typography>
         <Typography variant="body2" sx={{ fontVariantNumeric: tabularNums }}>
-          {format(taxAmount, { decimals: 2 })}
+          {format(taxAmount, { decimals: 2 })} {currency}
         </Typography>
       </Stack>
       <Box sx={{ borderTop: '0.5px solid', borderColor: 'divider' }} />
-      <Stack direction="row" sx={{ justifyContent: 'space-between' }}>
+      <Stack direction="row" sx={{ justifyContent: 'space-between', gap: 1 }}>
         <Typography variant="subtitle2">{t('Total')}:</Typography>
         <Typography variant="subtitle2" sx={{ fontVariantNumeric: tabularNums }}>
-          {format(total, { decimals: 2 })}
+          {format(total, { decimals: 2 })} {currency}
         </Typography>
       </Stack>
     </Stack>

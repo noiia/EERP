@@ -7,7 +7,7 @@ import (
 	"core/internal/auth"
 	"core/orm"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // Handler serves the ONE route this module overrides: POST /api/v1/crm.
@@ -40,7 +40,7 @@ func NewHandler(repo *orm.Repository[CRM]) *Handler {
 // here) — TenantID has to be forced from the JWT identity by hand, exactly
 // like internal/notebook and internal/pictures already do for their own
 // dedicated routes.
-func (h *Handler) Create(c echo.Context) error {
+func (h *Handler) Create(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	var body CRM
@@ -85,7 +85,7 @@ func toColumnMap(repo *orm.Repository[CRM], entity CRM) map[string]any {
 	return out
 }
 
-func errorJSON(c echo.Context, status int, code, msg string) error {
+func errorJSON(c *echo.Context, status int, code, msg string) error {
 	return c.JSON(status, map[string]any{
 		"error": map[string]any{
 			"code":       code,

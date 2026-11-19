@@ -8,7 +8,7 @@ import (
 )
 
 // BuildHandlers constructs a GenericHandler for every non-excluded registered table.
-// Call this after all Register[T] / AutoScan calls have completed.
+// Call this after all Register[T] calls have completed.
 func BuildHandlers(app *orm.App) map[string]*handler.GenericHandler {
 	all := registry.All()
 	handlers := make(map[string]*handler.GenericHandler, len(all))

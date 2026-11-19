@@ -3,10 +3,11 @@ import { useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
-import Typography from '@mui/material/Typography'
+import { ApiError } from '../api/errors'
 import { useT } from '../i18n/translate'
+import { ViewBanner } from './banner'
 import { evaluateCondition, type HeaderButtonDescriptor } from './descriptor'
-import { headerButtonRegistry } from './header-button-actions'
+import { headerButtonRegistry, type HeaderButtonContext } from './header-button-actions'
 import { useRelationOps } from './relation-ops'
 
 // The header-button-container (docs — sale's Quote Confirm/Send/Accept/
@@ -31,6 +32,10 @@ export interface HeaderButtonContainerProps {
   /** Patch field(s) on the current record and commit via the form's own
    * commit path — see HeaderButtonContext.setFieldAndCommit. */
   onFieldsCommit: (patch: Record<string, unknown>) => Promise<Record<string, unknown> | null>
+  /** HeaderButtonContext.runAction — omitted when the host binds none. */
+  onRunAction?: HeaderButtonContext['runAction']
+  /** HeaderButtonContext.navigate. */
+  onNavigate?: HeaderButtonContext['navigate']
 }
 
 export function HeaderButtonContainer({
@@ -39,6 +44,8 @@ export function HeaderButtonContainer({
   recordId,
   draft,
   onFieldsCommit,
+  onRunAction,
+  onNavigate,
 }: HeaderButtonContainerProps) {
   const t = useT()
   const relationOps = useRelationOps()
@@ -58,19 +65,28 @@ export function HeaderButtonContainer({
     setRunningName(name)
     setError(null)
     void Promise.resolve(
-      registered.handler({ entity, recordId, draft, setFieldAndCommit: onFieldsCommit, relationOps }),
+      registered.handler({
+        entity,
+        recordId,
+        draft,
+        setFieldAndCommit: onFieldsCommit,
+        relationOps,
+        runAction: onRunAction,
+        navigate: onNavigate,
+      }),
     )
-      .catch(() => setError(t('Action failed.')))
+      // Go's refusal says why (e.g. "Add at least one line…"); anything
+      // else gets the generic line.
+      .catch((e: unknown) => setError(e instanceof ApiError && e.message ? e.message : t('Action failed.')))
       .finally(() => setRunningName(null))
   }
 
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-      {error ? (
-        <Typography variant="caption" color="error">
-          {error}
-        </Typography>
-      ) : null}
+      {/* Shown in the view's banner slot (banner.tsx), not inline. */}
+      <ViewBanner status="error" open={Boolean(error)}>
+        {error}
+      </ViewBanner>
       {visible.map((button) => {
         // readOnly renders DISABLED, not omitted — unlike visible, which
         // unmounts. "Already generated this month" should still be seen,

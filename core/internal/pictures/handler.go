@@ -12,14 +12,15 @@ import (
 	"core/orm"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"go.uber.org/zap"
 )
 
 // Handler serves the dedicated picture endpoints. Mounted behind jwtMw + permMw:
 // the permission middleware derives pictures:pictures:read|write from the route,
 // and every query is pinned to the caller's tenant. Uploads are multipart and
-// bounded by the server-wide request body limit (request_body_limit).
+// bounded by the upload route limit (upload_body_limit, default 20M), not the
+// server-wide request_body_limit this route is exempt from.
 //
 // The service invariant is ONE picture per (table, record, field) anchor — the
 // picture-backed boolean contract (field true ⇔ picture exists) needs exactly
@@ -44,21 +45,35 @@ type pictureStore interface {
 	FindInTenant(ctx context.Context, tenantID, id uuid.UUID) (Picture, error)
 	FindByAnchor(ctx context.Context, tenantID uuid.UUID, table string, recordID uuid.UUID, field string) (Picture, error)
 	Delete(ctx context.Context, tenantID, id uuid.UUID) error
+	SetFlag(ctx context.Context, tenantID uuid.UUID, table string, recordID uuid.UUID, field string, has bool) error
 }
 
 type Handler struct {
 	store   pictureStore
 	objects ObjectStore
+	scope   orm.Executor
 }
 
-// NewHandler constructs the pictures Handler from concrete implementations.
-func NewHandler(store *Repository, objects ObjectStore) *Handler {
+// NewHandler constructs the pictures Handler from its dependencies (interfaces, so tests can pass fakes).
+func NewHandler(store pictureStore, objects ObjectStore) *Handler {
 	return &Handler{store: store, objects: objects}
 }
 
-// newHandlerWith constructs a Handler from interface values (used in tests).
-func newHandlerWith(store pictureStore, objects ObjectStore) *Handler {
-	return &Handler{store: store, objects: objects}
+// WithRowScope makes the handler answer 404 for anchors the caller's row scope
+// hides (ADR-038). Unset (unit tests with fakes), no anchor check is made.
+func (h *Handler) WithRowScope(db orm.Executor) *Handler {
+	h.scope = db
+	return h
+}
+
+// hidden reports whether the anchor record is invisible to the caller; a
+// scope error is returned as is (a 500 — fail closed, never a 404).
+func (h *Handler) hidden(ctx context.Context, table string, id uuid.UUID) (bool, error) {
+	if h.scope == nil {
+		return false, nil
+	}
+	ok, err := orm.CanSeeRecord(ctx, h.scope, table, id)
+	return !ok && err == nil, err
 }
 
 type pictureResponse struct {
@@ -82,7 +97,7 @@ func toResponse(p Picture) pictureResponse {
 // picture on the anchor: the new object lands first, then the row flips to it,
 // then the old object is deleted best-effort (an orphaned object is a leak; a
 // row pointing at a missing object would be a lie).
-func (h *Handler) Upload(c echo.Context) error {
+func (h *Handler) Upload(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	table := c.FormValue("table_name")
@@ -91,9 +106,18 @@ func (h *Handler) Upload(c echo.Context) error {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR",
 			"table_name and field must be lowercase identifiers.")
 	}
+	if reservedAnchor(table, field) {
+		return reservedErr(c)
+	}
 	recordID, err := uuid.Parse(c.FormValue("record_id"))
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "record_id must be a UUID.")
+	}
+
+	if hide, err := h.hidden(c.Request().Context(), table, recordID); err != nil {
+		return fmt.Errorf("pictures: row scope: %w", err)
+	} else if hide {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such record.")
 	}
 
 	fileHeader, err := c.FormFile("file")
@@ -126,9 +150,8 @@ func (h *Handler) Upload(c echo.Context) error {
 		if err != nil {
 			return fmt.Errorf("pictures: replace metadata: %w", err)
 		}
-		if err := h.objects.Delete(c.Request().Context(), oldKey); err != nil {
-			common.Logger.Warn("pictures: orphaned object after replace", zap.String("key", oldKey), zap.Error(err))
-		}
+		h.deleteObject(c.Request().Context(), oldKey, "replace")
+		h.syncFlag(c.Request().Context(), identity.TenantID, table, recordID, field, true)
 		return c.JSON(http.StatusCreated, toResponse(updated))
 	case errors.Is(err, orm.ErrNotFound):
 		created, err := h.store.Create(c.Request().Context(), Picture{
@@ -138,17 +161,26 @@ func (h *Handler) Upload(c echo.Context) error {
 		if err != nil {
 			return fmt.Errorf("pictures: create metadata: %w", err)
 		}
+		h.syncFlag(c.Request().Context(), identity.TenantID, table, recordID, field, true)
 		return c.JSON(http.StatusCreated, toResponse(created))
 	default:
 		return fmt.Errorf("pictures: find anchor: %w", err)
 	}
 }
 
+// reservedAnchor: (users, *, avatar) is written only by LDAP photo sync, never
+// through the generic routes (anyone with pictures:write could replace a colleague's avatar).
+func reservedAnchor(table, field string) bool { return table == "users" && field == "avatar" }
+
+func reservedErr(c *echo.Context) error {
+	return errorJSON(c, http.StatusForbidden, "FORBIDDEN", "User avatars are synced from the directory.")
+}
+
 // Get handles GET /api/v1/pictures/:id — streams the image bytes.
-func (h *Handler) Get(c echo.Context) error {
+func (h *Handler) Get(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "id must be a UUID.")
 	}
@@ -158,6 +190,11 @@ func (h *Handler) Get(c echo.Context) error {
 			return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such picture.")
 		}
 		return fmt.Errorf("pictures: find: %w", err)
+	}
+	if hide, err := h.hidden(c.Request().Context(), picture.TableName, picture.RecordID); err != nil {
+		return fmt.Errorf("pictures: row scope: %w", err)
+	} else if hide {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such picture.")
 	}
 
 	body, contentType, err := h.objects.Get(c.Request().Context(), picture.ObjectKey)
@@ -174,7 +211,7 @@ func (h *Handler) Get(c echo.Context) error {
 // Find handles GET /api/v1/pictures?table=&record=&field= — resolves the
 // anchor to its picture metadata (the widget asks "does this field have a
 // picture, and under which id?"). 404 when the anchor has none.
-func (h *Handler) Find(c echo.Context) error {
+func (h *Handler) Find(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	table := c.QueryParam("table")
@@ -186,6 +223,12 @@ func (h *Handler) Find(c echo.Context) error {
 	recordID, err := uuid.Parse(c.QueryParam("record"))
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "record must be a UUID.")
+	}
+
+	if hide, err := h.hidden(c.Request().Context(), table, recordID); err != nil {
+		return fmt.Errorf("pictures: row scope: %w", err)
+	} else if hide {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such record.")
 	}
 
 	picture, err := h.store.FindByAnchor(c.Request().Context(), identity.TenantID, table, recordID, field)
@@ -201,10 +244,10 @@ func (h *Handler) Find(c echo.Context) error {
 // Delete handles DELETE /api/v1/pictures/:id. The row goes first (the boolean
 // contract must never see a row without an object), then the object —
 // best-effort: an orphaned object is a storage leak, not an integrity bug.
-func (h *Handler) Delete(c echo.Context) error {
+func (h *Handler) Delete(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "id must be a UUID.")
 	}
@@ -215,17 +258,45 @@ func (h *Handler) Delete(c echo.Context) error {
 		}
 		return fmt.Errorf("pictures: find: %w", err)
 	}
+	if hide, err := h.hidden(c.Request().Context(), picture.TableName, picture.RecordID); err != nil {
+		return fmt.Errorf("pictures: row scope: %w", err)
+	} else if hide {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such picture.")
+	}
+	if reservedAnchor(picture.TableName, picture.Field) {
+		return reservedErr(c)
+	}
 
 	if err := h.store.Delete(c.Request().Context(), identity.TenantID, id); err != nil {
 		return fmt.Errorf("pictures: delete metadata: %w", err)
 	}
-	if err := h.objects.Delete(c.Request().Context(), picture.ObjectKey); err != nil {
-		common.Logger.Warn("pictures: orphaned object after delete", zap.String("key", picture.ObjectKey), zap.Error(err))
-	}
+	h.deleteObject(c.Request().Context(), picture.ObjectKey, "delete")
+	h.syncFlag(c.Request().Context(), identity.TenantID, picture.TableName, picture.RecordID, picture.Field, false)
 	return c.NoContent(http.StatusNoContent)
 }
 
-func errorJSON(c echo.Context, status int, code, msg string) error {
+// deleteObject removes a picture's bytes best-effort (an orphaned object is a
+// leak, logged) — except a shared sample (SampleDir), which other rows still use.
+func (h *Handler) deleteObject(ctx context.Context, key, after string) {
+	if IsSampleKey(key) {
+		return
+	}
+	if err := h.objects.Delete(ctx, key); err != nil {
+		common.Logger.Warn("pictures: orphaned object after "+after, zap.String("key", key), zap.Error(err))
+	}
+}
+
+// syncFlag keeps the anchor's boolean flag column (a picture field's "true ⇔ a
+// picture exists", read by the public site) in step with the picture itself,
+// instead of trusting the form's next Save. Best-effort: the picture is already
+// stored or removed; a failure is logged.
+func (h *Handler) syncFlag(ctx context.Context, tenant uuid.UUID, table string, record uuid.UUID, field string, has bool) {
+	if err := h.store.SetFlag(ctx, tenant, table, record, field, has); err != nil {
+		common.Logger.Warn("pictures: flag not synced", zap.String("table", table), zap.String("field", field), zap.Error(err))
+	}
+}
+
+func errorJSON(c *echo.Context, status int, code, msg string) error {
 	return c.JSON(status, map[string]any{
 		"error": map[string]any{
 			"code":       code,

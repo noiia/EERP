@@ -1,5 +1,11 @@
 package module
 
+import (
+	"context"
+
+	"core/orm"
+)
+
 // GoModuleCount exposes the internal goModules slice length for white-box tests.
 func GoModuleCount() int {
 	goMu.Lock()
@@ -23,4 +29,10 @@ func RegisterSchemaOnly() []error {
 		}
 	}
 	return errs
+}
+
+// LoadGoModule exposes loadGoModule so a test can drive one Boot()'s module
+// sequence (a shared ensured map) against a real database.
+func LoadGoModule(ctx context.Context, db *orm.DB, m GoModule, ensured map[string]int) ([]string, error) {
+	return loadGoModule(ctx, db, m, ensured)
 }

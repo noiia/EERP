@@ -24,12 +24,13 @@ export default defineConfig({
       deps: { inline: [/@mui\//, 'react-transition-group'] },
     },
     // Coverage mirrors the backend's go-test-coverage step: reported on every CI run
-    // (text for logs, lcov for tooling, json-summary for badges/PR diffs). Thresholds
-    // stay off — like the commented thresholds in .github/.testcoverage.yml — so the
-    // gate reports without blocking until the team sets targets.
+    // (text for logs, lcov for tooling, json-summary for badges/PR diffs), and — like
+    // the total threshold in .github/.testcoverage.yml — failing below 80%.
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov', 'json-summary'],
+      // Every metric is floored at 80% (CLAUDE.md "Before pushing").
+      thresholds: { statements: 80, lines: 80, functions: 80, branches: 80 },
       include: ['src/**/*.{ts,tsx}'],
       exclude: ['src/**/*.{test,spec}.{ts,tsx}', 'src/test/**', '**/*.d.ts'],
     },

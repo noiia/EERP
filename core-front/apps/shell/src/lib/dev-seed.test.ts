@@ -2,13 +2,34 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@eerp/core-front/server'
 
 const createMock = vi.fn()
+const listMock = vi.fn(async (entity: string, o?: { filter?: Record<string, string> }) =>
+  entity === 'project_stage'
+    ? [30, 10, 20].map((sequence) => ({ id: `stage-${o?.filter?.project_id}-${sequence}`, sequence }))
+    : entity === 'project_risk_category'
+      ? ['Internal', 'Financial', 'Project management'].map((name) => ({ id: `cat-${name}`, name }))
+      : [],
+)
+const updateMock = vi.fn(async (_entity: string, id: string, body: Record<string, unknown>) => ({ id, ...body }))
+const apiRequestMock = vi.fn()
+const uploadPictureMock = vi.fn<(form: FormData) => Promise<{ id: string }>>(async () => ({ id: 'pic' }))
 vi.mock('@eerp/core-front/server', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@eerp/core-front/server')>()
   return {
     ...actual,
-    createServerApiClient: () => ({ create: createMock }),
+    createServerApiClient: () => ({ create: createMock, update: updateMock, list: listMock }),
+    uploadPicture: (form: FormData) => uploadPictureMock(form),
+    apiRequest: (...args: unknown[]) => apiRequestMock(...args),
   }
 })
+
+/** The records the create mock returned for `entity`, in call order. */
+async function createdFor(entity: string): Promise<Record<string, unknown>[]> {
+  return Promise.all(createMock.mock.results.filter((_, i) => createMock.mock.calls[i][0] === entity).map((r) => r.value as Promise<Record<string, unknown>>))
+}
+const PLAN_NAMES = ['Platform migration', 'Factory expansion']
+
+const revalidateTagMock = vi.fn()
+vi.mock('next/cache', () => ({ revalidateTag: (...args: unknown[]) => revalidateTagMock(...args) }))
 
 // getMyLocalePreferences hits GET /me/preferences over apiRequest — stubbed
 // so buildPageFormats' company_id tagging is deterministic in tests instead
@@ -19,7 +40,11 @@ vi.mock('./preferences', () => ({
   getMyLocalePreferences: () => getMyLocalePreferencesMock(),
 }))
 
-import { seedDemoData } from './dev-seed'
+const getIdentityMock = vi.fn()
+vi.mock('./session', () => ({ getIdentity: () => getIdentityMock() }))
+
+import { getSeedGroups, seedDemoData } from './dev-seed'
+import { buildProjectPlan } from './dev-seed-plan'
 import { seedingAllowed } from './dev-seed-allowed'
 
 function callsFor(entity: string): unknown[][] {
@@ -28,45 +53,99 @@ function callsFor(entity: string): unknown[][] {
 
 beforeEach(() => {
   createMock.mockReset()
+  updateMock.mockClear()
+  apiRequestMock.mockReset()
+  // The appointment event's bookable slots (GET /public/event/:id/slots).
+  apiRequestMock.mockImplementation(async (method: string, path: string) =>
+    method === 'GET' && path.includes('/slots')
+      ? { data: [0, 1, 2, 3, 4, 5, 6, 7].map((d) => ({ start: `2026-11-1${d}T09:00:00Z`, end: `2026-11-1${d}T09:30:00Z`, seats_left: 1 })) }
+      : {},
+  )
+  uploadPictureMock.mockClear()
   let idCounter = 0
   createMock.mockImplementation(async (entity: string, body: Record<string, unknown>) => ({
     id: `${entity}-${(idCounter += 1)}`,
     ...body,
   }))
+  getIdentityMock.mockResolvedValue({ userId: 'admin-1' })
   getMyLocalePreferencesMock.mockReset()
-  getMyLocalePreferencesMock.mockResolvedValue(null)
+  // Backend's types.Config.Environment, echoed back on GET /me/preferences —
+  // defaults to "development" so every seedDemoData test below (which isn't
+  // itself testing the environment gate) keeps working without repeating it.
+  getMyLocalePreferencesMock.mockResolvedValue({
+    preferred_locale: null,
+    default_locale: null,
+    environment: 'development',
+  })
 })
 
 afterEach(() => {
   vi.restoreAllMocks()
-  vi.unstubAllEnvs()
 })
 
 describe('seedingAllowed', () => {
-  it('falls back to NODE_ENV when ALLOW_DEMO_SEED is unset', () => {
-    vi.stubEnv('NODE_ENV', 'production')
-    expect(seedingAllowed()).toBe(false)
-
-    vi.stubEnv('NODE_ENV', 'development')
-    expect(seedingAllowed()).toBe(true)
+  it('returns true when the backend reports environment: development', async () => {
+    getMyLocalePreferencesMock.mockResolvedValue({ preferred_locale: null, default_locale: null, environment: 'development' })
+    expect(await seedingAllowed()).toBe(true)
   })
 
-  it('lets ALLOW_DEMO_SEED override a production NODE_ENV, e.g. the standalone Docker image', () => {
-    vi.stubEnv('NODE_ENV', 'production')
-    vi.stubEnv('ALLOW_DEMO_SEED', 'true')
-    expect(seedingAllowed()).toBe(true)
+  it('returns false when the backend reports environment: production', async () => {
+    getMyLocalePreferencesMock.mockResolvedValue({ preferred_locale: null, default_locale: null, environment: 'production' })
+    expect(await seedingAllowed()).toBe(false)
   })
 
-  it('lets ALLOW_DEMO_SEED=false override a non-production NODE_ENV', () => {
-    vi.stubEnv('NODE_ENV', 'development')
-    vi.stubEnv('ALLOW_DEMO_SEED', 'false')
-    expect(seedingAllowed()).toBe(false)
+  it('returns false when preferences cannot be read (expired session, backend down)', async () => {
+    getMyLocalePreferencesMock.mockResolvedValue(null)
+    expect(await seedingAllowed()).toBe(false)
+  })
+})
+
+describe('seedDemoData full volume', () => {
+  it('starts the full volume on Go and hands back the run to follow', async () => {
+    apiRequestMock.mockReset().mockResolvedValue({ notification_id: 'run-1' })
+    revalidateTagMock.mockReset()
+    await expect(seedDemoData('full', ['events', 'crm'])).resolves.toEqual({ ok: true, started: 'run-1' })
+    expect(apiRequestMock).toHaveBeenCalledWith('POST', '/dev_seed', { groups: ['events', 'crm'] })
+    // Go hasn't written anything yet: the Developer page revalidates once the run is done.
+    expect(revalidateTagMock).not.toHaveBeenCalled()
+    expect(createMock).not.toHaveBeenCalled()
+  })
+
+  it("surfaces Go's refusal (a seed already running) as the error message", async () => {
+    apiRequestMock.mockReset().mockRejectedValue(
+      new ApiError({ code: 'CONFLICT', message: 'A demo data seed is already running for this workspace.', status: 409 }),
+    )
+    await expect(seedDemoData('full')).resolves.toEqual({
+      ok: false,
+      message: 'A demo data seed is already running for this workspace.',
+    })
+  })
+
+  it('lists the seed groups with the running seed, null when Go is unreachable', async () => {
+    const data = [{ key: 'contacts', label: 'Contacts', deps: [], seeded: false }]
+    apiRequestMock.mockReset().mockResolvedValueOnce({ data, running: 'run-7' })
+    await expect(getSeedGroups()).resolves.toEqual({ groups: data, running: 'run-7' })
+    expect(apiRequestMock).toHaveBeenCalledWith('GET', '/dev_seed')
+    apiRequestMock.mockResolvedValueOnce({ data })
+    await expect(getSeedGroups()).resolves.toEqual({ groups: data, running: null })
+    apiRequestMock.mockRejectedValueOnce(new Error('down'))
+    await expect(getSeedGroups()).resolves.toBeNull()
+  })
+
+  it("surfaces Go's refusal (already seeded) as the error message", async () => {
+    apiRequestMock.mockReset().mockRejectedValue(
+      new ApiError({ code: 'CONFLICT', message: 'the full demo volume was already seeded for this workspace', status: 409 }),
+    )
+    await expect(seedDemoData('full')).resolves.toEqual({
+      ok: false,
+      message: 'the full demo volume was already seeded for this workspace',
+    })
   })
 })
 
 describe('seedDemoData', () => {
   it('refuses to run in production, without touching the API', async () => {
-    vi.stubEnv('NODE_ENV', 'production')
+    getMyLocalePreferencesMock.mockResolvedValue({ preferred_locale: null, default_locale: null, environment: 'production' })
 
     await expect(seedDemoData()).resolves.toEqual({
       ok: false,
@@ -75,22 +154,12 @@ describe('seedDemoData', () => {
     expect(createMock).not.toHaveBeenCalled()
   })
 
-  it('runs in production when ALLOW_DEMO_SEED=true (the dev-compose Docker override)', async () => {
-    vi.stubEnv('NODE_ENV', 'production')
-    vi.stubEnv('ALLOW_DEMO_SEED', 'true')
-    vi.spyOn(Math, 'random').mockReturnValue(0.5)
-
-    const outcome = await seedDemoData()
-    expect(outcome.ok).toBe(true)
-    expect(createMock).toHaveBeenCalled()
-  })
-
   it('seeds contacts, tags, and CRM records, then links tags via crm_tag junction rows', async () => {
     // Pin Math.random so the whole batch (counts, picks, link counts) is deterministic.
     vi.spyOn(Math, 'random').mockReturnValue(0.5)
 
     const outcome = await seedDemoData()
-    if (!outcome.ok) throw new Error('expected seeding to succeed')
+    if (!outcome.ok || !('results' in outcome)) throw new Error('expected seeding to succeed')
 
     // contacts and tags are created before crm/crm_tag reference them.
     expect(callsFor('contact')).toHaveLength(10)
@@ -103,12 +172,12 @@ describe('seedDemoData', () => {
       email: expect.stringContaining('@'),
       company: expect.any(String),
       status: expect.any(String),
+      kind: 'contact',
     })
-
     const [, crmBody] = callsFor('crm')[0] as [string, Record<string, unknown>]
+    expect(crmBody).not.toHaveProperty('email')
     expect(crmBody).toMatchObject({
       name: expect.any(String),
-      email: expect.any(String),
       status: expect.any(String),
       contact_id: expect.stringMatching(/^contact-\d+$/),
       score: expect.any(Number),
@@ -128,33 +197,81 @@ describe('seedDemoData', () => {
       'crm',
       'crm_tag',
       'product',
+      'sale_tax',
+      'product_tax',
       'product_variant',
       'invoice',
       'sale_line',
+      'invoice status',
       'quote',
       'quote_line',
+      'quote status',
+      'project',
+      'project_color',
+      'project_milestone',
+      'project_task',
+      'project_task_dependency',
+      'project_task_user',
+      'project_timesheet',
+      'project_task_color',
+      'contact_company',
+      'project_obs_box',
+      'project_task_raci',
+      'project_risk',
+      'project_risk_task',
+      'project_pbs_item',
+      'project metrics span',
+      'project_capacity',
+      'project insights milestones',
       'report_page_format',
+      'event',
+      'event_session',
+      'event_availability',
+      'event_booking',
+      'event_booking (status changes)',
+      'website publishing',
+      'website_page',
+      'picture',
     ])
     expect(outcome.results.every((r) => r.failed === 0)).toBe(true)
   })
 
-  it('seeds products, one blank-name variant per product, and invoices/quotes with line items over those variants', async () => {
+  it('seeds described products, a blank-name variant plus named ones per product, pictures, and invoices/quotes with line items over those variants', async () => {
     vi.spyOn(Math, 'random').mockReturnValue(0.5)
 
     const outcome = await seedDemoData()
-    if (!outcome.ok) throw new Error('expected seeding to succeed')
+    if (!outcome.ok || !('results' in outcome)) throw new Error('expected seeding to succeed')
 
     expect(callsFor('product')).toHaveLength(6)
-    const [, variantBody] = callsFor('product_variant')[0] as [string, Record<string, unknown>]
-    expect(variantBody).toEqual({ product_id: expect.stringMatching(/^product-\d+$/) })
+    expect((callsFor('product')[0] as [string, Record<string, unknown>])[1].description).toEqual(expect.any(String))
+    const variantBodies = callsFor('product_variant').map(([, b]) => b as Record<string, unknown>)
+    expect(variantBodies[0]).toEqual({ product_id: expect.stringMatching(/^product-\d+$/) })
+    expect(variantBodies.length).toBe(15) // one default per product + 9 named variants
+    expect(variantBodies[1]).toEqual({ product_id: variantBodies[0].product_id, name: 'Standard consulting hour — On site', unit_price: 110 })
+
+    // A generated PNG on every picture field of the seeded records.
+    const anchors = uploadPictureMock.mock.calls.map(([f]) => `${f.get('table_name')}.${f.get('field')}`)
+    const per = (a: string) => anchors.filter((x) => x === a).length
+    const crm = callsFor('crm').length
+    expect(per('product.picture')).toBe(6)
+    expect(per('product_variant.picture')).toBe(15)
+    expect([per('crm.picture'), per('crm.signature')]).toEqual([crm, crm])
+    expect([per('invoice.logo'), per('quote.logo'), per('event.picture')]).toEqual([6, 6, 4])
+    const form = uploadPictureMock.mock.calls[0][0]
+    expect([form.get('table_name'), form.get('field')]).toEqual(['product', 'picture'])
+    const png = new Uint8Array(await (form.get('file') as Blob).arrayBuffer())
+    expect(Array.from(png.slice(1, 4))).toEqual([0x50, 0x4e, 0x47]) // "PNG"
+    expect(outcome.results.find((r) => r.entity === 'picture')).toMatchObject({ created: anchors.length, failed: 0 })
 
     expect(callsFor('invoice')).toHaveLength(6)
     expect(callsFor('quote')).toHaveLength(6)
     const [, invoiceBody] = callsFor('invoice')[0] as [string, Record<string, unknown>]
+    // No number: Go assigns it from the invoice sequence.
+    expect(invoiceBody).not.toHaveProperty('number')
     expect(invoiceBody).toMatchObject({
-      number: expect.stringMatching(/^INV-\d{4}-\d{4}$/),
       status: expect.any(String),
       customer_name: expect.any(String),
+      reference: expect.stringMatching(/^PO-\d{4}$/),
     })
     // sale.Invoice/Quote's issuer_*/payment_*/legal_notice columns are plain
     // (non-pointer) strings — NOT NULL with no default — so Go's generic
@@ -178,7 +295,24 @@ describe('seedDemoData', () => {
       expect(invoiceBody).toHaveProperty(key)
     }
     const [, quoteBody] = callsFor('quote')[0] as [string, Record<string, unknown>]
-    expect(quoteBody.number).toMatch(/^QUO-\d{4}-\d{4}$/)
+    expect(quoteBody).not.toHaveProperty('number')
+    expect(quoteBody).not.toHaveProperty('reference') // the quote has none any more
+
+    // Go creates every document as a draft (no line yet): each one whose
+    // picked status is past draft gets it once its lines exist.
+    const statusUpdates = updateMock.mock.calls.filter(([e]) => e === 'invoice' || e === 'quote')
+    expect(statusUpdates.every(([, , body]) => (body as Record<string, unknown>).status !== 'draft')).toBe(true)
+
+    // Products carry no unit/tax_rate (Go numbers them, sale's Taxes link
+    // their VAT): every product gets a product_tax link to a seeded tax.
+    for (const [, body] of callsFor('product') as [string, Record<string, unknown>][]) {
+      expect(body).not.toHaveProperty('unit')
+      expect(body).not.toHaveProperty('tax_rate')
+    }
+    expect(callsFor('product_tax')).toHaveLength(callsFor('product').length)
+    for (const [, body] of callsFor('product_tax') as [string, Record<string, unknown>][]) {
+      expect(body.sale_tax_id).toMatch(/^sale_tax-\d+$/)
+    }
 
     // Every line references a real seeded document + variant id, never a raw index.
     const saleLineCalls = callsFor('sale_line')
@@ -200,10 +334,11 @@ describe('seedDemoData', () => {
       preferred_locale: null,
       default_locale: null,
       active_company: { id: 'company-1', name: 'Acme' },
+      environment: 'development',
     })
 
     const outcome = await seedDemoData()
-    if (!outcome.ok) throw new Error('expected seeding to succeed')
+    if (!outcome.ok || !('results' in outcome)) throw new Error('expected seeding to succeed')
 
     const pageFormatCalls = callsFor('report_page_format')
     expect(pageFormatCalls.map(([, body]) => (body as Record<string, unknown>).name)).toEqual([
@@ -218,10 +353,18 @@ describe('seedDemoData', () => {
   })
 
   it('leaves report_page_format rows untagged when the active company cannot be resolved', async () => {
-    getMyLocalePreferencesMock.mockResolvedValue(null)
+    // No active_company on the resolved preferences (as opposed to the preferences
+    // read failing outright, which seedingAllowed's own tests cover separately) —
+    // environment stays 'development' so this test still isolates the "no active
+    // company" behavior rather than tripping the unrelated environment gate.
+    getMyLocalePreferencesMock.mockResolvedValue({
+      preferred_locale: null,
+      default_locale: null,
+      environment: 'development',
+    })
 
     const outcome = await seedDemoData()
-    if (!outcome.ok) throw new Error('expected seeding to succeed')
+    if (!outcome.ok || !('results' in outcome)) throw new Error('expected seeding to succeed')
 
     const pageFormatCalls = callsFor('report_page_format')
     expect(pageFormatCalls).toHaveLength(4)
@@ -236,7 +379,7 @@ describe('seedDemoData', () => {
     })
 
     const outcome = await seedDemoData()
-    if (!outcome.ok) throw new Error('expected seeding to succeed')
+    if (!outcome.ok || !('results' in outcome)) throw new Error('expected seeding to succeed')
 
     const crmResult = outcome.results.find((r) => r.entity === 'crm')
     expect(crmResult).toMatchObject({ created: 0, failed: 15 })
@@ -253,11 +396,241 @@ describe('seedDemoData', () => {
     createMock.mockRejectedValue(new Error('boom'))
 
     const outcome = await seedDemoData()
-    if (!outcome.ok) throw new Error('expected seeding to succeed')
+    if (!outcome.ok || !('results' in outcome)) throw new Error('expected seeding to succeed')
 
     const contactResult = outcome.results.find((r) => r.entity === 'contact')
     expect(contactResult).toMatchObject({ created: 0, failed: 10 })
     expect(contactResult?.errors).toHaveLength(5)
     expect(contactResult?.errors.every((m) => m === 'Unknown error')).toBe(true)
+  })
+})
+
+describe('seedDemoData events', () => {
+  it('seeds a paid, a free, an appointment and an unpublished event with sessions, availability and bookings in every state', async () => {
+    const before = Date.now()
+    const outcome = await seedDemoData()
+    if (!outcome.ok) throw new Error('seed failed')
+
+    const events = callsFor('event').map(([, body]) => body as Record<string, unknown>)
+    expect(events.map((e) => e.kind)).toEqual(['sessions', 'sessions', 'appointment', 'sessions'])
+    expect(events.filter((e) => e.published === false)).toHaveLength(1)
+    const variantId = (await createMock.mock.results.find((_, i) => createMock.mock.calls[i][0] === 'product_variant')!.value).id
+    expect(events[0].product_variant_id).toBe(variantId) // the paid event
+
+    const sessions = callsFor('event_session').map(([, body]) => body as Record<string, unknown>)
+    const startsIn = (s: Record<string, unknown>) => Date.parse(String(s.starts_at)) - before
+    // A drop-in session starting within the hour, so its bookings can be checked in.
+    expect(sessions.some((s) => startsIn(s) > 0 && startsIn(s) < 3600_000)).toBe(true)
+    expect(sessions.every((s) => startsIn(s) > 0)).toBe(true)
+    expect(callsFor('event_availability')).toHaveLength(5)
+
+    const bookings = callsFor('event_booking').map(([, body]) => body as Record<string, unknown>)
+    expect(bookings.some((b) => b.waitlist === true)).toBe(true)
+    expect(bookings.filter((b) => typeof b.slot_start === 'string')).toHaveLength(3)
+    expect(bookings.every((b) => typeof b.email === 'string' && typeof b.name === 'string')).toBe(true)
+
+    const statuses = updateMock.mock.calls.map(([, , body]) => (body as Record<string, unknown>).status)
+    expect(statuses).toEqual(expect.arrayContaining(['attended', 'no_show', 'cancelled']))
+    if (!('results' in outcome)) throw new Error('expected a light seed result')
+    expect(outcome.results.find((r) => r.entity === 'event_booking')).toMatchObject({ failed: 0 })
+  })
+})
+
+
+describe('seedDemoData — Project app', () => {
+  it('seeds 3 projects with milestones, tasks, subtasks, dependencies and timesheets', async () => {
+    const result = await seedDemoData()
+    expect(result.ok).toBe(true)
+    const bodies = (e: string) => callsFor(e).map(([, b]) => b as Record<string, unknown>)
+    expect(callsFor('project')).toHaveLength(5) // + the 2 plan projects (next test)
+    expect(bodies('project').filter((p) => p.visibility === 'members')).toHaveLength(1)
+    expect(callsFor('project_milestone')).toHaveLength(6)
+    const small = new Set((await createdFor('project')).filter((p) => !PLAN_NAMES.includes(String(p.name))).map((p) => p.id))
+    const tasks = bodies('project_task').filter((t) => small.has(t.project_id))
+    expect(tasks.filter((t) => !t.parent_id)).toHaveLength(24)
+    expect(tasks.filter((t) => t.parent_id)).toHaveLength(48)
+    expect(tasks.find((t) => !t.parent_id)?.stage_id).toMatch(/^stage-project-\d+-10$/)
+    // Each top-level task starts a few days before its deadline, so the Gantt draws bars.
+    for (const t of tasks.filter((x) => !x.parent_id)) {
+      const lead = Date.parse(String(t.deadline)) - Date.parse(String(t.date_start))
+      expect(lead).toBeGreaterThan(0)
+      expect(lead).toBeLessThanOrEqual(7 * 86_400_000)
+    }
+    expect(callsFor('project_task_dependency')).toHaveLength(3 + 2 * 175)
+    expect(bodies('project_task_user')).toHaveLength(6)
+    expect(bodies('project_task_user').every((a) => a.user_id === 'admin-1')).toBe(true)
+    expect(callsFor('project_timesheet')).toHaveLength(19)
+    expect(bodies('project_timesheet').every((t) => Number(t.hours) > 0 && typeof t.date === 'string')).toBe(true)
+  })
+
+  it('seeds 2 plan projects of 220 tasks in three levels, wired for PERT', async () => {
+    await seedDemoData()
+    const bodies = (e: string) => callsFor(e).map(([, b]) => b as Record<string, unknown>)
+    const plans = (await createdFor('project')).filter((p) => PLAN_NAMES.includes(String(p.name)))
+    expect(plans).toHaveLength(2)
+    const allTasks = await createdFor('project_task')
+    for (const projectId of plans.map((p) => String(p.id))) {
+      const tasks = allTasks.filter((t) => t.project_id === projectId)
+      expect(tasks).toHaveLength(220)
+      const byId = new Map(tasks.map((t) => [t.id, t]))
+      const depth = (t: Record<string, unknown>): number => (t.parent_id ? 1 + depth(byId.get(t.parent_id)!) : 0)
+      expect(tasks.filter((t) => depth(t) === 0)).toHaveLength(10)
+      expect(tasks.filter((t) => depth(t) === 1)).toHaveLength(60)
+      expect(tasks.filter((t) => depth(t) === 2)).toHaveLength(150)
+      // A parent is always created before its children (Go numbers siblings in creation order).
+      const order = new Map(tasks.map((t, i) => [t.id, i]))
+      expect(tasks.every((t) => !t.parent_id || order.get(t.parent_id)! < order.get(t.id)!)).toBe(true)
+      // Done phases sit in the closed (last) stage, the last phases in the first.
+      expect(tasks[0].stage_id).toBe(`stage-${projectId}-30`)
+      expect(tasks[9].stage_id).toBe(`stage-${projectId}-10`)
+      const deps = bodies('project_task_dependency').filter((d) => byId.has(d.task_id))
+      expect(deps).toHaveLength(175)
+      expect(deps.every((d) => byId.has(d.depends_on_id))).toBe(true)
+    }
+  })
+
+  it('builds a plan whose dependencies form no cycle and leave the work packages unlinked', () => {
+    const plan = buildProjectPlan(Date.UTC(2026, 0, 1))
+    const keys = new Set([...plan.phases, ...plan.packages, ...plan.leaves].map((t) => t.key))
+    expect(plan.links.every(([a, b]) => keys.has(a) && keys.has(b) && a !== b)).toBe(true)
+    // Topological sort consumes every task: no cycle.
+    const indeg = new Map([...keys].map((k) => [k, 0]))
+    for (const [, b] of plan.links) indeg.set(b, indeg.get(b)! + 1)
+    const queue = [...keys].filter((k) => indeg.get(k) === 0)
+    for (let i = 0; i < queue.length; i++)
+      for (const [a, b] of plan.links) if (a === queue[i]) { indeg.set(b, indeg.get(b)! - 1); if (indeg.get(b) === 0) queue.push(b) }
+    expect(queue).toHaveLength(keys.size)
+    const linked = new Set(plan.links.flat())
+    expect(plan.packages.some((p) => linked.has(p.key))).toBe(false)
+    // Leaves have hours, and every task ends after it starts.
+    expect(plan.leaves.every((l) => (l.planned_hours ?? 0) > 0)).toBe(true)
+    expect([...plan.phases, ...plan.packages, ...plan.leaves].every((t) => Date.parse(t.deadline) > Date.parse(t.date_start))).toBe(true)
+  })
+
+  it('seeds 4 color groups and puts some tasks in them, one task per project in two', async () => {
+    await seedDemoData()
+    const bodies = (e: string) => callsFor(e).map(([, b]) => b as Record<string, unknown>)
+    const groups = bodies('project_color')
+    expect(groups).toHaveLength(4)
+    expect(groups.every((g) => typeof g.name === 'string' && /^#[0-9a-f]{6}$/.test(String(g.color)))).toBe(true)
+    const links = bodies('project_task_color')
+    expect(links).toHaveLength(12)
+    expect(links.every((l) => String(l.color_id).startsWith('project_color-') && String(l.task_id).startsWith('project_task-'))).toBe(true)
+    const perTask = new Map<string, number>()
+    for (const l of links) perTask.set(String(l.task_id), (perTask.get(String(l.task_id)) ?? 0) + 1)
+    expect([...perTask.values()].filter((n) => n === 2)).toHaveLength(3)
+  })
+
+  it('seeds a 5-box OBS for the project that has a company', async () => {
+    await seedDemoData()
+    const bodies = (e: string) => callsFor(e).map(([, b]) => b as Record<string, unknown>)
+    const company = (await createdFor('contact')).find((c) => c.kind === 'company')
+    const withCompany = (await createdFor('project')).filter((p) => p.company_id === company?.id)
+    expect(withCompany).toHaveLength(1)
+    const boxes = bodies('project_obs_box')
+    expect(boxes).toHaveLength(5)
+    expect(boxes.every((b) => b.project_id === withCompany[0].id)).toBe(true)
+    expect(boxes.map((b) => b.kind).sort()).toEqual(['contact', 'contact', 'contact', 'text', 'user'])
+    expect(boxes.some((b) => typeof b.color === 'string' && /^#[0-9a-f]{6}$/.test(b.color))).toBe(true)
+    expect(boxes.filter((b) => b.parent_id).length).toBe(4)
+    // The picker offers the company's linked people: every contact box's person is linked.
+    const links = bodies('contact_company')
+    expect(links.every((l) => l.company_id === company?.id)).toBe(true)
+    for (const b of boxes.filter((x) => x.kind === 'contact')) expect(links.map((l) => l.contact_id)).toContain(b.contact_id)
+  })
+
+  it('seeds 3 risks per large project, with the matching estimate on each link', async () => {
+    await seedDemoData()
+    const bodies = (e: string) => callsFor(e).map(([, b]) => b as Record<string, unknown>)
+    const risks = bodies('project_risk')
+    expect(risks).toHaveLength(6)
+    expect(risks.every((r) => typeof r.category_id === 'string')).toBe(true)
+    expect(new Set(risks.map((r) => r.category_id)).size).toBe(3)
+    expect(risks.map((r) => r.impact_on).sort()).toEqual(['cost', 'cost', 'delay', 'delay', 'quality', 'quality'])
+    const created = await createdFor('project_risk')
+    const impact = new Map(created.map((r) => [r.id, r.impact_on]))
+    const links = bodies('project_risk_task')
+    expect(links).toHaveLength(6)
+    for (const l of links) {
+      expect(typeof l.task_id).toBe('string')
+      expect(l[impact.get(l.risk_id) === 'delay' ? 'delay_days' : 'extra_hours']).toBeGreaterThan(0)
+    }
+    expect(links.filter((l) => impact.get(l.risk_id) === 'delay')).toHaveLength(4)
+  })
+
+  it('assigns nothing without a signed-in identity', async () => {
+    getIdentityMock.mockResolvedValue(null)
+    await seedDemoData()
+    expect(callsFor('project_task_user')).toHaveLength(0)
+  })
+
+  it('still seeds tasks when the stages cannot be read', async () => {
+    listMock.mockRejectedValueOnce(new Error('boom'))
+    await seedDemoData()
+    expect(callsFor('project_task').length).toBeGreaterThan(0)
+  })
+
+  it('gives every project a metrics window (date_start / date_end)', async () => {
+    await seedDemoData()
+    const day = 86_400_000
+    const created = await createdFor('project')
+    const plans = new Set(created.filter((p) => PLAN_NAMES.includes(String(p.name))).map((p) => String(p.id)))
+    const updates = updateMock.mock.calls
+      .filter(([e]) => e === 'project')
+      .map(([, id, body]) => [String(id), body as Record<string, unknown>] as const)
+    expect(updates).toHaveLength(5) // 3 small + 2 plan
+    const plan = buildProjectPlan()
+    const planStart = Date.parse(plan.phases[0].date_start)
+    const planEnd = Date.parse(plan.phases[plan.phases.length - 1].deadline)
+    for (const [id, body] of updates) {
+      const start = Date.parse(String(body.date_start))
+      const end = Date.parse(String(body.date_end))
+      if (plans.has(id)) {
+        expect(Math.abs(start - planStart)).toBeLessThan(10 * 60 * 1000)
+        expect(Math.abs(end - planEnd)).toBeLessThan(10 * 60 * 1000)
+      } else {
+        expect(Math.abs(start - (Date.now() - 30 * day))).toBeLessThan(10 * 60 * 1000)
+        expect(Math.abs(end - (Date.now() + 60 * day))).toBeLessThan(10 * 60 * 1000)
+        expect(end > start).toBe(true)
+      }
+    }
+  })
+})
+
+describe('seedDemoData — demo website', () => {
+  it('publishes what the site reads and creates its pages, linked to each other by slug', async () => {
+    const result = await seedDemoData()
+    expect(result.ok).toBe(true)
+
+    const pages = callsFor('website_page').map(([, body]) => body as { slug: string; layout: { config: { detail_slug?: string } }[] })
+    expect(pages.map((p) => p.slug)).toEqual(['home', 'events', 'products', 'event-details', 'product'])
+    const slugs = new Set(pages.map((p) => p.slug))
+    for (const p of pages) for (const b of p.layout) if (b.config.detail_slug) expect(slugs.has(b.config.detail_slug)).toBe(true)
+
+    const puts = apiRequestMock.mock.calls.filter(([m, path]) => m === 'PUT' && String(path).startsWith('/settings/website/public/'))
+    expect(puts.map(([, path]) => path)).toEqual([
+      '/settings/website/public/website_page',
+      '/settings/website/public/event',
+      '/settings/website/public/product',
+      '/settings/website/public/product_variant',
+    ])
+    expect(revalidateTagMock).toHaveBeenCalledWith('website_page', { expire: 0 })
+  })
+
+  it('keeps a table\'s published fields and filter, and skips pages whose slug exists', async () => {
+    apiRequestMock.mockImplementation(async (method: string, path: string) => {
+      if (method === 'GET' && path === '/settings/website/public') {
+        return [{ table: 'product', declared: [], fields: ['name', 'weight'], filter: { active: 'true' } }]
+      }
+      if (method === 'GET' && path.startsWith('/website_page?filter[slug]=home')) return { data: [{ id: 'existing' }] }
+      return {}
+    })
+    await seedDemoData()
+
+    expect(callsFor('website_page').map(([, body]) => (body as { slug: string }).slug)).not.toContain('home')
+    const product = apiRequestMock.mock.calls.find(([m, path]) => m === 'PUT' && path === '/settings/website/public/product')!
+    const body = product[2] as { fields: string[]; filter: Record<string, string> }
+    expect(body.filter).toEqual({ active: 'true' })
+    expect(body.fields).toEqual(expect.arrayContaining(['name', 'weight', 'picture', 'unit_price']))
   })
 })

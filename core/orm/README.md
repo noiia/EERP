@@ -286,6 +286,75 @@ err := orm.Transact(ctx, db, func(tx *orm.Tx) error {
 })
 ```
 
+### Row locking (`SelectForUpdate`)
+
+A read-check-write sequence (claim a job, take the last seat, mark a payment)
+races unless the rows read stay locked until the write commits. `SelectForUpdate`
+adds `FOR UPDATE` to a select; the locks are released on `COMMIT`/`ROLLBACK`.
+
+```go
+err := orm.Transact(ctx, db, func(tx *orm.Tx) error {
+    // Wait for any other holder, then own the row until the tx ends.
+    order, err := orders.SelectForUpdate().Where(orm.Cond("id = $1", id)).One(ctx, tx)
+    if err != nil {
+        return err
+    }
+    order.Status = "paid"
+    _, err = orders.WithTx(tx).Update(ctx, order, order.ID)
+    return err
+})
+
+// Work queue: concurrent workers each claim a different batch.
+due, err := orm.SelectForUpdate[Job](jobs.Meta()).SkipLocked().
+    Where(orm.Cond("status = $1", "pending")).OrderBy("run_at").Limit(20).
+    All(ctx, tx)
+```
+
+| Modifier | SQL | Use |
+|---|---|---|
+| `SkipLocked()` | `FOR UPDATE SKIP LOCKED` | queues — skip rows another tx holds |
+| `NoWait()` | `FOR UPDATE NOWAIT` | fail at once (SQLSTATE `55P03`) instead of waiting |
+| `Of("o")` | `FOR UPDATE OF o` | with a `Join`, lock only that table's rows |
+
+`Repository.SelectForUpdate()` excludes soft-deleted rows; `orm.SelectForUpdate[T](meta)`
+doesn't. Pitfalls: `All`/`One` return `orm.ErrLockOutsideTx` on anything but a `*orm.Tx`
+(outside a transaction the lock would end with the statement), and
+`orm.ErrLockWithAggregate` with `GroupBy`/`Having` (PostgreSQL refuses it); `Count()` drops
+the lock. Lock rows in a consistent order (e.g. `OrderBy("id")`) when a transaction locks
+several, or two transactions can deadlock.
+
+### Geographic fields
+
+Spatial columns ([ADR-029](../../docs/adr/ADR-029-geographic-fields.md)) need PostGIS (boot runs
+`CREATE EXTENSION IF NOT EXISTS postgis`). Declare nullable pointers; add `index=gist` so
+`near`/`within` use an index:
+
+```go
+type Company struct {
+    model.BaseModel
+    Location    *orm.GeoPoint `db:"geo_location,index=gist"`  // geography(Point,4326)
+    ServiceZone *orm.GeoShape `db:"service_zone,index=gist"`  // Polygon | MultiPolygon | LineString
+}
+```
+
+Typed repositories scan/write them transparently (EWKB hex in, EWKT out). Over HTTP the value is a
+GeoJSON geometry (`{"type":"Point","coordinates":[lon,lat]}`); invalid geometry is a 422
+`VALIDATION_ERROR` naming the field. List params:
+
+| Param | Effect |
+|-------|--------|
+| `near[col]=lon,lat` | nearest first; rows carry read-only `_distance_m` |
+| `within[col]=lon,lat,meters` | radius filter |
+| `covers[col]=lon,lat` | zones containing the point |
+| `inside[col]=table:id:shape_col` | points inside another record's zone |
+
+Malformed values are 400; an unusable reference (unregistered, inactive module, unreadable,
+gated, wrong kind) is 404; `inside` is refused on public routes. `orm.GeoDistance(ctx, db,
+"table:id:col", "table:id:col")` returns the distance in meters (`nil` when a side is empty) with
+the same checks. Pitfalls: coordinates are `[lon, lat]`; boundary points are covered; at most one
+`near` (ties — e.g. unlocated rows — ordered by primary key); without a GiST index `near` scans
+the table; a read with `inside` bypasses the Redis read cache, since it depends on another table.
+
 ### Query builders (advanced)
 
 Use builders directly when the repository layer isn't expressive enough.
@@ -402,6 +471,59 @@ orm.Register[Product](
 )
 ```
 
+### Row scope
+
+Tenant isolation is automatic; a per-caller restriction on top of it ("a project is visible to
+its members") is a **row scope**: a function returning, per request, the condition limiting the
+caller's rows. Every generic read and write applies it (list and its total, `?distinct=`,
+`?aggregate=`, get, update, restore, delete), so a row outside it is a 404. Such a table is never
+served from the read cache.
+
+```go
+orm.Register[Project](orm.WithRowScope(func(ctx context.Context) (orm.Condition, bool, error) {
+    user, ok := callerFromContext(ctx) // the module's own identity lookup
+    if !ok {
+        return orm.Condition{}, false, errors.New("no caller") // fail closed
+    }
+    if user.IsAdmin {
+        return orm.Condition{}, false, nil // ok=false: no restriction
+    }
+    return orm.Cond("EXISTS (SELECT 1 FROM project_member m WHERE m.project_id = project.id AND m.user_id = $1)", user.ID), true, nil
+}))
+```
+
+Services anchored on another table's record check it with
+`orm.CanSeeRecord(ctx, db, "project", id)` (true for a table without a scope). Pitfalls: bind
+values as `$n` parameters; typed `Repository[T]` reads and raw SQL are **not** scoped. See
+[ADR-038](../../docs/adr/ADR-038-row-level-access.md).
+
+### Extending another module's table
+
+A module adds columns to a table another module owns, without touching that module's
+code, in one of two ways:
+
+| | `orm.ExtendSchema` | Embed + re-`Register` |
+|---|---|---|
+| Shape | column list, no Go struct | ``type CRM struct { crm.CRM; Date *time.Time `db:"date"` }`` registered with `WithTableName("crm")` |
+| Several extenders on one table | yes, they compose | no — the last `Register` replaces the entry |
+| Typed Go access to the new fields | no (generic CRUD / raw SQL) | yes |
+
+```go
+func (m *loyaltyModule) Register() error {
+    return orm.ExtendSchema("crm", []orm.SchemaField{
+        {Column: "loyalty_points", Type: reflect.TypeFor[int]()}, // INTEGER
+        {Column: "loyalty_note"},                                  // nil Type = TEXT
+    })
+}
+```
+
+Extension columns are always nullable (a required column would break every writer of the
+base table that doesn't know about it) and are kept when the table is registered again later
+— by an embedding extender, or when every module re-registers on a database switch. The base
+module must register first: list it in `depends` (module.json) and import its package.
+Pitfall: an embedding extender's own new fields must be pointers, for the same nullability
+reason.
+
 ### api.yaml — bulk overrides without code changes
 
 Create `api.yaml` in the working directory (next to the binary) to configure tables without touching Go code. Load it before registering:
@@ -473,6 +595,27 @@ Response `200 OK`:
 ```
 
 Soft-deleted rows are always excluded from list results.
+
+`total` is exact up to 10 000 matching rows (`crud.ExactCountLimit`). Beyond that
+it is the planner's estimate and the response adds `"total_estimated": true`
+(the key is absent when exact). Why: an exact `COUNT(*)` scans every matching
+row, so its cost grows with the table while the page itself stays fast. Never
+use an estimated total as a loop bound or a last-page number — for a filter the
+planner can't estimate it can undercount by orders of magnitude (floored at
+10 001) — page until an empty page
+([ADR-032](../../docs/adr/ADR-032-list-read-performance.md)).
+
+A hand-written list endpoint reports its total the same way with one call on
+its query builder (the `mail_outbox` admin list does):
+
+```go
+total, estimated, err := repo.Query().Where(cond).BoundedTotal(ctx, db, orm.ExactCountLimit)
+```
+
+`BoundedTotal` is built on two primitives you can also call directly:
+`CountUpTo` (an exact count scanning at most limit+1 rows) and `EstimateRows`
+(the planner's estimate via `EXPLAIN`, nothing scanned). Never add a bare
+`count(*)` to a list endpoint over a table that grows.
 
 ### Get by ID
 
@@ -569,6 +712,19 @@ Validation errors also nest a `fields` array under `error`:
 
 ---
 
+## Generated columns
+
+**Why.** A value derived from other columns (seats left = capacity - seats taken) is best computed by Postgres: it can be filtered and sorted like any column and can never drift from its inputs.
+
+**How.** Tag the field `db:"remaining_seats,generated"`. The ORM still selects, scans, filters and sorts it, but never writes it: it is left out of typed and generic INSERT, UPDATE and Upsert, the generic `ensureColumns` pass does not add it, and its API field is read-only. The owning module adds the column with its expression in `Migrate()`:
+
+```sql
+ALTER TABLE event_session ADD COLUMN IF NOT EXISTS remaining_seats integer
+  GENERATED ALWAYS AS (capacity - seats_taken) STORED
+```
+
+**Pitfalls.** After `Create`/`Update` the struct's value comes from `RETURNING`, never from what the caller put in it. A table that does not exist yet is created without the column until `Migrate()` runs, so add it there.
+
 ## Running tests
 
 Unit tests (no database required):
@@ -583,11 +739,13 @@ Single test:
 make run-back-tests BACKTESTPATH=./orm/... ARGS="-run TestService_Create"
 ```
 
-Integration tests (require a running Postgres, set `TEST_DSN`):
+Integration tests get their database from `core/internal/testdb`: `TEST_DSN` if set
+(CI), otherwise the DSN derived from the config named by `CONFIG` (what
+`make run-back-tests` sets). With neither, they skip — no build tag needed:
 
 ```bash
-TEST_DSN="postgres://postgres:postgres@localhost:5432/erp" \
-    go test -tags integration ./orm/...
+make run-back-tests BACKTESTPATH=./orm/...                                  # dev DB
+TEST_DSN="postgres://postgres:<pw>@localhost:5432/poc" go test ./orm/...   # any DB
 ```
 
 ---
@@ -598,7 +756,7 @@ TEST_DSN="postgres://postgres:postgres@localhost:5432/erp" \
 orm/
 ├── orm.go                    — public facade (type aliases + top-level functions)
 ├── app.go                    — App{DB, Logger, Config}, New(), Close()
-├── register.go               — Register[T], AutoScan, LoadAPIConfig, option constructors
+├── register.go               — Register[T], LoadAPIConfig, option constructors
 │
 ├── server/                   — HTTP API server (public — importable by cmd/server)
 │   ├── server.go             — Server, New(), RegisterRoutes(), Start()

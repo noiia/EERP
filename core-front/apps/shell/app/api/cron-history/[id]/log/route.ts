@@ -1,20 +1,10 @@
-import { NextResponse } from 'next/server'
-import { ApiError, streamCronHistoryLog } from '@eerp/core-front/server'
+import { streamCronHistoryLog } from '@eerp/core-front/server'
+import { errorResponse } from '@/lib/route-errors'
 
 // BFF proxy for one cron_history run's log file (docs/adr/ADR-016-cron-
 // scheduler.md): stream its bytes. Go authorizes and tenant-pins; Next only
 // forwards with the session Bearer — same shape as the /api/pictures/[id]
 // route this mirrors.
-
-function errorResponse(e: unknown): NextResponse {
-  if (e instanceof ApiError) {
-    return NextResponse.json(
-      { error: { code: e.code, message: e.message, request_id: e.requestId } },
-      { status: e.status },
-    )
-  }
-  throw e
-}
 
 interface RouteContext {
   params: Promise<{ id: string }>

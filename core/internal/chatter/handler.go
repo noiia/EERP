@@ -9,9 +9,10 @@ import (
 	"time"
 
 	"core/internal/auth"
+	"core/orm"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // Handler serves the dedicated chatter-messages endpoints. Mounted behind
@@ -45,16 +46,29 @@ type chatterStore interface {
 type Handler struct {
 	store chatterStore
 	users userStore
+	scope orm.Executor
 }
 
-// NewHandler constructs the chatter Handler from concrete implementations.
-func NewHandler(store *Repository, users *auth.UserRepository) *Handler {
+// NewHandler constructs the chatter Handler from its dependencies (interfaces, so tests can pass fakes).
+func NewHandler(store chatterStore, users userStore) *Handler {
 	return &Handler{store: store, users: users}
 }
 
-// newHandlerWith constructs a Handler from interface values (tests).
-func newHandlerWith(store chatterStore, users userStore) *Handler {
-	return &Handler{store: store, users: users}
+// WithRowScope makes the handler answer 404 for anchors the caller's row scope
+// hides (ADR-038). Unset (unit tests with fakes), no anchor check is made.
+func (h *Handler) WithRowScope(db orm.Executor) *Handler {
+	h.scope = db
+	return h
+}
+
+// hidden reports whether the anchor record is invisible to the caller; a
+// scope error is returned as is (a 500 — fail closed, never a 404).
+func (h *Handler) hidden(ctx context.Context, table string, id uuid.UUID) (bool, error) {
+	if h.scope == nil {
+		return false, nil
+	}
+	ok, err := orm.CanSeeRecord(ctx, h.scope, table, id)
+	return !ok && err == nil, err
 }
 
 type messageResponse struct {
@@ -86,7 +100,7 @@ type listEnvelope struct {
 
 // List handles GET /api/v1/chatter_messages?table=&record= — every entry on
 // the anchor, newest first.
-func (h *Handler) List(c echo.Context) error {
+func (h *Handler) List(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	table := c.QueryParam("table")
@@ -96,6 +110,12 @@ func (h *Handler) List(c echo.Context) error {
 	recordID, err := uuid.Parse(c.QueryParam("record"))
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "record must be a UUID.")
+	}
+
+	if hide, err := h.hidden(c.Request().Context(), table, recordID); err != nil {
+		return fmt.Errorf("chatter: row scope: %w", err)
+	} else if hide {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such record.")
 	}
 
 	messages, err := h.store.ListByAnchor(c.Request().Context(), identity.TenantID, table, recordID)
@@ -114,7 +134,7 @@ func (h *Handler) List(c echo.Context) error {
 // form's own post-save summary — both posted the same way, see module doc),
 // and body text. Author is always the authenticated caller, never trusted
 // from the request.
-func (h *Handler) Create(c echo.Context) error {
+func (h *Handler) Create(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	var req struct {
@@ -144,6 +164,12 @@ func (h *Handler) Create(c echo.Context) error {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", fmt.Sprintf("body exceeds %d characters.", maxBodyLen))
 	}
 
+	if hide, err := h.hidden(c.Request().Context(), req.TableName, recordID); err != nil {
+		return fmt.Errorf("chatter: row scope: %w", err)
+	} else if hide {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such record.")
+	}
+
 	author, err := h.users.FindByID(c.Request().Context(), identity.UserID)
 	if err != nil {
 		return fmt.Errorf("chatter: create: find author: %w", err)
@@ -160,7 +186,7 @@ func (h *Handler) Create(c echo.Context) error {
 	return c.JSON(http.StatusCreated, toResponse(created))
 }
 
-func errorJSON(c echo.Context, status int, code, msg string) error {
+func errorJSON(c *echo.Context, status int, code, msg string) error {
 	return c.JSON(status, map[string]any{
 		"error": map[string]any{
 			"code":       code,

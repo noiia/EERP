@@ -14,7 +14,7 @@ import (
 	"core/internal/auth"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // ── Stubs ─────────────────────────────────────────────────────────────────────
@@ -109,17 +109,12 @@ func serve(h echo.HandlerFunc, method, target string, body io.Reader, identity a
 		// param must be set in one call — a loop calling them per key would
 		// silently keep only the last one (harmless for pictures' single-:id
 		// routes, a real bug for this package's two-param :name/:id route).
-		names := make([]string, 0, len(params))
-		values := make([]string, 0, len(params))
 		for k, v := range params {
-			names = append(names, k)
-			values = append(values, v)
+			c.SetPathValues(append(c.PathValues(), echo.PathValue{Name: k, Value: v}))
 		}
-		c.SetParamNames(names...)
-		c.SetParamValues(values...)
 	}
 	if err := h(c); err != nil {
-		e.HTTPErrorHandler(err, c)
+		e.HTTPErrorHandler(c, err)
 	}
 	return rec
 }

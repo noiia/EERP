@@ -63,7 +63,22 @@ describe('ViewsSettings', () => {
 
     expect(await screen.findByText('Forbidden: settings:views:write')).toBeInTheDocument()
     // Reverted: the select goes back to "None".
-    expect(screen.getByLabelText('Status field')).toHaveTextContent('None')
+    expect(screen.getByRole('combobox', { name: 'Status field' })).toHaveTextContent('None')
+  })
+
+  it('offers the date fields as Gantt start and end, saving each choice', async () => {
+    render(<ViewsSettings rows={rows} canEdit />)
+    await pickOption('Gantt start', 'Due date')
+    await waitFor(() =>
+      expect(saveMock).toHaveBeenCalledWith('crm', expect.objectContaining({ ganttStartField: 'due_date' })),
+    )
+    await pickOption('Gantt end', 'Due date')
+    await waitFor(() =>
+      expect(saveMock).toHaveBeenLastCalledWith(
+        'crm',
+        expect.objectContaining({ ganttStartField: 'due_date', ganttEndField: 'due_date' }),
+      ),
+    )
   })
 
   it('renders read-only without the write permission', () => {
@@ -99,7 +114,7 @@ describe('ViewsSettings — module-declared defaults', () => {
 
   it("pre-selects the module's default with no override yet, and no revert button", () => {
     render(<ViewsSettings rows={defaultedRows} canEdit />)
-    expect(screen.getByLabelText('Status field')).toHaveTextContent('Status')
+    expect(screen.getByRole('combobox', { name: 'Status field' })).toHaveTextContent('Status')
     expect(screen.getByRole('switch', { name: 'Enable Graphs' })).toBeChecked()
     expect(screen.queryByRole('button', { name: 'Revert to module settings' })).not.toBeInTheDocument()
   })
@@ -115,7 +130,7 @@ describe('ViewsSettings — module-declared defaults', () => {
     await waitFor(() => expect(screen.queryByText('Override the module default?')).not.toBeInTheDocument())
     expect(saveMock).not.toHaveBeenCalled()
     // Cancelled: the select is still showing the module's own default.
-    expect(screen.getByLabelText('Status field')).toHaveTextContent('Status')
+    expect(screen.getByRole('combobox', { name: 'Status field' })).toHaveTextContent('Status')
   })
 
   it('confirming the override saves the new value and reveals the revert button', async () => {
@@ -155,6 +170,27 @@ describe('ViewsSettings — module-declared defaults', () => {
     await pickOption('Date field', 'Due date')
     expect(screen.queryByText('Override the module default?')).not.toBeInTheDocument()
     await waitFor(() => expect(saveMock).toHaveBeenCalled())
+  })
+
+  it('a Gantt module default asks before overriding and is reverted with the rest', async () => {
+    const ganttRows: ViewEntityRow[] = [
+      {
+        ...defaultedRows[0],
+        defaults: { ganttStartField: 'due_date', ganttEndField: 'due_date' },
+        config: { kanbanStatusField: null, calendarDateField: null, ganttStartField: null, ganttEndField: 'due_date' },
+      },
+    ]
+    render(<ViewsSettings rows={ganttRows} canEdit />)
+    expect(screen.getByRole('combobox', { name: 'Gantt start' })).toHaveTextContent('Due date')
+    await pickOption('Gantt start', 'None')
+    expect(screen.getByText('Override the module default?')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByText('Override the module default?')).not.toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Revert to module settings' }))
+    await waitFor(() =>
+      expect(saveMock).toHaveBeenCalledWith('crm', expect.objectContaining({ ganttStartField: null, ganttEndField: null })),
+    )
   })
 
   it('revert clears only the overridden fields the module actually defaults, restoring their value', async () => {

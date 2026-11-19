@@ -61,24 +61,27 @@ func TestSaleLine_JSONUnmarshalsIDFields(t *testing.T) {
 	}
 }
 
-func TestResolveTaxRate(t *testing.T) {
-	product := warehouse.Product{TaxRate: 0.2}
+// A line's tax rate: the variant's own extra rate (0 without one), plus —
+// on a quote line — the product's percentage taxes; a fixed-amount tax is no
+// rate.
+func TestTaxRates(t *testing.T) {
 	override := 0.1
-
-	tests := []struct {
-		name    string
-		variant warehouse.ProductVariant
-		want    float64
-	}{
-		{"no override falls back to product tax rate", warehouse.ProductVariant{}, 0.2},
-		{"override wins over product tax rate", warehouse.ProductVariant{TaxRate: &override}, 0.1},
+	if got := variantRate(warehouse.ProductVariant{}); got != 0 {
+		t.Errorf("variantRate(no override) = %v, want 0", got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := resolveTaxRate(product, tt.variant); got != tt.want {
-				t.Errorf("resolveTaxRate() = %v, want %v", got, tt.want)
-			}
-		})
+	if got := variantRate(warehouse.ProductVariant{TaxRate: &override}); got != 0.1 {
+		t.Errorf("variantRate(override) = %v, want 0.1", got)
+	}
+	taxes := []SaleTax{
+		{Kind: "percentage", Rate: 0.2},
+		{Kind: "percentage", Rate: 0.01},
+		{Kind: "fixed", Amount: 5, Rate: 0.5}, // a fixed tax's rate is ignored
+	}
+	if got := percentageRate(taxes); math.Abs(got-0.21) > 1e-9 {
+		t.Errorf("percentageRate = %v, want 0.21", got)
+	}
+	if got := percentageRate(nil); got != 0 {
+		t.Errorf("percentageRate(nil) = %v, want 0", got)
 	}
 }
 

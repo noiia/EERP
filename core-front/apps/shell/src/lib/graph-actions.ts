@@ -1,6 +1,15 @@
 'use server'
-import { ApiError, apiRequest } from '@eerp/core-front/server'
-import { EMPTY_GRAPH_LAYOUT, type GraphLayout, type Tile } from '@eerp/core-front'
+import { ApiError, apiRequest, createServerApiClient } from '@eerp/core-front/server'
+import {
+  EMPTY_GRAPH_LAYOUT,
+  type EntityListOptions,
+  type GraphAggregateRequest,
+  type GraphAggregateRow,
+  type GraphField,
+  type GraphFieldDraft,
+  type GraphLayout,
+  type Tile,
+} from '@eerp/core-front'
 import type { GraphSaveResult } from '@eerp/core-front'
 
 // Entity-generic Server Actions backing the engine's GraphOps: how
@@ -33,5 +42,61 @@ export async function setEntityGraphLayout(entity: string, tiles: Tile[]): Promi
     return { ok: true }
   } catch (e) {
     return { ok: false, message: e instanceof ApiError ? e.message : 'Could not save the graph layout.' }
+  }
+}
+
+/** Calculated fields the caller's roles may see (Go filters by role). */
+export async function listEntityGraphFields(entity: string): Promise<GraphField[]> {
+  try {
+    const res = await apiRequest<{ data: GraphField[] }>('GET', `/graph_fields?entity=${encodeURIComponent(entity)}`)
+    return res.data
+  } catch {
+    return []
+  }
+}
+
+export async function createEntityGraphField(entity: string, draft: GraphFieldDraft): Promise<GraphSaveResult> {
+  try {
+    await apiRequest('POST', '/graph_fields', { entity, ...draft })
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, message: e instanceof ApiError ? e.message : 'Could not create the field.' }
+  }
+}
+
+export async function deleteEntityGraphField(id: string): Promise<GraphSaveResult> {
+  try {
+    await apiRequest('DELETE', `/graph_fields/${id}`)
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, message: e instanceof ApiError ? e.message : 'Could not delete the field.' }
+  }
+}
+
+export async function updateEntityGraphField(id: string, draft: Omit<GraphFieldDraft, 'key'>): Promise<GraphSaveResult> {
+  try {
+    await apiRequest('PUT', `/graph_fields/${id}`, draft)
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, message: e instanceof ApiError ? e.message : 'Could not update the field.' }
+  }
+}
+
+/**
+ * Server-side Graph aggregation (docs/adr/ADR-023-graph-server-aggregation.md):
+ * Go aggregates every row matching `options` instead of the fetched page.
+ * null on any failure (a 400 for a field Go can't aggregate, a permission
+ * gap, a network hiccup) — the tile then falls back to aggregating the
+ * fetched page client-side, the pre-ADR-023 behavior.
+ */
+export async function aggregateEntity(
+  entity: string,
+  req: GraphAggregateRequest,
+  options?: EntityListOptions,
+): Promise<GraphAggregateRow[] | null> {
+  try {
+    return await createServerApiClient().aggregate(entity, req, options)
+  } catch {
+    return null
   }
 }

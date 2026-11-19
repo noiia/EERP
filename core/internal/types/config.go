@@ -1,10 +1,65 @@
 package types
 
 import (
+	"core/orm"
+
+	"net"
+	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 )
+
+// ResolvePaths anchors the relative path fields (module_root, api_config_path,
+// cron_log_dir — "cron_logs" when unset) to dir, the config file's directory,
+// not the process CWD: one committed config then works from every working
+// directory the app, the tests and the frontend build run from. Absolute
+// paths are left untouched.
+func (c *Config) ResolvePaths(dir string) {
+	resolve := func(p string) string {
+		if p == "" || filepath.IsAbs(p) {
+			return p
+		}
+		return filepath.Join(dir, p)
+	}
+	c.ApiConfigPath = resolve(c.ApiConfigPath)
+	for i, root := range c.ModuleRoot {
+		c.ModuleRoot[i] = resolve(root)
+	}
+	if c.CronLogDir == "" {
+		c.CronLogDir = "cron_logs"
+	}
+	c.CronLogDir = resolve(c.CronLogDir)
+}
+
+// DSN is the PostgreSQL connection URL, credentials URL-escaped.
+func (c *Config) DSN() string {
+	u := url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(c.DbUser, c.DbPassword),
+		Host:   net.JoinHostPort(c.DbHost, strconv.Itoa(c.DbPort)),
+		Path:   "/" + c.DbName,
+	}
+	return u.String()
+}
+
+// PoolConfig is the database pool configuration for dsn: the pool size and
+// timings from this config (seconds converted to durations; 0 leaves the
+// pool's own default). Every pool core-back opens — the boot pool and a
+// database-management standby — goes through it, so they behave the same.
+func (c Config) PoolConfig(dsn string) orm.Config {
+	sec := func(n int) time.Duration { return time.Duration(n) * time.Second }
+	return orm.Config{
+		DSN:               dsn,
+		MaxConns:          c.MaxConns,
+		MinConns:          c.MinConns,
+		MaxConnIdleTime:   sec(c.MaxConnIdleSeconds),
+		MaxConnLifeTime:   sec(c.MaxConnLifeSeconds),
+		HealthCheckPeriod: sec(c.HealthCheckSeconds),
+		ConnectTimeout:    sec(c.ConnectTimeoutSeconds),
+	}
+}
 
 // DefaultConfig returns a *Config with every optional field pre-filled with a
 // sensible development default.  Required fields (db credentials, module_root,
@@ -13,46 +68,65 @@ import (
 // the required fields, and pass the result via -config.
 func DefaultConfig() *Config {
 	return &Config{
-		DbPort:            5432,
-		DbHost:            "localhost",
-		DbUser:            "postgres",
-		DbName:            "eerp",
-		MaxConns:          10,
-		MinConns:          2,
-		PublicAddress:     "0.0.0.0",
-		BackendPort:       8080,
-		BackendHost:       "127.0.0.1",
-		BackendVersion:    "v1",
-		MaxConnIdleTime:   5 * time.Minute,
-		MaxConnLifeTime:   30 * time.Minute,
-		HealthCheckPeriod: time.Minute,
-		ConnectTimeout:    10 * time.Second,
-		ApiConfigPath:     "api.yaml",
-		ModuleRoot:        []string{"modules"},
-		CronLogDir:        "cron_logs",
+		DbPort:                5432,
+		DbHost:                "localhost",
+		DbUser:                "postgres",
+		DbName:                "eerp",
+		MaxConns:              10,
+		MinConns:              2,
+		PublicAddress:         "0.0.0.0",
+		BackendPort:           8080,
+		BackendHost:           "127.0.0.1",
+		BackendVersion:        "v1",
+		MaxConnIdleSeconds:    300,
+		MaxConnLifeSeconds:    1800,
+		HealthCheckSeconds:    60,
+		ConnectTimeoutSeconds: 10,
+		ApiConfigPath:         "api.yaml",
+		ModuleRoot:            []string{"modules"},
+		CronLogDir:            "cron_logs",
 	}
 }
 
 // Config fields
 type Config struct {
-	ModuleRoot        []string      `json:"module_root" needed:"true"`
-	MasterPassword    string        `json:"master_key" needed:"false"`
-	AccessTTLSeconds  int           `json:"access_ttl_seconds" needed:"false"`
-	RefreshTTLSeconds int           `json:"refresh_ttl_seconds" needed:"false"`
-	DbName            string        `json:"db_name" needed:"false"`
-	DbPort            int           `json:"db_port" needed:"true"`
-	DbHost            string        `json:"db_host" needed:"true"`
-	DbUser            string        `json:"db_user" needed:"true"`
-	DbPassword        string        `json:"db_password" needed:"true"`
-	MaxConns          int32         `json:"max_connection" needed:"false"`
-	MinConns          int32         `json:"min_connection" needed:"false"`
-	MaxConnIdleTime   time.Duration `json:"max_conn_idle_time" needed:"false"`
-	MaxConnLifeTime   time.Duration `json:"max_conn_life_time" needed:"false"`
-	HealthCheckPeriod time.Duration `json:"health_check_period" needed:"false"`
-	ConnectTimeout    time.Duration `json:"connect_timeout" needed:"false"`
-	ApiConfigPath     string        `json:"api_config_path" needed:"false"`
-	PublicAddress     string        `json:"public_address" needed:"true"`
-	BackendPort       int           `json:"backend_port" needed:"true"`
+	// MCP is opt-in and uses ERP Bearer JWTs. Writes additionally require both
+	// MCPAllowWrites and the existing API permission. Origins are exact matches;
+	// an empty list allows only native clients that send no Origin header.
+	MCPEnabled            bool     `json:"mcp_enabled" needed:"false"`
+	MCPAllowWrites        bool     `json:"mcp_allow_writes" needed:"false"`
+	MCPAllowedOrigins     []string `json:"mcp_allowed_origins" needed:"false"`
+	MCPRateLimitPerMinute int      `json:"mcp_rate_limit_per_minute" needed:"false"`
+	ModuleRoot            []string `json:"module_root" needed:"true"`
+	// Environment is exactly "development" or "production" — main.go refuses to
+	// boot on anything else (docs/security/pentest-2026-09-24.md's follow-up).
+	// It's the single switch behind two behaviors that used to be separate,
+	// easy-to-forget toggles: SeedDemoData/the frontend's demo-seed tool only
+	// ever run when this is "development" (regardless of their own flags/env
+	// vars), and a freshly-seeded default admin (auth.SeedDevAdmin) is forced
+	// to change its password on first login only when this is "production".
+	Environment       string `json:"environment" needed:"true"`
+	MasterPassword    string `json:"master_key" needed:"false"`
+	AccessTTLSeconds  int    `json:"access_ttl_seconds" needed:"false"`
+	RefreshTTLSeconds int    `json:"refresh_ttl_seconds" needed:"false"`
+	DbName            string `json:"db_name" needed:"false"`
+	DbPort            int    `json:"db_port" needed:"true"`
+	DbHost            string `json:"db_host" needed:"true"`
+	DbUser            string `json:"db_user" needed:"true"`
+	DbPassword        string `json:"db_password" needed:"true"`
+	MaxConns          int32  `json:"max_connection" needed:"false"`
+	MinConns          int32  `json:"min_connection" needed:"false"`
+	// Pool timings, in whole SECONDS (the unit every shipped config writes —
+	// never time.Duration fields, which a JSON number would decode as
+	// nanoseconds). 0 = the pool's default (30 min idle, 1 h lifetime,
+	// 1 min health check, 10 s connect timeout). Applied via PoolConfig.
+	MaxConnIdleSeconds    int    `json:"max_conn_idle_time" needed:"false"`
+	MaxConnLifeSeconds    int    `json:"max_conn_life_time" needed:"false"`
+	HealthCheckSeconds    int    `json:"health_check_period" needed:"false"`
+	ConnectTimeoutSeconds int    `json:"connect_timeout" needed:"false"`
+	ApiConfigPath         string `json:"api_config_path" needed:"false"`
+	PublicAddress         string `json:"public_address" needed:"true"`
+	BackendPort           int    `json:"backend_port" needed:"true"`
 	// BackendHost / BackendVersion describe how clients (e.g. the frontend BFF) reach
 	// the API — distinct from PublicAddress, which is the bind address. The frontend
 	// derives its API_BASE from BackendHost[:BackendPort] and API version from
@@ -65,12 +139,25 @@ type Config struct {
 	AllowedOrigins []string `json:"allowed_origins" needed:"false"`
 	// RequestBodyLimit caps request body size (e.g. "1M", "512K"). Defaults to "1M".
 	RequestBodyLimit string `json:"request_body_limit" needed:"false"`
+	// UploadBodyLimit caps the file upload routes (/api/v1/pictures,
+	// /api/v1/attachments), which are exempt from RequestBodyLimit. Defaults to "20M".
+	UploadBodyLimit string `json:"upload_body_limit" needed:"false"`
 	// AuthRateLimitPerMinute throttles the public auth endpoints per client IP to
 	// blunt credential brute-forcing. Defaults to 20/min when unset.
 	AuthRateLimitPerMinute int `json:"auth_rate_limit_per_minute" needed:"false"`
-	// SeedDevAdmin, when true, seeds a development admin user on startup so login works
-	// out of the box. DEV ONLY — never enable in production.
-	SeedDevAdmin bool `json:"seed_dev_admin" needed:"false"`
+	// WebsiteTenantID pins the tenant the public website serves (ADR-024).
+	// Empty = the database's single tenant; with several tenants and no
+	// value the public routes are not mounted.
+	WebsiteTenantID string `json:"website_tenant_id" needed:"false"`
+	// PublicRateLimitPerMinute throttles /api/v1/public and /api/v1/website
+	// per client IP; <= 0 means 300.
+	PublicRateLimitPerMinute int `json:"public_rate_limit_per_minute" needed:"false"`
+	// SeedDemoData, when true, seeds DEV-ONLY demo data on startup (currently just
+	// Property Management's sample property/equipment/tenant/rent-receipt) so a module
+	// isn't empty out of the box. Never enable in production. Unrelated to the default
+	// admin credential — auth.SeedDevAdmin runs unconditionally in every mode, since a
+	// login must always work regardless of this flag; see its own doc comment.
+	SeedDemoData bool `json:"seed_demo_data" needed:"false"`
 	// S3* configure the object store backing the picture service (Garage in dev —
 	// infra/garage/README.md). All empty = no object storage: the picture endpoints
 	// are simply not mounted. The endpoint carries an explicit scheme
@@ -88,6 +175,9 @@ type Config struct {
 	// generation is simply not mounted, same posture as the picture service.
 	PDFServiceURL   string `json:"pdf_service_url" needed:"false"`
 	FrontendBaseURL string `json:"frontend_base_url" needed:"false"`
+	// SiteURL is the public website origin, used to build links in
+	// customer emails (e.g. a booking's cancel link).
+	SiteURL string `json:"site_url" needed:"false"`
 	// NatsURL switches report rendering from a direct HTTP call to
 	// pdf-service onto NATS request-reply (docs/roadmaps/pdf-reports.md
 	// Phase 5) — N pdf-service replicas subscribed to the same queue group
@@ -103,7 +193,24 @@ type Config struct {
 	// Relative paths resolve the same way ModuleRoot does (anchored to the
 	// config file's directory). Defaults to "cron_logs".
 	CronLogDir string `json:"cron_log_dir" needed:"false"`
-	DSN        string
+	// RedisURL enables the OPTIONAL read cache between the generic CRUD API
+	// and Postgres (docs/adr/ADR-022-optional-redis-query-cache.md), e.g.
+	// "redis://redis:6379/0". Empty = no cache, no Redis needed. Set but
+	// unreachable at boot = logged and the app runs uncached.
+	RedisURL string `json:"redis_url" needed:"false"`
+	// RedisTTLSeconds caps how long a cached read lives even without an
+	// invalidating write (writes from outside the app — psql, another tool —
+	// are only caught by this). Defaults to 60.
+	RedisTTLSeconds int `json:"redis_ttl_seconds" needed:"false"`
+	// SMTP delivery for internal/mail. Empty SMTPHost disables the sender;
+	// enqueued mail waits as pending until it's configured. SMTPTLS is
+	// "starttls" (default), "implicit" (port 465) or "none" (dev Mailpit).
+	SMTPHost     string `json:"smtp_host" needed:"false"`
+	SMTPPort     int    `json:"smtp_port" needed:"false"`
+	SMTPUser     string `json:"smtp_user" needed:"false"`
+	SMTPPassword string `json:"smtp_password" needed:"false"`
+	SMTPFrom     string `json:"smtp_from" needed:"false"`
+	SMTPTLS      string `json:"smtp_tls" needed:"false"`
 }
 
 // BackendBaseURL builds the public API base URL clients use to reach the backend:
@@ -126,4 +233,12 @@ func (c Config) BackendBaseURL() string {
 		version = "v1"
 	}
 	return host + "/api/" + version
+}
+
+// UploadBodyLimitOrDefault is UploadBodyLimit, or "20M" when unset.
+func (c Config) UploadBodyLimitOrDefault() string {
+	if c.UploadBodyLimit == "" {
+		return "20M"
+	}
+	return c.UploadBodyLimit
 }

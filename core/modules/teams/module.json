@@ -1,0 +1,19 @@
+{
+    "active": true,
+    "type": "go",
+    "name": "teams",
+    "display_name": "Teams",
+    "version": "0.0.1",
+    "author": "",
+    "description": "Teams: channels, chat and shared files",
+    "depends": [],
+    "static_files": {
+        "views": [
+            "TeamsViews.ts"
+        ]
+    },
+    "is_service": false,
+    "auto_install": false,
+    "app_mode": true,
+    "menu_icon": "users"
+}

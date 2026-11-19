@@ -22,7 +22,14 @@ interface ChatterMessageDTO {
 }
 
 function fromDTO(dto: ChatterMessageDTO): ChatterMessageRecord {
-  return { id: dto.id, author: dto.author_email, kind: dto.kind, body: dto.body, createdAt: dto.created_at }
+  return {
+    id: dto.id,
+    author: dto.author_email,
+    authorId: dto.author_id,
+    kind: dto.kind,
+    body: dto.body,
+    createdAt: dto.created_at,
+  }
 }
 
 export async function listChatterMessages(

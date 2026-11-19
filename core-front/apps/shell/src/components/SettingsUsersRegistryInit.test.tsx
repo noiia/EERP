@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { render } from '@testing-library/react'
 import { moduleRegistry } from '@eerp/core-front'
-import { roleViewPermissionFormDescriptor } from '../../app/settings/users/descriptors'
+import { roleViewPermissionFormDescriptor } from '../../app/app/settings/users/descriptors'
 import { SettingsUsersRegistryInit } from './SettingsUsersRegistryInit'
 
 describe('SettingsUsersRegistryInit', () => {
@@ -17,5 +17,14 @@ describe('SettingsUsersRegistryInit', () => {
     expect(moduleRegistry.formDescriptorFor('role_view_permission')).toBe(
       roleViewPermissionFormDescriptor,
     )
+  })
+
+  it('makes many2many tags pointing at a role or a user click-to-navigate (RelationTagsWidget reads formPathFor)', () => {
+    // Without this registration, formPathFor found nothing for 'roles'/
+    // 'users' even though rolesListDescriptor/usersListDescriptor declare
+    // their own formPath — a many2many field like the User form's `role`
+    // rendered its tags but a click never went anywhere.
+    expect(moduleRegistry.formPathFor('roles')).toBe('/settings/users/roles/:id')
+    expect(moduleRegistry.formPathFor('users')).toBe('/settings/users/accounts/:id')
   })
 })

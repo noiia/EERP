@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
+  DEFAULT_REPORT_NAME,
+  defaultReport,
+  reportAddressBlock,
   reportCompanyFallbackFields,
   reportImageSources,
   reportMastheadSection,
+  reportPartyAddressFields,
   reportTableRelations,
   reportTitleSection,
+  resolveReports,
   validateReportDescriptor,
   type ReportDescriptor,
 } from './report-descriptor'
@@ -226,10 +231,7 @@ describe('reportMastheadSection', () => {
     expect(masthead.children[1]).toMatchObject({ className: 'eerp-report-client' })
   })
 
-  it('falls back every company-side address field to the active company profile, except the address number', () => {
-    // address_number is deliberately excluded: company[companyField] ?? ''
-    // can't distinguish "blank" from a legitimate 0 the way it can for the
-    // string fields (see reportPartyAddressFields' own doc comment).
+  it('falls back every company-side address field to the active company profile', () => {
     const descriptor: ReportDescriptor = { ...valid, layout: [masthead] }
     expect(reportCompanyFallbackFields(descriptor)).toEqual([
       { recordField: 'issuer_name', companyField: 'name' },
@@ -247,7 +249,6 @@ describe('reportMastheadSection', () => {
       .map((n) => n.name)
     expect(contactFieldNames).toEqual([
       'customer_name',
-      'customer_address_number',
       'customer_address_street',
       'customer_address_complement',
       'customer_address_zip_code',
@@ -257,12 +258,128 @@ describe('reportMastheadSection', () => {
   })
 })
 
+describe('reportPartyAddressFields', () => {
+  it('never prints the address-number sub-column as its own line — only the street', () => {
+    const fields = reportPartyAddressFields('issuer', false)
+    expect(fields.map((n) => ('name' in n ? n.name : n.kind))).not.toContain('issuer_address_number')
+    expect(fields[1]).toEqual({ kind: 'field', name: 'issuer_address_street', companyFallback: undefined })
+  })
+
+  it('puts zip/city on a row, country on its own line after', () => {
+    const fields = reportPartyAddressFields('issuer', false)
+    const lastRow = fields[fields.length - 1]
+    expect(lastRow).toEqual({ kind: 'field', name: 'issuer_address_country', companyFallback: undefined })
+  })
+
+  it('gates the complement behind a "set" display condition, so a blank one prints no line', () => {
+    const fields = reportPartyAddressFields('issuer', false)
+    const complement = fields[2] as { name?: string; display?: unknown }
+    expect(complement).toMatchObject({
+      name: 'issuer_address_complement',
+      display: { field: 'issuer_address_complement', op: 'set' },
+    })
+  })
+})
+
 describe('reportTitleSection', () => {
   it('renders the named field with the big-title class', () => {
     expect(reportTitleSection('title')).toEqual({
       kind: 'field',
       name: 'title',
       className: 'eerp-report-title',
+    })
+  })
+})
+
+describe('report inheritance (resolveReports)', () => {
+  const base: ReportDescriptor = {
+    name: 'base',
+    abstract: true,
+    entity: '',
+    permissions: [],
+    chrome: { header: true, footer: true },
+    pageFormat: 'a4',
+    layout: [{ kind: 'text', text: 'Top' }, { kind: 'slot' }, { kind: 'text', text: 'Bottom' }],
+  }
+  const child: ReportDescriptor = {
+    name: 'child',
+    extends: 'base',
+    entity: 'crm',
+    permissions: [],
+    layout: [{ kind: 'field', name: 'name' }],
+  }
+
+  it("puts the child's layout in the parent's slot and inherits chrome and page format", () => {
+    const got = resolveReports([base, child]).get('child')!
+    expect(got.layout).toEqual([
+      { kind: 'text', text: 'Top' },
+      { kind: 'field', name: 'name' },
+      { kind: 'text', text: 'Bottom' },
+    ])
+    expect(got.chrome).toEqual({ header: true, footer: true })
+    expect(got.pageFormat).toBe('a4')
+    expect(got.abstract).toBeUndefined() // never inherited: the child is printable
+  })
+
+  it('a slot inside a section is filled too', () => {
+    const nested: ReportDescriptor = { ...base, layout: [{ kind: 'section', className: 'wrap', children: [{ kind: 'slot' }] }] }
+    expect(resolveReports([nested, child]).get('child')!.layout).toEqual([
+      { kind: 'section', className: 'wrap', children: [{ kind: 'field', name: 'name' }] },
+    ])
+  })
+
+  it("without a slot the child's layout is appended; the child's own chrome and page format win", () => {
+    const noSlot: ReportDescriptor = { ...base, layout: [{ kind: 'text', text: 'Top' }] }
+    const own: ReportDescriptor = { ...child, chrome: { footer: false }, pageFormat: 'letter' }
+    const got = resolveReports([noSlot, own]).get('child')!
+    expect(got.layout).toEqual([{ kind: 'text', text: 'Top' }, { kind: 'field', name: 'name' }])
+    expect(got.chrome).toEqual({ header: true, footer: false })
+    expect(got.pageFormat).toBe('letter')
+  })
+
+  it('chains: a grandchild gets every ancestor', () => {
+    const middle: ReportDescriptor = { ...child, name: 'middle', abstract: true, layout: [{ kind: 'text', text: 'Mid' }, { kind: 'slot' }] }
+    const leaf: ReportDescriptor = { ...child, name: 'leaf', extends: 'middle' }
+    expect(resolveReports([leaf, middle, base]).get('leaf')!.layout).toEqual([
+      { kind: 'text', text: 'Top' },
+      { kind: 'text', text: 'Mid' },
+      { kind: 'field', name: 'name' },
+      { kind: 'text', text: 'Bottom' },
+    ])
+  })
+
+  it('a report that extends nothing gets no letterhead', () => {
+    expect(resolveReports([{ ...child, extends: undefined }]).get('child')!.chrome).toBeUndefined()
+  })
+
+  it('names a cycle and an unknown parent', () => {
+    const a: ReportDescriptor = { ...child, name: 'a', extends: 'b' }
+    const b: ReportDescriptor = { ...child, name: 'b', extends: 'a' }
+    expect(() => resolveReports([a, b])).toThrowError(/cycle: a -> b -> a/)
+    expect(() => resolveReports([{ ...child, extends: 'missing' }])).toThrowError(/"child" extends unknown report "missing"/)
+  })
+
+  it('the default report is the letterhead header and footer around a slot', () => {
+    expect(defaultReport).toMatchObject({ name: DEFAULT_REPORT_NAME, abstract: true, chrome: { header: true, footer: true } })
+    expect(defaultReport.layout).toEqual([{ kind: 'slot' }])
+  })
+
+  it('validation: a printable report needs an entity, a report cannot extend itself', () => {
+    expect(() => validateReportDescriptor({ ...child, entity: '' })).toThrowError(/requires an entity/)
+    expect(() => validateReportDescriptor({ ...child, extends: 'child' })).toThrowError(/cannot extend itself/)
+    expect(() => validateReportDescriptor(base)).not.toThrow()
+  })
+})
+
+describe('reportAddressBlock', () => {
+  it('is a labeled, left-aligned block of lines', () => {
+    expect(reportAddressBlock('Customer:', [{ kind: 'field', name: 'customer_name' }], 'extra')).toEqual({
+      kind: 'section',
+      className: 'eerp-report-address extra',
+      children: [
+        { kind: 'text', text: 'Customer:', className: 'eerp-report-label' },
+        { kind: 'field', name: 'customer_name' },
+      ],
     })
   })
 })

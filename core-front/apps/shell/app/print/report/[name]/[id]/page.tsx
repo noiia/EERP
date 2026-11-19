@@ -6,14 +6,21 @@ import {
   reportCompanyFallbackFields,
   reportImageSources,
   reportTableRelations,
+  translationRegistry,
   type ReportDescriptor,
   type ReportPageFormatRow,
 } from '@eerp/core-front'
 import { createServerApiClient, moduleRegistry, resolvePictureDataURL } from '@eerp/core-front/server'
+import { resolveEffectiveLocale } from '@/lib/locale'
 // Side-effect import: registers every discovered module's reports into the
 // shared registry — the same manifest the catch-all route and the App Store
 // page import.
 import '@/generated/generated-modules'
+// Side-effect import: registers every discovered module's translation
+// catalogs (same manifest LocaleSync's client-side sync uses) — needed here
+// so translationRegistry.locales() below reflects the real pool this build
+// ships, not an empty registry.
+import '@/generated/generated-translations'
 
 // The pdf-service's ONE entry point (docs/adr/ADR-010, docs/roadmaps/
 // pdf-reports.md Phase 2): a generic print target for ANY registered
@@ -24,9 +31,10 @@ import '@/generated/generated-modules'
 // 4, this route is reachable only over an internal, trusted network path the
 // core-signed URL controls. Authorization happens in Go (Phase 3's
 // POST /api/v1/reports/:name/:id/pdf) BEFORE pdf-service ever requests this
-// URL, not here — the root layout's own getIdentity() already degrades to an
-// anonymous render with no cookie present, so this needs no special-casing
-// there either.
+// URL, not here. It sits outside /app, so none of the ERP chrome
+// (app/app/layout.tsx) renders around it, and the root layout's own
+// getIdentity() already degrades to an anonymous render with no cookie
+// present, so this needs no special-casing there either.
 //
 // This route's OWN outbound call to Go still needs a Bearer token, though —
 // Go authorizes every request unconditionally, network trust or not — and
@@ -46,11 +54,9 @@ import '@/generated/generated-modules'
 //
 // Being a plain async Server Component IS the `data-report-ready` guarantee:
 // nothing below is returned to the caller until every await has resolved, so
-// the marker's presence on the returned tree is never premature. That's also
-// why this file has no test of its own — same reasoning
-// apps/shell/app/page.test.tsx documents for not testing an async Server
-// Component's own gating logic directly; the pure, testable surface is
-// ReportRenderer itself (packages/core-front/src/views/report-renderer.test.tsx).
+// the marker's presence on the returned tree is never premature. page.test.tsx
+// awaits the component and renders what it returns, ReportRenderer stubbed (its
+// own tests are packages/core-front/src/views/report-renderer.test.tsx).
 
 interface PrintReportPageProps {
   params: Promise<{ name: string; id: string }>
@@ -62,7 +68,8 @@ export default async function PrintReportPage({ params, searchParams }: PrintRep
   const { token } = await searchParams
 
   const descriptor = moduleRegistry.buildReportRegistry().get(name) as ReportDescriptor | undefined
-  if (!descriptor) notFound()
+  // An abstract report is a base to inherit from (e.g. core.default), never a document.
+  if (!descriptor || descriptor.abstract) notFound()
   if (!token) notFound()
 
   const client = createServerApiClient(token)
@@ -106,24 +113,45 @@ export default async function PrintReportPage({ params, searchParams }: PrintRep
       .catch(() => [])
   }
 
+  // The printing user's active company profile — fetched once, unconditionally
+  // (unlike before): it now backs BOTH the multi-company fallback below AND
+  // the document header's own logo, so every report's header can show one
+  // regardless of whether its descriptor declares any companyFallback field.
+  const activeCompany = await client.getMyActiveCompany().catch(() => null)
+  const company = activeCompany
+    ? await client.get<Record<string, unknown>>('company', activeCompany.id).catch(() => null)
+    : null
+
+  // A `format: 'monetary'` field node (ReportRenderer) reads its currency
+  // code off this SAME sibling-field convention `record[recordField]`
+  // company-fallback already uses — currency is implicit, whichever company
+  // issued the document (sale/module.go's own doc comment on why Invoice/
+  // Quote carry no Currency column of their own anymore), so it's always the
+  // active company's, never a per-record value to fall back FROM.
+  record.currency = company?.currency ?? ''
+
   // Multi-company: fields opted into companyFallback (e.g. sale.invoice's
-  // issuer_name/address/phone/email) fall back to the printing user's
-  // active company profile when the record's own value is empty — never
-  // overwriting a value the record actually has. Same additive, never-404
-  // posture as the chrome reads below: a failed company lookup just leaves
-  // the record's own (possibly empty) fields as-is.
-  const fallbackFields = reportCompanyFallbackFields(descriptor)
-  if (fallbackFields.length > 0) {
-    const activeCompany = await client.getMyActiveCompany().catch(() => null)
-    const company = activeCompany
-      ? await client.get<Record<string, unknown>>('company', activeCompany.id).catch(() => null)
-      : null
-    if (company) {
-      for (const { recordField, companyField } of fallbackFields) {
-        if (!record[recordField]) record[recordField] = company[companyField] ?? ''
-      }
+  // issuer_name/address/phone/email) fall back to the active company profile
+  // when the record's own value is empty — never overwriting a value the
+  // record actually has.
+  if (company) {
+    for (const { recordField, companyField } of reportCompanyFallbackFields(descriptor)) {
+      if (!record[recordField]) record[recordField] = company[companyField] ?? ''
     }
   }
+
+  // The header's own company picture (below) — same boolean/picture anchor
+  // contract as any other picture field (ADR-011), just read directly off
+  // the active company rather than a per-descriptor `image` node, since the
+  // header isn't part of any report's own layout.
+  // The letterhead header/footer print only for a report that asks for them
+  // (ReportDescriptor.chrome — every report extending core.default does).
+  const withHeader = descriptor.chrome?.header === true
+  const withFooter = descriptor.chrome?.footer === true
+  const companyLogo =
+    withHeader && company?.logo === true
+      ? await resolvePictureDataURL({ table: 'company', recordId: String(company.id), field: 'logo' }, token)
+      : null
 
   // Effective chrome (docs/roadmaps/pdf-reports.md's Reports settings):
   // global footer/address, plus size/padding/colors/footer/address from the
@@ -140,9 +168,26 @@ export default async function PrintReportPage({ params, searchParams }: PrintRep
     : null
   const chrome = resolveReportChrome(global, format)
 
+  // Report text/table-column labels (ReportRenderer's `locale` prop) follow
+  // the SAME preferred/default precedence every other server render uses
+  // (resolveEffectiveLocale) — read off the report token's own identity
+  // (getMyLocalePreferences, since there's no session cookie here) rather
+  // than any query param, so a report always prints in the REQUESTING
+  // user's own language. Additive, same posture as chrome/company above: a
+  // failed read (or preferring the source language) prints the untranslated
+  // source strings, never a 404.
+  const preferences = await client.getMyLocalePreferences().catch(() => null)
+  const locale = preferences
+    ? resolveEffectiveLocale(
+        preferences,
+        translationRegistry.locales().map((info) => info.locale),
+      )
+    : null
+
   return (
     <div
       data-report-ready=""
+      className="eerp-report-page"
       style={
         {
           '--eerp-report-text': chrome.colors.text,
@@ -153,11 +198,16 @@ export default async function PrintReportPage({ params, searchParams }: PrintRep
       }
     >
       {chrome.pageSizeCss && <style>{`@page { size: ${chrome.pageSizeCss}; }`}</style>}
+      {withHeader && (chrome.address || companyLogo) && (
+        <div className="eerp-report-chrome-header" style={{ padding: `0 ${chrome.paddingPx}px` }}>
+          {chrome.address && <div className="eerp-report-chrome-address">{chrome.address}</div>}
+          {companyLogo && <img className="eerp-report-chrome-logo" src={companyLogo} alt="Company logo" />}
+        </div>
+      )}
       <div className="eerp-report-content" style={{ padding: chrome.paddingPx }}>
-        <ReportRenderer descriptor={descriptor} record={record} />
+        <ReportRenderer descriptor={descriptor} record={record} locale={locale} />
       </div>
-      {chrome.footer && <div className="eerp-report-chrome-footer">{chrome.footer}</div>}
-      {chrome.address && <div className="eerp-report-chrome-address">{chrome.address}</div>}
+      {withFooter && chrome.footer && <div className="eerp-report-chrome-footer">{chrome.footer}</div>}
     </div>
   )
 }

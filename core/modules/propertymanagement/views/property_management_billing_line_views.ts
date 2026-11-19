@@ -14,7 +14,11 @@ export interface PropertyManagementBillingLine {
   name: string
   /** Free of taxes (excl. tax) — same convention as sale_line's own unit_price. */
   unit_price?: number
-  /** 0..1 ratio; the percent widget displays it ×100. */
+  /** Legacy free-typed rate — no longer editable through the form (see
+   * billingLineFields below); real tax now comes exclusively from `taxes`,
+   * picked from the taxes table. Still read server-side for a pre-existing
+   * line that has one (module.go's computeBillingLineTotal stacks it
+   * additively, unchanged), so it stays in this type for completeness. */
   tax_rate?: number
   /** Server-computed final price — unit_price plus tax_rate above, plus
    * every tag in `taxes` below (percentage or fixed) — see
@@ -35,8 +39,15 @@ export interface PropertyManagementBillingLine {
 // property form's one2many create-wizard (RelationListWidget/
 // RelationCreateWizard) has a form to render: property_management_id is
 // preset+hidden by the wizard's context (same invoice_id/quote_id pattern
-// sale_line/quote_line use), name/unit_price/tax_rate are plain editable
-// fields — nothing here is a server-side snapshot.
+// sale_line/quote_line use), name/unit_price are plain editable fields —
+// nothing here is a server-side snapshot. Tax is picked from the taxes
+// table (the `taxes` many2many below) rather than freely typed — the old
+// plain tax_rate percent field is gone from this form on purpose (by
+// design, not an oversight): it let anyone type an arbitrary, ungoverned
+// rate instead of choosing a real, named SaleTax row. Go still reads it
+// server-side for a pre-existing line that already has one (see the
+// PropertyManagementBillingLine.tax_rate type's own doc comment) and keeps
+// stacking it additively into Total — this form just never writes it again.
 const billingLineFields: ViewDescriptor['fields'] = [
   {
     name: 'property_management_id',
@@ -47,12 +58,10 @@ const billingLineFields: ViewDescriptor['fields'] = [
   },
   { name: 'name', label: 'Name', type: 'text', required: true },
   { name: 'unit_price', label: 'Price (excl. tax)', type: 'number', widget: 'float' },
-  { name: 'tax_rate', label: 'Tax', type: 'number', widget: 'percent' },
-  // Extra taxes, stacked on top of tax_rate above — junction is
-  // property_management_billing_line_tax, hand-mounted Create/Delete
-  // (handler.go) so tagging/untagging recomputes total below. Same shared
-  // sale_tax entity sale_line's own `taxes` field points at
-  // (sale_line_views.ts) — one tax catalog for both modules.
+  // Junction is property_management_billing_line_tax, hand-mounted
+  // Create/Delete (handler.go) so tagging/untagging recomputes total below.
+  // Same shared sale_tax entity sale_line's own `taxes` field points at
+  // (sale_line_views.ts) — one tax catalog for every module.
   {
     name: 'taxes',
     label: 'Taxes',

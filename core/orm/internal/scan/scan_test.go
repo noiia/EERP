@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // ── mock pgx.Rows ─────────────────────────────────────────────────────────────
@@ -61,6 +62,7 @@ func (r *mockRows) CommandTag() pgconn.CommandTag { return pgconn.CommandTag{} }
 func (r *mockRows) Values() ([]any, error)        { return nil, nil }
 func (r *mockRows) RawValues() [][]byte           { return nil }
 func (r *mockRows) Conn() *pgx.Conn               { return nil }
+func (r *mockRows) TypeMap() *pgtype.Map          { return pgtype.NewMap() }
 
 // setPtr writes val into the pointer dest using a type switch.
 // Covers every type used in test fixtures.
@@ -87,26 +89,6 @@ func setPtr(dest, val any) {
 	case *any:
 		*d = val
 	}
-}
-
-// ── mock pgx.Row ──────────────────────────────────────────────────────────────
-
-type mockRow struct {
-	vals []any
-	err  error
-}
-
-func (r *mockRow) Scan(dest ...any) error {
-	if r.err != nil {
-		return r.err
-	}
-	for i, d := range dest {
-		if i >= len(r.vals) {
-			break
-		}
-		setPtr(d, r.vals[i])
-	}
-	return nil
 }
 
 // ── fixtures ──────────────────────────────────────────────────────────────────
@@ -337,34 +319,5 @@ func TestRows_AlwaysCloses(t *testing.T) {
 	scan.Rows[flat](rows, meta) //nolint:errcheck
 	if !rows.closed {
 		t.Error("rows.Close() must be called even when scan fails")
-	}
-}
-
-// ── Row ───────────────────────────────────────────────────────────────────────
-
-func TestRow_Success(t *testing.T) {
-	t.Parallel()
-
-	meta, _ := cache.Get[flat]()
-	row := &mockRow{vals: []any{42, "dave", 28}}
-
-	got, err := scan.Row[flat](row, meta)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if got.ID != 42 || got.Name != "dave" || got.Age != 28 {
-		t.Errorf("got %+v", got)
-	}
-}
-
-func TestRow_Error_Propagated(t *testing.T) {
-	t.Parallel()
-
-	meta, _ := cache.Get[flat]()
-	row := &mockRow{err: errors.New("no rows in result set")}
-
-	_, err := scan.Row[flat](row, meta)
-	if err == nil {
-		t.Fatal("expected error for failed scan")
 	}
 }

@@ -22,6 +22,40 @@ export interface EntityListOptions {
   gte?: Record<string, string>
   lt?: Record<string, string>
   lte?: Record<string, string>
+  /** Geo params (ADR-029), keyed by column: near "lon,lat" (nearest first,
+   * adds `_distance_m`), within "lon,lat,meters", covers "lon,lat" (shape
+   * column), inside "table:id:shape_column" (point column). */
+  near?: Record<string, string>
+  within?: Record<string, string>
+  covers?: Record<string, string>
+  inside?: Record<string, string>
+  /** Columns that must be NULL or '' (`empty[col]=1`) — an empty `filter`
+   * value means "no filter", so this is the only way to ask for "unset". */
+  empty?: string[]
+  /** Sort by one column (`'-col'` = descending), id as tiebreak — needed to page
+   * through a list reliably: without it Go returns rows in no defined order. */
+  order?: string
   page?: number
   pageSize?: number
+}
+
+const MAP_KEYS = ['filter', 'search', 'in', 'gt', 'gte', 'lt', 'lte', 'near', 'within', 'covers', 'inside'] as const
+
+/**
+ * Layer `extra` over `base` (e.g. the search bar's filters over a route's
+ * fixed `descriptor.listFilter`): every condition map is merged key by key,
+ * `extra` winning on a shared column; page/pageSize come from `extra` when set.
+ */
+export function mergeListOptions(
+  base: EntityListOptions | undefined,
+  extra: EntityListOptions | undefined,
+): EntityListOptions | undefined {
+  if (!base) return extra
+  if (!extra) return base
+  const out: EntityListOptions = { ...base, ...extra }
+  for (const key of MAP_KEYS) {
+    if (base[key] || extra[key]) Object.assign(out, { [key]: { ...base[key], ...extra[key] } })
+  }
+  if (base.empty || extra.empty) out.empty = [...new Set([...(base.empty ?? []), ...(extra.empty ?? [])])]
+  return out
 }

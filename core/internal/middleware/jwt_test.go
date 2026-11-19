@@ -10,7 +10,7 @@ import (
 	"core/internal/types"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 func newSvc() *auth.TokenService {
@@ -22,13 +22,12 @@ func newSvc() *auth.TokenService {
 
 func testEcho() *echo.Echo {
 	e := echo.New()
-	e.HideBanner = true
 	return e
 }
 
 // recordingHandler is the sentinel handler that, if reached, records the identity.
 func recordingHandler(reachedPtr *bool) echo.HandlerFunc {
-	return func(c echo.Context) error {
+	return func(c *echo.Context) error {
 		*reachedPtr = true
 		return c.String(http.StatusOK, "ok")
 	}
@@ -90,7 +89,7 @@ func TestJWTMiddleware_ValidToken_InjectsIdentityAndCalls200(t *testing.T) {
 	}
 
 	var capturedIdentity auth.Identity
-	e.GET("/test", func(c echo.Context) error {
+	e.GET("/test", func(c *echo.Context) error {
 		id, ok := auth.IdentityFromContext(c.Request().Context())
 		if !ok {
 			return c.String(http.StatusInternalServerError, "no identity")
@@ -133,5 +132,173 @@ func TestJWTMiddleware_WrongKeyword_Returns401(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want 401", rec.Code)
+	}
+}
+
+// ── JWTOrCookieMiddleware ─────────────────────────────────────────────────────
+
+func issueToken(t *testing.T, svc *auth.TokenService) (string, auth.Users) {
+	t.Helper()
+	user := auth.Users{TenantID: uuid.New()}
+	user.BaseModel.ID = uuid.New()
+	raw, err := svc.IssueAccess(user, []string{"admin"}, nil, nil)
+	if err != nil {
+		t.Fatalf("IssueAccess: %v", err)
+	}
+	return raw, user
+}
+
+func TestJWTOrCookieMiddleware_NoHeaderNoCookie_Returns401(t *testing.T) {
+	e := testEcho()
+	svc := newSvc()
+	reached := false
+
+	e.GET("/test", recordingHandler(&reached), authmw.JWTOrCookieMiddleware(svc, "eerp_access"))
+
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401", rec.Code)
+	}
+	if reached {
+		t.Error("handler must not be reached with neither header nor cookie")
+	}
+}
+
+func TestJWTOrCookieMiddleware_HeaderPresent_UsesHeaderNotCookie(t *testing.T) {
+	e := testEcho()
+	svc := newSvc()
+	raw, user := issueToken(t, svc)
+
+	var captured auth.Identity
+	e.GET("/test", func(c *echo.Context) error {
+		captured, _ = auth.IdentityFromContext(c.Request().Context())
+		return c.String(http.StatusOK, "ok")
+	}, authmw.JWTOrCookieMiddleware(svc, "eerp_access"))
+
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.Header.Set("Authorization", "Bearer "+raw)
+	req.AddCookie(&http.Cookie{Name: "eerp_access", Value: "garbage-should-be-ignored"})
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if captured.UserID != user.ID {
+		t.Errorf("UserID = %v, want %v (should authenticate off the header, not the garbage cookie)", captured.UserID, user.ID)
+	}
+}
+
+func TestJWTOrCookieMiddleware_NoHeader_FallsBackToCookie(t *testing.T) {
+	e := testEcho()
+	svc := newSvc()
+	raw, user := issueToken(t, svc)
+
+	var captured auth.Identity
+	e.GET("/test", func(c *echo.Context) error {
+		captured, _ = auth.IdentityFromContext(c.Request().Context())
+		return c.String(http.StatusOK, "ok")
+	}, authmw.JWTOrCookieMiddleware(svc, "eerp_access"))
+
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.AddCookie(&http.Cookie{Name: "eerp_access", Value: raw})
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if captured.UserID != user.ID {
+		t.Errorf("UserID = %v, want %v", captured.UserID, user.ID)
+	}
+}
+
+func TestJWTOrCookieMiddleware_InvalidCookie_Returns401(t *testing.T) {
+	e := testEcho()
+	svc := newSvc()
+	reached := false
+
+	e.GET("/test", recordingHandler(&reached), authmw.JWTOrCookieMiddleware(svc, "eerp_access"))
+
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.AddCookie(&http.Cookie{Name: "eerp_access", Value: "not.a.real.token"})
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401", rec.Code)
+	}
+	if reached {
+		t.Error("handler must not be reached with an invalid cookie token")
+	}
+}
+
+func TestAudienceIsEnforced(t *testing.T) {
+	svc := newSvc()
+	erpTok, _ := svc.IssueAccess(auth.Users{ID: uuid.New(), TenantID: uuid.New()}, nil, nil, nil)
+	siteTok, _ := svc.IssueAccess(auth.Users{ID: uuid.New(), TenantID: uuid.New(), Kind: auth.KindWebsite}, nil, nil, nil)
+	tests := []struct {
+		name  string
+		mw    echo.MiddlewareFunc
+		token string
+		want  int
+	}{
+		{"erp token on erp route", authmw.JWTMiddleware(svc), erpTok, http.StatusOK},
+		{"website token on erp route", authmw.JWTMiddleware(svc), siteTok, http.StatusForbidden},
+		{"website token on cookie route", authmw.JWTOrCookieMiddleware(svc, "eerp_access"), siteTok, http.StatusForbidden},
+		{"website token on website route", authmw.WebsiteJWTMiddleware(svc), siteTok, http.StatusOK},
+		{"erp token on website route", authmw.WebsiteJWTMiddleware(svc), erpTok, http.StatusForbidden},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := testEcho()
+			reached := false
+			e.GET("/t", recordingHandler(&reached), tt.mw)
+			req := httptest.NewRequest(http.MethodGet, "/t", nil)
+			req.Header.Set("Authorization", "Bearer "+tt.token)
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+			if rec.Code != tt.want {
+				t.Errorf("status = %d, want %d", rec.Code, tt.want)
+			}
+		})
+	}
+}
+
+func TestOptionalWebsiteJWT(t *testing.T) {
+	svc := newSvc()
+	siteTok, _ := svc.IssueAccess(auth.Users{ID: uuid.New(), TenantID: uuid.New(), Kind: auth.KindWebsite}, nil, nil, nil)
+	erpTok, _ := svc.IssueAccess(auth.Users{ID: uuid.New(), TenantID: uuid.New()}, nil, nil, nil)
+	for _, tt := range []struct {
+		name, header string
+		want         int
+		wantIdentity bool
+	}{
+		{"anonymous", "", http.StatusOK, false},
+		{"website token", "Bearer " + siteTok, http.StatusOK, true},
+		{"erp token", "Bearer " + erpTok, http.StatusForbidden, false},
+		{"garbage", "Bearer x", http.StatusUnauthorized, false},
+		{"non-bearer scheme", "Basic x", http.StatusUnauthorized, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			e := testEcho()
+			var got bool
+			e.GET("/t", func(c *echo.Context) error {
+				_, got = auth.IdentityFromContext(c.Request().Context())
+				return c.NoContent(http.StatusOK)
+			}, authmw.OptionalWebsiteJWTMiddleware(svc))
+			req := httptest.NewRequest(http.MethodGet, "/t", nil)
+			if tt.header != "" {
+				req.Header.Set("Authorization", tt.header)
+			}
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+			if rec.Code != tt.want || got != tt.wantIdentity {
+				t.Errorf("code=%d identity=%v, want %d %v", rec.Code, got, tt.want, tt.wantIdentity)
+			}
+		})
 	}
 }

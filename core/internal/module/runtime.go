@@ -10,8 +10,8 @@ import (
 	"core/internal/types"
 	"core/orm"
 
-	"github.com/bytecodealliance/wasmtime-go/v15"
-	"github.com/labstack/echo/v4"
+	"github.com/bytecodealliance/wasmtime-go/v50"
+	"github.com/labstack/echo/v5"
 )
 
 // Registry is the runtime module-lifecycle authority behind live
@@ -86,6 +86,38 @@ func NewRegistry(engine *wasmtime.Engine, linker *wasmtime.Linker, db *orm.DB, m
 // records each one's active flag and table ownership. Replaces the old
 // main.go pair of module.LoadModules + module.LoadGoModules calls.
 func (r *Registry) Boot(ctx context.Context) []error {
+	return r.boot(ctx, nil)
+}
+
+// BootWithProgress is Boot plus a callback fired after each Go module
+// finishes its own ensureTable/ensureColumns/Migrate pass — done and total
+// are 1-indexed and total-modules respectively, so a caller can render
+// "N of M" or done/total as a percentage. Go modules are effectively the
+// entire workload in this codebase today (every currently-shipped module is
+// type "go" — core/CLAUDE.md's own module-type bullet), so this covers the
+// real cost without needing separate progress plumbing through the WASM
+// loader or the trailing index pass too. onProgress may be nil (same as
+// calling Boot).
+func (r *Registry) BootWithProgress(ctx context.Context, onProgress func(done, total int)) []error {
+	return r.boot(ctx, onProgress)
+}
+
+// boot holds the schema lock for the whole boot: its DDL must not interleave
+// with another process migrating the same database (see schemaLockKey).
+func (r *Registry) boot(ctx context.Context, onProgress func(done, total int)) (errs []error) {
+	if err := withSchemaLock(ctx, r.db, func() error {
+		errs = r.bootLocked(ctx, onProgress)
+		return nil
+	}); err != nil {
+		return []error{err}
+	}
+	return errs
+}
+
+func (r *Registry) bootLocked(ctx context.Context, onProgress func(done, total int)) []error {
+	if err := ensureExtensions(ctx, r.db); err != nil {
+		return []error{err}
+	}
 	if err := bootstrapMigrationsTable(ctx, r.db); err != nil {
 		return []error{fmt.Errorf("bootstrap module_migrations: %w", err)}
 	}
@@ -161,10 +193,14 @@ func (r *Registry) Boot(ctx context.Context) []error {
 	goMods := make([]GoModule, len(goModules))
 	copy(goMods, goModules)
 	goMu.Unlock()
-	for _, m := range goMods {
-		newTables, err := loadGoModule(ctx, r.db, m)
+	ensuredThisBoot := map[string]int{}
+	for i, m := range goMods {
+		newTables, err := loadGoModule(ctx, r.db, m, ensuredThisBoot)
 		if err != nil {
 			addErr(err)
+			if onProgress != nil {
+				onProgress(i+1, len(goMods))
+			}
 			continue
 		}
 		if len(newTables) > 0 {
@@ -173,6 +209,9 @@ func (r *Registry) Boot(ctx context.Context) []error {
 				r.tableOwner[t] = m.Name()
 			}
 			r.mu.Unlock()
+		}
+		if onProgress != nil {
+			onProgress(i+1, len(goMods))
 		}
 	}
 
@@ -203,13 +242,21 @@ func (r *Registry) IsTableActive(table string) bool {
 	return r.active[owner]
 }
 
+// IsActive reports whether the module named name is loaded and active — for
+// a module owning no table (a payment provider), which IsTableActive can't see.
+func (r *Registry) IsActive(name string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.active[name]
+}
+
 // ActiveGateMiddleware 403s any request to a deactivated module's table.
 // Passed as an extra middleware to ormserver.RegisterRoutes in main.go — it
 // needs no change to that package's signature (middlewares is already
 // variadic) and no import of it either (only echo.MiddlewareFunc).
 func (r *Registry) ActiveGateMiddleware() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
+		return func(c *echo.Context) error {
 			table := routeTable(c.Path())
 			if table != "" && !r.IsTableActive(table) {
 				return errorJSON(c, http.StatusForbidden, "MODULE_INACTIVE", "This module is currently deactivated.")
@@ -310,7 +357,7 @@ func (r *Registry) Reload(ctx context.Context, name string) (map[string]any, err
 		}
 		opLog.Log("backend", "info", "go-type module: re-validating schema registration "+
 			"(a code change needs a backend rebuild + restart, not a reload)")
-		newTables, err := loadGoModule(ctx, r.db, target)
+		newTables, err := loadGoModule(ctx, r.db, target, map[string]int{})
 		if err != nil {
 			opLog.Log("backend", "error", err.Error())
 			return nil, err

@@ -1,0 +1,375 @@
+'use client'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import Button from '@mui/material/Button'
+import Checkbox from '@mui/material/Checkbox'
+import Chip from '@mui/material/Chip'
+import ListItemText from '@mui/material/ListItemText'
+import Menu from '@mui/material/Menu'
+import MenuItem from '@mui/material/MenuItem'
+import TextField from '@mui/material/TextField'
+import Typography from '@mui/material/Typography'
+import { useTheme } from '@mui/material/styles'
+import type { Connection, Edge, MarkerType, Node } from '@xyflow/react'
+import '@xyflow/react/dist/style.css'
+import { serializeError, toApiError, type SerializedError } from '../../api/errors'
+import type { EntityListOptions } from '../../api/list-options'
+import type { GanttDependenciesConfig } from '../../api/view-fields'
+import { usePermission } from '../../auth/Can'
+import { useT } from '../../i18n/translate'
+import { erpPath } from '../../navigation'
+import type { FieldDescriptor, ViewDescriptor } from '../descriptor'
+import { ViewBanner } from '../banner'
+import { ErrorAlert } from '../error-alert'
+import { formatDatePattern, useFormatStore, useNumberFormat } from '../format-store'
+import { useRelationOps } from '../relation-ops'
+import { useRelationLabels } from '../use-relation-labels'
+import type { EntityActions, HasId } from '../stores'
+import { layoutPert } from './auto-layout'
+import { DiagramCanvas, DiagramCapNotice, DiagramLoading, useDiagramRecords } from './diagram-canvas'
+import { useUndoHistory } from './history'
+import { computePert, offsetToDate } from './pert'
+import { colorTagsFieldOf, useRecordColors } from '../use-record-colors'
+import { byPrefixAndName, FontAwesomeIcon } from '../icons'
+import { usePhone } from '../use-phone'
+import { boxFieldOf, TASK_BOX_SIZE, type TaskBoxData } from './task-box'
+
+// PERT display mode: one box per record, an arrow per dependency row (blocker →
+// dependent), each box showing its ES/EF/LS/LF dates and slack, the critical path in
+// red. Drawing an arrow creates a dependency row, deleting one removes it; box edits
+// go through actions.update and the figures recompute from the updated records.
+// A box's trash button takes the task off this diagram only (the record stays) and
+// "Add task" puts it back. The removed ids ride the user's PERT layout in its `folded`
+// list, which PERT has no other use for.
+
+const LINK_CHUNK = 100 // ids per in[] request: 2000 ids don't fit one URL
+const LINK_PAGE_SIZE = 200
+
+interface LinkRow { id: string; from: string; to: string }
+
+export interface PertRendererProps<T extends HasId> {
+  descriptor: ViewDescriptor
+  initialData: T[]
+  actions: EntityActions<T>
+  dependencies: GanttDependenciesConfig
+  startField?: string
+  endField?: string
+  hoursField?: string
+  /** Dotted order number field: the auto-layout runs from the 1.x records to the highest. */
+  orderField?: string
+  /** Fields edited in each box, in order (unknown names and duplicates dropped). Default: name. */
+  boxFields?: (string | null | undefined)[]
+  onRecordsChange?: (records: T[]) => void
+  serverOptions?: EntityListOptions
+  /** ViewModeDefaults.colorTagsField: each box shows its color groups as a bar along its top. */
+  colorTagsField?: string
+}
+
+export function PertRenderer<T extends HasId>({
+  descriptor,
+  initialData,
+  actions,
+  dependencies: dep,
+  startField,
+  endField,
+  hoursField,
+  orderField,
+  boxFields = ['name'],
+  onRecordsChange,
+  serverOptions,
+  colorTagsField,
+}: PertRendererProps<T>) {
+  const t = useT()
+  const router = useRouter()
+  const theme = useTheme()
+  const red = theme.palette.error.main
+  const { format } = useNumberFormat()
+  const dateFormat = useFormatStore((s) => s.dateFormat)
+  const ops = useRelationOps()
+  const { entity, formPath } = descriptor
+  const canWrite = usePermission(`${entity}:${entity}:write`)
+  // Arrows are rows of the dependency entity: its own write right gates them.
+  const canLink = usePermission(`${dep.entity}:${dep.entity}:write`)
+  const loaded = useDiagramRecords(entity, serverOptions, initialData)
+  const [rows, setRows] = useState(loaded.records)
+  const { colors } = useRecordColors(entity, colorTagsFieldOf(descriptor, colorTagsField), rows.map((r) => r.id))
+  const [seen, setSeen] = useState(loaded.records)
+  if (seen !== loaded.records) {
+    setSeen(loaded.records)
+    setRows(loaded.records)
+  }
+  useEffect(() => {
+    onRecordsChange?.(rows)
+  }, [rows, onRecordsChange])
+  const [error, setError] = useState<SerializedError | null>(null)
+  // Tasks taken off this diagram (saved with the layout), and the Add task menu.
+  const [removed, setRemoved] = useState<string[]>([])
+  const [picker, setPicker] = useState<{ anchor: HTMLElement; ids: string[] } | null>(null)
+  const [query, setQuery] = useState('')
+  const phone = usePhone()
+
+  // Dependency rows touching the shown records, read like gantt-renderer's but from
+  // both ends (in[toField] and in[fromField], so a link to a hidden record is counted
+  // too) by id chunks, each paged until a short page, deduplicated by id; read again
+  // only when the id set changes.
+  const [links, setLinks] = useState<LinkRow[]>([])
+  // Undo/redo of moves, links and box edits. Links are replayed by their two ends, since a
+  // re-created link gets a new id; the ref holds the links as they are now.
+  const history = useUndoHistory((e) => setError(serializeError(toApiError(e))))
+  const linksRef = useRef(links)
+  // Layout effect: synced in the same commit that renders the edges, so a delete right after never sees a stale ref.
+  useLayoutEffect(() => {
+    linksRef.current = links
+  })
+  const listPage = ops?.listPage
+  const depKey = JSON.stringify(dep)
+  const idsKey = rows.map((r) => r.id).sort().join(',')
+  useEffect(() => {
+    if (!listPage || idsKey === '') {
+      setLinks([])
+      return
+    }
+    const d = JSON.parse(depKey) as GanttDependenciesConfig
+    const ids = idsKey.split(',')
+    let cancelled = false
+    const load = async () => {
+      const out = new Map<string, LinkRow>()
+      for (const end of [d.toField, d.fromField]) {
+        for (let i = 0; i < ids.length; i += LINK_CHUNK) {
+          for (let page = 1; ; page++) {
+            const res = await listPage(d.entity, { in: { [end]: ids.slice(i, i + LINK_CHUNK) }, order: end, page, pageSize: LINK_PAGE_SIZE })
+            for (const r of res.records as Record<string, unknown>[]) out.set(String(r.id), { id: String(r.id), from: String(r[d.fromField]), to: String(r[d.toField]) })
+            if (res.records.length < LINK_PAGE_SIZE) break
+          }
+        }
+      }
+      return [...out.values()]
+    }
+    load().then(
+      (ls) => !cancelled && setLinks(ls),
+      (e: unknown) => !cancelled && setError(serializeError(toApiError(e))),
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [listPage, depKey, idsKey])
+
+  const fieldOf = boxFieldOf(descriptor)
+  const fields = [...new Set(boxFields.filter((n): n is string => !!n))]
+    .map(fieldOf)
+    .filter((f): f is FieldDescriptor => !!f)
+  // Many2one labels for the export's printed boxes, read once for the whole diagram.
+  const relationLabel = useRelationLabels(
+    fields,
+    rows.flatMap((r) => fields.map((f): [string, unknown] => [f.name, (r as unknown as Record<string, unknown>)[f.name]])),
+  )
+
+  const values = (r: T) => r as unknown as Record<string, unknown>
+  const str = (v: unknown) => (typeof v === 'string' && v !== '' ? v : null)
+  const removedSet = new Set(removed)
+  const drawnRows = rows.filter((r) => !removedSet.has(r.id))
+  const pert = computePert(
+    drawnRows.map((r) => ({
+      id: r.id,
+      plannedHours: hoursField ? Number(values(r)[hoursField]) || null : null,
+      dateStart: startField ? str(values(r)[startField]) : null,
+      deadline: endField ? str(values(r)[endField]) : null,
+    })),
+    links,
+  )
+  const orderById = new Map(rows.map((r) => [r.id, orderField ? str(values(r)[orderField]) : null]))
+  const orderOf = orderField ? (id: string) => orderById.get(id) ?? null : undefined
+  const date = (days: number) => formatDatePattern(offsetToDate(pert.origin, days), dateFormat)
+
+  const replace = (updated: T) => setRows((prev) => prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)))
+  const titleOf = (r: T) => [orderById.get(r.id), str(values(r).name) ?? str(values(r).title)].filter(Boolean).join(' - ')
+  const setDrawn = (id: string, on: boolean) => setRemoved((ids) => (on ? ids.filter((x) => x !== id) : ids.includes(id) ? ids : [...ids, id]))
+  const rfNodes: Node[] = drawnRows.map((record) => {
+    const { id } = record
+    const n = pert.nodes[id]
+    const closed = values(record).closed === true
+    const data: TaskBoxData = {
+      record: values(record),
+      // Zoomed out: "<order> - <name>" like the lists.
+      title: titleOf(record),
+      editable: canWrite,
+      fields,
+      onCommit: async (field, value) => {
+        const old = values(record)[field]
+        const set = async (v: unknown) => replace(await actions.update(id, { [field]: v } as Partial<T>))
+        await set(value)
+        history.push({ undo: () => set(old), redo: () => set(value) })
+      },
+      onOpen: () => {
+        if (formPath) router.push(erpPath(formPath.replace(':id', id)))
+      },
+      colors: colors.get(id),
+      relationLabel,
+      onRemove: () => setDrawn(id, false),
+      badges: n.noEstimate ? <Chip size="small" color="warning" label={t('No estimate')} /> : undefined,
+      footer: pert.cycle ? undefined : (
+        <Typography variant="caption" component="div" color="text.secondary" sx={{ mt: 0.5 }}>
+          <div>{`${t('ES')} ${date(n.es)} · ${t('EF')} ${date(n.ef)}`}</div>
+          <div>{`${t('LS')} ${date(n.ls)} · ${t('LF')} ${date(n.lf)}`}</div>
+          <div>{t('Slack: {n} d').replace('{n}', format(Math.round(n.slack * 10) / 10))}</div>
+        </Typography>
+      ),
+    }
+    const critical = !pert.cycle && n.critical
+    return {
+      id,
+      position: { x: 0, y: 0 },
+      data,
+      className: [critical && 'critical', closed && 'closed'].filter(Boolean).join(' ') || undefined,
+      style: {
+        ...(critical ? { outline: `2px solid ${red}`, borderRadius: 4 } : {}),
+        ...(closed ? { opacity: 0.5 } : {}),
+      },
+    }
+  })
+  const shown = new Set(drawnRows.map((r) => r.id))
+  const edges: Edge[] = links
+    .filter((l) => shown.has(l.from) && shown.has(l.to))
+    .map((l) => {
+      const critical = pert.criticalLinks.has(`${l.from}->${l.to}`)
+      return {
+        id: l.id,
+        source: l.from,
+        target: l.to,
+        deletable: canLink,
+        className: critical ? 'critical' : undefined,
+        markerEnd: { type: 'arrowclosed' as MarkerType, ...(critical ? { color: red } : {}) },
+        ...(critical ? { style: { stroke: red, strokeWidth: 2 } } : {}),
+      }
+    })
+
+  const addLink = async (from: string, to: string) => {
+    if (!ops) return
+    const created = await ops.create(dep.entity, { [dep.fromField]: from, [dep.toField]: to })
+    setLinks((ls) => [...ls, { id: String(created.id), from, to }])
+  }
+  const dropLink = async (from: string, to: string) => {
+    const l = linksRef.current.find((x) => x.from === from && x.to === to)
+    if (!ops || !l) return
+    await ops.remove(dep.entity, l.id)
+    setLinks((ls) => ls.filter((x) => x.id !== l.id))
+  }
+  const record = (run: () => Promise<unknown>, undo: () => Promise<unknown>) => {
+    setError(null)
+    void history.perform(run, undo)
+  }
+
+  const onConnect = ({ source, target }: Connection) => {
+    if (!ops || source === target || links.some((l) => l.from === source && l.to === target)) return
+    record(() => addLink(source, target), () => dropLink(source, target))
+  }
+  const onEdgesDelete = (deleted: Edge[]) => {
+    if (!ops) return
+    const pairs = deleted.map((e) => [e.source, e.target] as const)
+    record(
+      () => Promise.all(pairs.map(([a, b]) => dropLink(a, b))),
+      () => Promise.all(pairs.map(([a, b]) => addLink(a, b))),
+    )
+  }
+
+  // A box with no link dropped across an arrow A → B goes in between: A → box → B.
+  const canInsert = (id: string) => !links.some((l) => l.from === id || l.to === id)
+  const onInsert = (id: string, { source: a, target: b }: Edge) => {
+    // The new links first: a refused one leaves the old arrow in place.
+    record(
+      async () => {
+        await Promise.all([addLink(a, id), addLink(id, b)])
+        await dropLink(a, b)
+      },
+      async () => {
+        await addLink(a, b)
+        await Promise.all([dropLink(a, id), dropLink(id, b)])
+      },
+    )
+  }
+
+  const missing = rows.filter((r) => removedSet.has(r.id))
+  const needle = query.trim().toLowerCase()
+  const pickerRows = picker
+    ? picker.ids.map((id) => rows.find((r) => r.id === id)).filter((r): r is T => !!r && titleOf(r).toLowerCase().includes(needle))
+    : []
+
+  if (loaded.capped) return <DiagramCapNotice />
+  if (loaded.loading) return <DiagramLoading />
+  return (
+    <>
+      <ErrorAlert error={error ?? (loaded.error ? { code: 'INTERNAL_ERROR', message: loaded.error } : null)} />
+      <ViewBanner open={!!pert.cycle} status="warning">{t('Dependency cycle: critical path not computed')}</ViewBanner>
+      <DiagramCanvas
+        entity={entity}
+        mode="pert"
+        title={t('PERT')}
+        nodes={rfNodes}
+        edges={edges}
+        autoLayout={() => layoutPert(drawnRows.map((r) => r.id), links, TASK_BOX_SIZE, orderOf)}
+        folded={removed}
+        onFoldedChange={setRemoved}
+        onConnect={canLink ? onConnect : undefined}
+        onEdgesDelete={canLink ? onEdgesDelete : undefined}
+        onInsert={canLink ? onInsert : undefined}
+        canInsert={canInsert}
+        history={history}
+        notes
+        legend={[
+          { color: red, label: t('Critical path') },
+          { color: theme.palette.warning.main, label: t('No estimate') },
+          { color: theme.palette.action.disabled, label: t('Closed') },
+        ]}
+        toolbarExtra={
+          <>
+            <Button
+              size="small"
+              startIcon={<FontAwesomeIcon icon={byPrefixAndName.fas['plus']} />}
+              disabled={!missing.length}
+              aria-haspopup="menu"
+              // The ids listed stay those missing when it opened: unticking one takes it back off.
+              onClick={(e) => {
+                setQuery('')
+                setPicker({ anchor: e.currentTarget, ids: missing.map((r) => r.id) })
+              }}
+            >
+              {t('Add task')}
+            </Button>
+            {pert.hiddenLinks > 0 ? <Chip size="small" label={pert.hiddenLinks === 1 ? t('1 hidden link') : t('{n} hidden links').replace('{n}', String(pert.hiddenLinks))} /> : null}
+          </>
+        }
+      />
+      <Menu
+        open={!!picker}
+        onClose={() => setPicker(null)}
+        // On a phone the button lives in the toolbar's More menu, gone once it closes: centered instead.
+        {...(phone
+          ? { anchorReference: 'anchorPosition' as const, anchorPosition: { top: window.innerHeight / 2, left: window.innerWidth / 2 }, transformOrigin: { vertical: 'center' as const, horizontal: 'center' as const } }
+          : { anchorEl: picker?.anchor })}
+        autoFocus={false}
+        slotProps={{ paper: { sx: { maxHeight: 420, width: 320 } } }}
+        data-testid="pert-add-task-menu"
+      >
+        <TextField
+          size="small"
+          fullWidth
+          autoFocus
+          placeholder={t('Search')}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          // MenuList's typeahead would steal the letters typed here.
+          onKeyDown={(e) => e.stopPropagation()}
+          slotProps={{ htmlInput: { 'aria-label': t('Search') } }}
+          sx={{ px: 1.5, pb: 1 }}
+        />
+        {pickerRows.map((r) => (
+          <MenuItem key={r.id} dense onClick={() => setDrawn(r.id, removedSet.has(r.id))}>
+            <Checkbox size="small" checked={!removedSet.has(r.id)} tabIndex={-1} sx={{ p: 0.5, mr: 1 }} />
+            <ListItemText primary={titleOf(r)} />
+          </MenuItem>
+        ))}
+        {picker && !pickerRows.length ? <MenuItem disabled>{t('No match')}</MenuItem> : null}
+      </Menu>
+    </>
+  )
+}

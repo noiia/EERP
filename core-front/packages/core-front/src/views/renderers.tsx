@@ -1,6 +1,9 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { formatTotal } from './total-format'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { IntentLink } from '../intent-link'
+import { erpPath } from '../navigation'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
@@ -13,13 +16,17 @@ import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
+import Menu from '@mui/material/Menu'
+import MenuItem from '@mui/material/MenuItem'
 import Typography from '@mui/material/Typography'
-import { DataGrid, type GridColDef, type GridRowSelectionModel } from '@mui/x-data-grid'
-import { RichTreeView } from '@mui/x-tree-view/RichTreeView'
+import type { DataGridProps, GridColDef, GridRowSelectionModel } from '@mui/x-data-grid'
+import { DataGrid, GraphRenderer, InsightsRenderer, MatrixRenderer, ObsRenderer, PbsRenderer, PertRenderer, RichTreeView, RiskRenderer, WbsRenderer } from './lazy-widgets'
 import type { TreeViewDefaultItemModelProperties } from '@mui/x-tree-view/models'
-import type { SerializedError } from '../api/errors'
+import { serializeError, toApiError, unwrapActions, type SerializedError } from '../api/errors'
+import { useRelationLabels } from './use-relation-labels'
 import {
   availableDisplayModes,
+  pinnedId,
   DISPLAY_MODES,
   effectiveViewFields,
   EMPTY_VIEW_FIELDS,
@@ -29,11 +36,14 @@ import {
 import { usePermission } from '../auth/Can'
 import { useT } from '../i18n/translate'
 import { moduleRegistry } from '../registry'
+import { useBreadcrumbStore } from './breadcrumb-store'
 import { CalendarRenderer } from './calendar-renderer'
+import { GanttRenderer } from './gantt-renderer'
 import { CatalogRenderer } from './catalog-renderer'
 import { ChatterPanel } from './chatter-panel'
 import { useChatterOps } from './chatter-ops'
 import {
+  evaluateCondition,
   fieldLabel,
   isVirtualRelation,
   layoutFieldOrder,
@@ -42,23 +52,35 @@ import {
   type FieldDescriptor,
   type ViewDescriptor,
 } from './descriptor'
+import { useEntityRefreshStore } from './entity-refresh-store'
 import { ErrorAlert } from './error-alert'
+import { formatDistance } from './distance-format'
+import { useUnitStore } from './unit-store'
+import { useI18nStore } from '../i18n/i18n-store'
 import { FormActionsMenu } from './form-actions-menu'
-import { GraphRenderer } from './graph-renderer'
 import { HeaderButtonContainer } from './header-button-container'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { KanbanRenderer } from './kanban-renderer'
+import { usePhone } from './use-phone'
 import { LayoutForm } from './layout-renderer'
-import { useListNavStore } from './list-nav-store'
+import { orderLabel } from './layout-fields'
+import { useListNavStore, type ListNav } from './list-nav-store'
 import { SelectionBar } from './list-selection'
 import { PictureSizeProvider } from './picture-widgets'
+import { AvatarWithPresence } from './presence-bubble'
 import { useRecordLabelStore } from './record-label-store'
 import { useRelationOps } from './relation-ops'
 import { junctionColumns, relationOf, type PendingManyToMany } from './relation-widgets'
 import { SearchBar } from './search-bar'
 import { StatusBar } from './status-bar'
+import { BannerScope, BannerSlot, ViewBanner } from './banner'
+import { FormContextProvider } from './form-context'
+import { resolveStatusBar, type StatusBarConfig } from '../api/status-bar-config'
 import { layout as layoutTokens, tabularNums } from './tokens'
 import { useUiStore } from './ui-store'
+import { ColorDot } from './color-tags'
+import { isHexColor } from './palette'
+import { useUndoToastStore } from './undo-toast'
 import {
   createDashboardStore,
   createFormStore,
@@ -72,6 +94,7 @@ import {
   type Widget,
 } from './stores'
 import { useStore } from 'zustand'
+import { mergeListOptions, type EntityListOptions } from '../api/list-options'
 
 // Client renderers. Each builds its Zustand store ONCE from the descriptor +
 // server-seeded initialData (no fetch on mount), then dispatches by viewType. New
@@ -101,6 +124,8 @@ export interface EntityViewProps<T extends HasId> {
    * page_size-truncated `initialData` instead of silently aggregating a
    * partial set. Undefined is treated as "unknown", not "complete". */
   recordTotal?: number
+  /** `recordTotal` is Go's planner estimate, not an exact count. */
+  recordTotalEstimated?: boolean
   /** The boolean/picture widget's admin-configured box size (Settings ->
    * Apps, form views only), already resolved through the Base cascade by
    * loader.tsx's loadPictureSize. `null`/undefined means no admin setting at
@@ -112,6 +137,13 @@ export interface EntityViewProps<T extends HasId> {
    * that skips the fetch, e.g. Settings -> Users) behaves as true — chatter
    * is on by design unless something says otherwise. */
   chatterVisible?: boolean
+  /** The admin's status-breadcrumb override for this form (field + steps),
+   * fetched by loader.tsx only when the descriptor declares `statusBar`.
+   * Undefined = no override: the module's field, every one of its options. */
+  statusBarConfig?: StatusBarConfig
+  /** The form's context values (ViewDescriptor.formContext), read by the
+   * loader; field conditions test them as `context.<key>`. */
+  formContext?: Record<string, unknown>
   /** The page title (tree views only) — passed down so TreeRenderer can put
    * it on the SAME row as the search bar and Create button instead of the
    * host page rendering a separate title row above. Untranslated source
@@ -121,7 +153,12 @@ export interface EntityViewProps<T extends HasId> {
 }
 
 /** Top-level dispatcher: render a load error, otherwise the renderer for the viewType. */
-export function EntityView<T extends HasId>(props: EntityViewProps<T>) {
+export function EntityView<T extends HasId>(rawProps: EntityViewProps<T>) {
+  // The bound Server Actions return failures as values (settleAction) — the
+  // only way Go's code/message/fields/request id survive a production build.
+  // Unwrapped once here, so every renderer below keeps plain try/catch.
+  const actions = useMemo(() => unwrapActions(rawProps.actions), [rawProps.actions])
+  const props = { ...rawProps, actions }
   if (props.error) return <ErrorAlert error={props.error} />
   switch (props.descriptor.viewType) {
     case 'form':
@@ -143,7 +180,9 @@ export function EntityView<T extends HasId>(props: EntityViewProps<T>) {
  * formPath and createPermission AND the session's role-derived permissions grant
  * it (the client mirror — display gating only, Go re-authorizes the POST).
  * Navigates to the empty form (formPath with ':id' → 'new'); the form store
- * creates on commit since the draft has no id.
+ * creates on commit since the draft has no id. The list URL's filter[<col>]
+ * params ride along, so the new form starts linked to the record the list is
+ * scoped to (newFormSeed).
  *
  * Exported so a host page can place it inline on its own title row (right
  * side) next to the tree view — most host pages (e.g. Settings -> Users)
@@ -160,10 +199,21 @@ export function CreateBar<T extends HasId>({ descriptor }: { descriptor: ViewDes
   const { formPath, createPermission } = descriptor
   // The hook runs unconditionally (rules of hooks); '' never matches a grant.
   const allowed = usePermission(createPermission ?? '')
+  const searchParams = useSearchParams()
+  const phone = usePhone()
   if (!formPath || !createPermission || !allowed) return null
+  const filters = new URLSearchParams()
+  searchParams?.forEach((value, key) => {
+    if (key.startsWith('filter[')) filters.append(key, value)
+  })
+  const query = filters.size > 0 ? `?${filters.toString()}` : ''
   return (
     <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-      <Button variant="contained" onClick={() => router.push(formPath.replace(':id', 'new'))}>
+      <Button
+        variant="contained"
+        sx={phone ? { minHeight: 40 } : undefined}
+        onClick={() => router.push(erpPath(formPath.replace(':id', 'new')) + query)}
+      >
         {t('Create')}
       </Button>
     </Box>
@@ -171,6 +221,23 @@ export function CreateBar<T extends HasId>({ descriptor }: { descriptor: ViewDes
 }
 
 // --- form ---
+
+/**
+ * A new record's starting values from the URL's filter[<col>]=<id> (CreateBar
+ * forwards its list's): many2one fields only — an id is unambiguous, while
+ * other filters (`filter[active]=true`) are text that may not match the type.
+ */
+export function newFormSeed<T extends HasId>(
+  descriptor: ViewDescriptor<T>,
+  params: Pick<URLSearchParams, 'get'> | null,
+): Partial<T> {
+  const seed: Record<string, unknown> = {}
+  for (const f of descriptor.fields) {
+    const value = params?.get(`filter[${f.name}]`)
+    if (value && f.type === 'relation' && f.relation?.kind === 'many2one') seed[f.name] = value
+  }
+  return seed as Partial<T>
+}
 
 function displayValue(value: unknown): string {
   if (value == null || value === '') return '—'
@@ -195,10 +262,11 @@ function displayValue(value: unknown): string {
  * (the stored body stays plain text; only the arrow's PRESENTATION is an
  * icon). Joined with newlines, not "; ", so each field lands on its own line.
  */
-function summarizeFieldChanges(
+export function summarizeFieldChanges(
   fields: FieldDescriptor[],
   before: Record<string, unknown>,
   after: Record<string, unknown>,
+  t: (text: string) => string = (text) => text,
 ): string | null {
   const changes: string[] = []
   for (const field of fields) {
@@ -207,6 +275,16 @@ function summarizeFieldChanges(
     const next = after[field.name]
     if (prev === next) continue
     if ((prev ?? '') === (next ?? '')) continue
+    // Objects (a geo field's GeoJSON) arrive as fresh instances on every
+    // save: compare their content, not their identity.
+    if (typeof prev === 'object' && typeof next === 'object' && JSON.stringify(prev) === JSON.stringify(next)) {
+      continue
+    }
+    // A geometry has no readable one-line value: say that it changed.
+    if (field.type === 'geo') {
+      changes.push(`${fieldLabel(field)} : ${t('changed')}`)
+      continue
+    }
     changes.push(`${fieldLabel(field)} : ${displayValue(prev)} → ${displayValue(next)}`)
   }
   return changes.length > 0 ? changes.join('\n') : null
@@ -237,14 +315,20 @@ function FormListNav({ entity, recordId }: { entity: string; recordId?: string }
   const router = useRouter()
   const relationOps = useRelationOps()
   const formPath = moduleRegistry.formPathFor(entity) ?? undefined
-  const ids = useListNavStore((s) => s.ids[entity])
+  const nav = useListNavStore((s) => s.nav[entity])
+  const [busy, setBusy] = useState(false)
   useEffect(() => {
-    if (ids || !relationOps) return
+    if (nav || !relationOps) return
     let cancelled = false
-    relationOps
-      .list(entity)
-      .then((records) => {
-        if (!cancelled) useListNavStore.getState().setIds(entity, records.map((r) => r.id))
+    // Server-paged when it can be, so the total counts every row, not one page.
+    const load = relationOps.listPage
+      ? relationOps.listPage(entity, { page: 1, pageSize: DEFAULT_DISPLAY_PAGE_SIZE }).then((res): ListNav => ({
+          ids: res.records.map((r) => r.id), offset: 0, total: res.total, totalEstimated: res.totalEstimated, paging: { pageSize: DEFAULT_DISPLAY_PAGE_SIZE },
+        }))
+      : relationOps.list(entity).then((records): ListNav => ({ ids: records.map((r) => r.id), offset: 0, total: records.length }))
+    load
+      .then((n) => {
+        if (!cancelled) useListNavStore.getState().setNav(entity, n)
       })
       .catch(() => {
         // No default order to fall back to — the stepper just stays hidden.
@@ -252,32 +336,65 @@ function FormListNav({ entity, recordId }: { entity: string; recordId?: string }
     return () => {
       cancelled = true
     }
-  }, [ids, relationOps, entity])
+  }, [nav, relationOps, entity])
 
-  if (!formPath || !recordId || !ids) return null
-  const index = ids.indexOf(recordId)
+  if (!formPath || !recordId || !nav) return null
+  const index = nav.ids.indexOf(recordId)
   if (index === -1) return null
+  const position = nav.offset + index // 0-based, over the whole filtered set
 
-  const goTo = (i: number) => router.push(formPath.replace(':id', ids[i]))
+  // Stepping through the list REPLACES this record's own breadcrumb entry
+  // instead of piling on a new one per step — see breadcrumb-store.ts's
+  // dropLast doc comment.
+  const open = (id: string) => {
+    useBreadcrumbStore.getState().dropLast()
+    router.push(erpPath(formPath.replace(':id', id)))
+  }
+  // Inside the loaded page: route straight there. Past its edge (server-paged):
+  // fetch the neighboring page with the list's own filter, then route.
+  const goTo = async (target: number) => {
+    const i = target - nav.offset
+    if (i >= 0 && i < nav.ids.length) return open(nav.ids[i])
+    const paging = nav.paging
+    if (!paging || !relationOps?.listPage) return
+    const page = Math.floor(target / paging.pageSize)
+    setBusy(true)
+    try {
+      const res = await relationOps.listPage(entity, { ...paging.options, page: page + 1, pageSize: paging.pageSize })
+      const ids = res.records.map((r) => r.id)
+      const id = ids[target - page * paging.pageSize]
+      // Past the real end (only reachable over an estimated total): keep the
+      // loaded page, so this record — and the navigator — stay where they are.
+      if (!id) return
+      useListNavStore.getState().setNav(entity, { ...nav, ids, offset: page * paging.pageSize, total: res.total, totalEstimated: res.totalEstimated })
+      open(id)
+    } catch {
+      // The page couldn't load; stay on this record.
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 'auto' }}>
       <IconButton
         size="small"
         aria-label={t('Previous record')}
-        disabled={index <= 0}
-        onClick={() => goTo(index - 1)}
+        disabled={busy || position <= 0}
+        onClick={() => void goTo(position - 1)}
       >
         <FontAwesomeIcon icon={byPrefixAndName.fas['chevron-left']} size="xs" />
       </IconButton>
       <Typography variant="body2" sx={{ fontVariantNumeric: tabularNums, whiteSpace: 'nowrap' }}>
-        {index + 1} / {ids.length}
+        {position + 1} / {formatTotal(nav.total, nav.totalEstimated)}
       </Typography>
       <IconButton
         size="small"
         aria-label={t('Next record')}
-        disabled={index >= ids.length - 1}
-        onClick={() => goTo(index + 1)}
+        // An estimated total (ADR-032) may undercount: never stop on it — a
+        // step past the real end just finds an empty page and stays put.
+        disabled={busy || (!nav.totalEstimated && position >= nav.total - 1)}
+        onClick={() => void goTo(position + 1)}
       >
         <FontAwesomeIcon icon={byPrefixAndName.fas['chevron-right']} size="xs" />
       </IconButton>
@@ -291,15 +408,30 @@ function FormRenderer<T extends HasId>({
   actions,
   pictureSize,
   chatterVisible = true,
+  statusBarConfig,
+  formContext,
 }: EntityViewProps<T>) {
   const t = useT()
-  const [store] = useState(() => createFormStore(descriptor, actions, initialData[0] ?? {}))
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const [store] = useState(() =>
+    createFormStore(descriptor, actions, initialData[0] ?? newFormSeed(descriptor, searchParams)),
+  )
   const draft = useFormDraft(store)
   const dirty = useFormDirty(store)
   const error = useFormError(store)
   const { setField } = store.getState()
   const chatterOps = useChatterOps()
   const relationOps = useRelationOps()
+  // Built-in Delete (form-actions-menu.tsx's own doc comment): gated on the
+  // route-derived permission AND on a bound remove Server Action actually
+  // existing (EntityActions.remove is optional). The hook runs
+  // unconditionally (rules of hooks) — same '' -never-matches posture
+  // CreateBar's own createPermission check already takes.
+  const canDelete = usePermission(`${descriptor.entity}:${descriptor.entity}:delete`)
+  const canWrite = usePermission(`${descriptor.entity}:${descriptor.entity}:write`)
+  const [deleteError, setDeleteError] = useState<SerializedError | null>(null)
   // The record's field values as of the last successful load/save — the
   // BEFORE side of the chatter log's diff. Re-seeded from a fresh navigation
   // (`initialData` prop change) and after every successful commit below, so a
@@ -320,14 +452,27 @@ function FormRenderer<T extends HasId>({
   // field's OWN value (not the whole draft) so an edit to some other field doesn't
   // spuriously re-fire this.
   const recordId = (draft as { id?: string }).id
-  // The status breadcrumb's field, when the descriptor opts in — resolved
-  // here (not inside StatusBar) so an unknown/removed field name degrades
-  // to "no breadcrumb" rather than a render error (registration already
-  // caught a genuinely bad descriptor; a stale statusBar on an in-memory
-  // descriptor during a hot-reload shouldn't crash the form).
-  const statusField = descriptor.statusBar
-    ? descriptor.fields.find((f) => f.name === descriptor.statusBar?.field)
-    : undefined
+  // The status breadcrumb, when the descriptor opts in: the module's field
+  // and its options, or the admin's override (resolveStatusBar). Resolved
+  // here, not inside StatusBar, so an unknown/removed field name degrades to
+  // "no breadcrumb" rather than a render error.
+  const statusBar = resolveStatusBar(descriptor, statusBarConfig)
+  // An editable breadcrumb is the field's widget: clickable for writers,
+  // unless the field itself is read-only right now — and the field then
+  // leaves the form body (it would be a second, redundant control).
+  const statusEditable = Boolean(statusBar && descriptor.statusBar?.editable)
+  const statusReadOnly =
+    !statusBar ||
+    statusBar.field.readOnly === true ||
+    Boolean(statusBar.field.compute) ||
+    Boolean(
+      statusBar.field.states?.readOnly &&
+        evaluateCondition(statusBar.field.states.readOnly, draft as Record<string, unknown>),
+    )
+  const hiddenFields = useMemo(
+    () => (statusEditable && statusBar ? new Set([statusBar.field.name]) : undefined),
+    [statusEditable, statusBar?.field.name],
+  )
   const layout = normalizeLayout(descriptor)
   const titleField = titleFieldName(layout) ?? layoutFieldOrder(layout)[0]
   const titleValue = titleField ? (draft as Record<string, unknown>)[titleField] : undefined
@@ -353,8 +498,79 @@ function FormRenderer<T extends HasId>({
     return saved as Record<string, unknown> | null
   }
 
+  // HeaderButtonContext.runAction: a server-side workflow step on this
+  // record; Go answers with the updated record, which becomes the form's
+  // state (and the chatter diff's new baseline) — the step changed it on
+  // the server, not through the draft.
+  const onHeaderButtonAction = actions.action
+    ? async (
+        action: string,
+        options?: { body?: unknown; revalidate?: string[] },
+      ): Promise<Record<string, unknown>> => {
+        if (!recordId || !actions.action) throw new Error('no saved record')
+        const res = (await actions.action(recordId, action, options?.body, options?.revalidate)) as Record<
+          string,
+          unknown
+        >
+        const record = res?.record as Partial<T> | undefined
+        if (record) {
+          store.getState().edit(record)
+          lastPersistedRef.current = record
+        }
+        return res ?? {}
+      }
+    : undefined
+
+  // Delete via the DEFAULT hard-delete affordance (docs/adr/ADR-015-undo-
+  // toast.md) rather than a confirm dialog — EAGER commit, not deferred:
+  // actions.remove runs immediately, and only navigates/shows the toast once
+  // it actually succeeds. A deferred commit (only calling remove from the
+  // toast's own onExpire timer) never survives a page refresh or a
+  // navigation elsewhere in the meantime — the pending setTimeout lives in
+  // this tab's JS memory alone, so the record silently stayed undeleted
+  // server-side while the UI had already moved on. The toast here is purely
+  // a REVERSAL affordance: onRecover calls actions.restore (Go's generic
+  // POST /:id/restore) to actually undo the already-committed delete, not a
+  // "did you really mean it" wait. idToRemove/listPath/formPathNow are
+  // captured at click time into plain consts the callbacks close over —
+  // never re-read from component state later, so a re-render between the
+  // click and the toast resolving can't feed either callback a stale value.
+  const handleDelete = () => {
+    if (!recordId || !actions.remove) return
+    const idToRemove = recordId
+    const formPathNow = pathname
+    const listPath = formPathNow.replace(/\/[^/]+$/, '')
+    setDeleteError(null)
+    actions
+      .remove(idToRemove)
+      .then(() => {
+        router.push(erpPath(listPath))
+        useUndoToastStore.getState().show({
+          message: t('Record deleted.'),
+          onRecover: () => {
+            void actions.restore?.(idToRemove).then(() => router.push(erpPath(formPathNow)))
+          },
+        })
+      })
+      .catch((e: unknown) => setDeleteError(serializeError(toApiError(e))))
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
+    await save()
+  }
+
+  // A breadcrumb click: the step becomes the field's value (its on_change
+  // runs as for any edit), then the record saves like a Save click —
+  // chatter log included. An unsaved new record only gets the draft value:
+  // saving it would be a create the user didn't ask for yet.
+  async function onStatusSelect(option: string) {
+    if (!statusBar) return
+    setField(statusBar.field.name as keyof T, option as T[keyof T])
+    if (recordId) await save()
+  }
+
+  async function save() {
     setSubmitting(true)
     const before = lastPersistedRef.current
     // An id already present BEFORE this commit means an existing record is
@@ -374,6 +590,7 @@ function FormRenderer<T extends HasId>({
             descriptor.fields,
             before as Record<string, unknown>,
             saved as Record<string, unknown>,
+            t,
           )
           if (summary) {
             chatterOps.create(descriptor.entity, saved.id, 'log', summary).catch(() => {
@@ -403,10 +620,34 @@ function FormRenderer<T extends HasId>({
               ...pending.toLink.map((related) =>
                 relationOps.create(via, { [cols.own]: saved.id, [cols.related]: related.id }),
               ),
-            ]).catch(() => {
-              // Swallowed — see the comment above.
-            })
+            ])
+              .catch(() => {
+                // Swallowed — see the comment above.
+              })
+              .finally(() => {
+                // The reconcile above (`seed(saved)`) just wiped this field's
+                // staged diff from the draft — Go's response has no column
+                // for a virtual m2m field, so the widget's `value` goes back
+                // to `undefined`/empty pending. Without this, RelationTagsWidget
+                // would keep showing its OWN stale `links` (loaded once at
+                // mount, never re-fetched since recordId hasn't changed) —
+                // e.g. a just-removed tag silently reappearing. Bumping `via`
+                // (the junction entity) makes any mounted tags widget for
+                // this field re-fetch and show the truth, whatever the flush
+                // above actually landed (even on partial failure).
+                useEntityRefreshStore.getState().bump(via)
+              })
           }
+        }
+        // `?link=<entity>:<id>:<field>` (e.g. a WBS "no milestone yet" tile): once a NEW
+        // record exists, point that other record's many2one at it. Go authorizes the write.
+        const link = !wasExisting ? searchParams?.get('link')?.split(':') : undefined
+        if (link?.length === 3 && link.every(Boolean) && relationOps?.update) {
+          const [linkEntity, linkId, linkField] = link
+          relationOps
+            .update(linkEntity, linkId, { [linkField]: saved.id })
+            .then(() => useEntityRefreshStore.getState().bump(linkEntity))
+            .catch((e: unknown) => setDeleteError(serializeError(toApiError(e))))
         }
         lastPersistedRef.current = saved
       }
@@ -416,6 +657,12 @@ function FormRenderer<T extends HasId>({
   }
 
   return (
+    // The form's banner scope: every error/notice raised anywhere in it — a
+    // save, a delete, a header button, a widget — shows in the slot between
+    // the toolbar and the form (banner.tsx). The context provider gives field
+    // conditions the form's context values (form-context.tsx).
+    <FormContextProvider values={formContext}>
+    <BannerScope>
     <Box
       component="form"
       onSubmit={onSubmit}
@@ -475,6 +722,9 @@ function FormRenderer<T extends HasId>({
           entity={descriptor.entity}
           actions={descriptor.actions ?? []}
           recordId={recordId ?? 'new'}
+          onDelete={canDelete && actions.remove ? handleDelete : undefined}
+          draft={draft as Record<string, unknown>}
+          onFieldsCommit={onHeaderButtonCommit}
         />
         <HeaderButtonContainer
           entity={descriptor.entity}
@@ -482,12 +732,21 @@ function FormRenderer<T extends HasId>({
           recordId={recordId ?? 'new'}
           draft={draft as Record<string, unknown>}
           onFieldsCommit={onHeaderButtonCommit}
+          onRunAction={onHeaderButtonAction}
+          onNavigate={(path) => router.push(erpPath(path))}
         />
-        {statusField && (
-          <StatusBar field={statusField} value={(draft as Record<string, unknown>)[statusField.name]} />
+        {statusBar && (
+          <StatusBar
+            field={statusBar.field}
+            steps={statusBar.steps}
+            value={(draft as Record<string, unknown>)[statusBar.field.name]}
+            onSelect={statusEditable && canWrite && !statusReadOnly ? (o) => void onStatusSelect(o) : undefined}
+            disabled={submitting}
+          />
         )}
         <FormListNav entity={descriptor.entity} recordId={recordId} />
       </Box>
+      <BannerSlot />
       {/* The chatter panel (docs/roadmaps — form chatter) sits to the RIGHT of
           the form at/above layout.chatterBreakpoint, stacked full-width BELOW it
           under that — a plain viewport media query, since this wrapper is
@@ -507,11 +766,8 @@ function FormRenderer<T extends HasId>({
         <Card sx={{ flex: 1, minWidth: 0, width: '100%' }}>
           <CardContent sx={{ p: 3 }}>
             <Stack spacing={2.5}>
-              {error ? (
-                <ErrorAlert
-                  error={{ code: error.code, message: error.message, requestId: error.requestId }}
-                />
-              ) : null}
+              <ErrorAlert error={error ? serializeError(error) : null} fields={descriptor.fields} />
+              <ErrorAlert error={deleteError} />
               <PictureSizeProvider size={pictureSize}>
                 <LayoutForm
                   descriptor={descriptor}
@@ -519,6 +775,7 @@ function FormRenderer<T extends HasId>({
                   onFieldChange={(name, value) => setField(name as keyof T, value as T[keyof T])}
                   entity={descriptor.entity}
                   recordId={(draft as { id?: string }).id ?? null}
+                  hidden={hiddenFields}
                 />
               </PictureSizeProvider>
             </Stack>
@@ -527,6 +784,8 @@ function FormRenderer<T extends HasId>({
         {chatterVisible ? <ChatterPanel entity={descriptor.entity} recordId={recordId ?? null} /> : null}
       </Box>
     </Box>
+    </BannerScope>
+    </FormContextProvider>
   )
 }
 
@@ -662,11 +921,19 @@ const MODE_LABELS: Record<DisplayMode, string> = {
   kanban: 'Kanban',
   calendar: 'Calendar',
   graph: 'Graph',
+  gantt: 'Gantt',
+  wbs: 'WBS',
+  pert: 'PERT',
+  obs: 'OBS',
+  risk: 'Risk',
+  insights: 'Insights',
+  matrix: 'Matrices',
+  pbs: 'PBS',
 }
 
 /**
  * Top-right of the list content: switches between List (the DataGrid/tree
- * this renderer has always shown) and Kanban/Calendar/Graph (docs/roadmaps/
+ * this renderer has always shown) and Kanban/Calendar/Graph/Gantt (docs/roadmaps/
  * list-view-modes.md). Kanban/Calendar/Graph are each OMITTED entirely — not
  * rendered disabled — until their EFFECTIVE config (a module's own
  * `viewModeDefaults`, merged with any admin override from Settings -> Views;
@@ -689,6 +956,43 @@ function DisplayModeSwitcher({
 }) {
   const t = useT()
   const candidates = DISPLAY_MODES.filter((candidate) => availability[candidate])
+  const phone = usePhone()
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+  // Up to 9 modes don't fit one line on a phone: a single menu button names the current one.
+  if (phone) {
+    const label = `${t('Display mode')}: ${t(MODE_LABELS[mode])}`
+    return (
+      <Box sx={{ mb: 1 }}>
+        <Button
+          fullWidth
+          variant="outlined"
+          sx={{ minHeight: 40 }}
+          aria-label={label}
+          aria-haspopup="menu"
+          onClick={(e) => setAnchor(e.currentTarget)}
+          endIcon={<FontAwesomeIcon icon={byPrefixAndName.fas['chevron-down']} />}
+        >
+          {t(MODE_LABELS[mode])}
+        </Button>
+        <Menu anchorEl={anchor} open={anchor !== null} onClose={() => setAnchor(null)}>
+          {candidates.map((candidate) => (
+            <MenuItem
+              key={candidate}
+              selected={candidate === mode}
+              sx={{ minHeight: 40 }}
+              data-entity={entity}
+              onClick={() => {
+                setAnchor(null)
+                onChange(candidate)
+              }}
+            >
+              {t(MODE_LABELS[candidate])}
+            </MenuItem>
+          ))}
+        </Menu>
+      </Box>
+    )
+  }
   return (
     <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
       <ToggleButtonGroup
@@ -716,17 +1020,20 @@ function TreeRenderer<T extends HasId>({
   actions,
   viewFields = EMPTY_VIEW_FIELDS,
   recordTotal,
+  recordTotalEstimated,
   title,
 }: EntityViewProps<T>) {
   const t = useT()
+  const phone = usePhone()
+  const unitSystem = useUnitStore((s) => s.system)
+  const i18nLocale = useI18nStore((s) => s.locale)
   const router = useRouter()
-  const mode = useUiStore((s) => s.viewMode[descriptor.entity] ?? 'list')
+  const storedMode = useUiStore((s) => s.viewMode[descriptor.entity] ?? 'list')
   const setViewMode = useUiStore((s) => s.setViewMode)
   // The module's own hardcoded baseline (if any), overridden field-by-field by
   // whatever Settings -> Views has saved — the switcher and both modes below
   // act on this merged EFFECTIVE config, never the raw pieces separately.
   const effective = effectiveViewFields(descriptor.viewModeDefaults, viewFields)
-  const availability = availableDisplayModes(effective)
 
   // A single shared record set every mode reads from, instead of each mode
   // rendering its own frozen copy of `initialData`. Kanban/Calendar's drags
@@ -737,29 +1044,135 @@ function TreeRenderer<T extends HasId>({
   // Re-synced from `initialData` on every prop change (a fresh navigation, or
   // a revalidated Server Action reflecting through this page).
   const [liveRecords, setLiveRecords] = useState(initialData)
+  // The search bar's structured filters — Graph mode aggregates server-side
+  // over every row matching them (ADR-023).
+  const [activeFilters, setActiveFilters] = useState<EntityListOptions | undefined>(undefined)
   useEffect(() => {
     setLiveRecords(initialData)
   }, [initialData])
-  // The DataGrid's own pagination state (page + rows shown per page) — purely
-  // a client-side view over whatever SearchBar already fetched (up to its own
-  // fixed FETCH_LIMIT), never fed back into a request. DataGrid's default
-  // paginationMode is 'client', so handing it back via onPaginationModelChange
-  // below is the entire mechanism — no other wiring needed.
+  // The DataGrid's pagination state (page + rows per page). Server-paged (see
+  // below) it drives the page request; otherwise it's a client-side view over
+  // the records already loaded.
   const [paginationModel, setPaginationModel] = useState({
     page: 0,
     pageSize: DEFAULT_DISPLAY_PAGE_SIZE,
   })
+
+  // Server-side paging (List mode): with RelationOps.listPage bound, each
+  // page — and the total over EVERY matching row — comes from Go instead of
+  // client-paging whatever was fetched. The server-seeded first page
+  // (page 1, Go's default 20 rows, no search-bar filter) is reused as is.
+  // A live-typed quick-find (liveResults) is a capped autocomplete merge
+  // across several columns with no single total, so it stays client-paged.
+  const relationOps = useRelationOps()
+  const paged = relationOps?.listPage != null
+  const [liveResults, setLiveResults] = useState<T[] | null>(null)
+  const [total, setTotal] = useState(recordTotal ?? initialData.length)
+  const [totalEstimated, setTotalEstimated] = useState(recordTotalEstimated === true)
+  const [pageLoading, setPageLoading] = useState(false)
+  const [pageError, setPageError] = useState<SerializedError | null>(null)
+  const baseOptions = useMemo(
+    () => mergeListOptions(descriptor.listFilter, activeFilters),
+    [descriptor.listFilter, activeFilters],
+  )
+  const availability = availableDisplayModes(effective, baseOptions)
+  // OBS depends on the live filters: once the pin is lost the persisted 'obs' reads as List everywhere.
+  // Insights/Matrices ride the same pin rule (ADR-041).
+  const mode =
+    (storedMode === 'obs' && !availability.obs) ||
+    (storedMode === 'risk' && !availability.risk) ||
+    (storedMode === 'insights' && !availability.insights) ||
+    (storedMode === 'matrix' && !availability.matrix) ||
+    (storedMode === 'pbs' && !availability.pbs)
+      ? 'list'
+      : storedMode
+  const onFiltersChange = (options: EntityListOptions | undefined) => {
+    setActiveFilters(options)
+    setLiveResults(null)
+    setPaginationModel((p) => ({ ...p, page: 0 }))
+  }
+  useEffect(() => {
+    if (!paged || mode !== 'list' || liveResults) return
+    const { page, pageSize } = paginationModel
+    if (!activeFilters && page === 0 && pageSize === DEFAULT_DISPLAY_PAGE_SIZE) {
+      setLiveRecords(initialData)
+      setTotal(recordTotal ?? initialData.length)
+      setTotalEstimated(recordTotalEstimated === true)
+      return
+    }
+    let cancelled = false
+    setPageLoading(true)
+    setPageError(null)
+    relationOps
+      .listPage!(descriptor.entity, { ...baseOptions, page: page + 1, pageSize })
+      .then((res) => {
+        if (cancelled) return
+        setLiveRecords(res.records as unknown as T[])
+        setTotal(res.total)
+        setTotalEstimated(res.totalEstimated === true)
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setPageError(serializeError(toApiError(e)))
+      })
+      .finally(() => {
+        if (!cancelled) setPageLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [paged, mode, liveResults, paginationModel, baseOptions, activeFilters, initialData, recordTotal, recordTotalEstimated, descriptor.entity])
+  const serverPaged = paged && liveResults == null
+  // Quick-find results (or the cleared-query fallback, SearchBar's `fallback`
+  // — initialData by identity) feed every mode exactly as before.
+  const onSearchResults = (records: T[]) => {
+    if (!paged) return setLiveRecords(records)
+    if (records === initialData) {
+      setLiveResults(null)
+      return
+    }
+    setLiveResults(records)
+    setLiveRecords(records)
+    setPaginationModel((p) => ({ ...p, page: 0 }))
+  }
   // Mirrors the current filtered/searched/grouped order into the session-only
   // list-nav store — a form navigated to from here (List/Kanban/Calendar all
   // route through the same formPath click) can then step </> through this
   // SAME order without coming back to this view (see FormListNav below).
+  // Server-paged List mode also records where this page sits and Go's total over
+  // the active filter, so the form reads "position / total" over every matching
+  // row and steps across page boundaries; other modes hold all their rows.
   useEffect(() => {
-    useListNavStore.getState().setIds(descriptor.entity, liveRecords.map((r) => r.id))
-  }, [liveRecords, descriptor.entity])
+    const ids = liveRecords.map((r) => r.id)
+    useListNavStore.getState().setNav(descriptor.entity, serverPaged && mode === 'list'
+      ? { ids, offset: paginationModel.page * paginationModel.pageSize, total, totalEstimated, paging: { options: baseOptions, pageSize: paginationModel.pageSize } }
+      : { ids, offset: 0, total: ids.length })
+  }, [liveRecords, descriptor.entity, serverPaged, mode, paginationModel, total, totalEstimated, baseOptions])
+
+  // An estimated total (ADR-032) can undercount by a lot, so it must never
+  // bound paging: the grid runs with an unknown row count (-1), shows the
+  // estimate, and offers a next page while the current one is full. On the
+  // first short page the grid fixes the count itself; a filter change starts
+  // over from unknown (the grid only re-reads `rowCount` when the prop changes).
+  // What useGridApiRef returns, without importing the grid (lazy-widgets.tsx).
+  const gridApiRef = useRef<NonNullable<DataGridProps['apiRef']>['current']>(null)
+  const estimatedPaging = serverPaged && totalEstimated
+  const paginationMeta = useMemo(
+    () => ({ hasNextPage: liveRecords.length >= paginationModel.pageSize }),
+    [liveRecords.length, paginationModel.pageSize],
+  )
+  useEffect(() => {
+    if (estimatedPaging) gridApiRef.current?.setRowCount(-1)
+  }, [estimatedPaging, baseOptions, gridApiRef])
 
   // Flat data (no parent links) renders as a grid, with row checkboxes; hierarchical
   // data as a read-only tree (RichTreeView has no selection UI here — out of scope).
   const hierarchical = (liveRecords as TreeNode[]).some((r) => r.parent_id != null)
+  // List cells show a many2one's label (relation.labelField), never its id.
+  const m2oFields = descriptor.fields.filter((f) => f.type === 'relation' && f.relation?.kind === 'many2one')
+  const relationLabel = useRelationLabels(
+    m2oFields,
+    liveRecords.flatMap((r) => m2oFields.map((f): [string, unknown] => [f.name, (r as Record<string, unknown>)[f.name]])),
+  )
 
   // Row selection (checkboxes) — only meaningful for the flat grid. Reset on every
   // liveRecords change: ids from a previous search/filter/page-size fetch are
@@ -787,6 +1200,49 @@ function TreeRenderer<T extends HasId>({
     })
   }
 
+  // Built-in bulk Delete (list-selection.tsx's own doc comment) — EAGER
+  // commit, not deferred: actions.remove fires immediately per id, and the
+  // toast only shows for whichever ones actually succeeded. A deferred
+  // commit (only calling remove once the toast's own timer elapses) never
+  // survives a refresh/navigation away in the meantime — see
+  // FormRenderer's own handleDelete doc comment for the full rationale, this
+  // is the same fix applied to the bulk path. The toast's onRecover calls
+  // actions.restore (Go's generic POST /:id/restore) to actually undo the
+  // already-committed deletes, a real reversal rather than "don't commit
+  // yet." removedRecords/deletedRecords are captured at click/settle time
+  // into plain consts, never re-read from component state later — every
+  // setter below still uses the functional form, so this stays safe even if
+  // liveRecords/selectedIds have moved on by the time a promise resolves.
+  const canDelete = usePermission(`${descriptor.entity}:${descriptor.entity}:delete`)
+  const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null)
+  const handleBulkDelete = (ids: string[]) => {
+    if (!actions.remove) return
+    const idSet = new Set(ids)
+    const removedRecords = liveRecords.filter((r) => idSet.has(r.id))
+    setBulkDeleteError(null)
+    setLiveRecords((prev) => prev.filter((r) => !idSet.has(r.id)))
+    setSelectionModel({ type: 'include', ids: new Set() })
+    void Promise.allSettled(ids.map((id) => actions.remove!(id))).then((results) => {
+      const failedIds = new Set(ids.filter((_, i) => results[i].status === 'rejected'))
+      if (failedIds.size > 0) {
+        // Only the ones that actually failed come back — whatever DID
+        // delete stays deleted; re-adding those too would show a row the
+        // backend has already dropped.
+        setLiveRecords((prev) => [...prev, ...removedRecords.filter((r) => failedIds.has(r.id))])
+        setBulkDeleteError(t('Some records could not be deleted.'))
+      }
+      const deletedRecords = removedRecords.filter((r) => !failedIds.has(r.id))
+      if (deletedRecords.length === 0) return
+      useUndoToastStore.getState().show({
+        message: `${deletedRecords.length} ${t('record(s) deleted.')}`,
+        onRecover: () => {
+          setLiveRecords((prev) => [...prev, ...deletedRecords])
+          void Promise.all(deletedRecords.map((r) => actions.restore?.(r.id)))
+        },
+      })
+    })
+  }
+
   let content: React.ReactNode
   if (mode === 'kanban' && effective.kanbanStatusField) {
     content = (
@@ -795,7 +1251,12 @@ function TreeRenderer<T extends HasId>({
         initialData={liveRecords}
         actions={actions}
         statusField={effective.kanbanStatusField}
+        columnsConfig={effective.kanbanColumns ?? undefined}
+        swimlanesConfig={effective.kanbanSwimlanes ?? undefined}
+        badgeField={effective.kanbanBadgeField ?? undefined}
+        colorTagsField={effective.colorTagsField ?? undefined}
         onRecordsChange={setLiveRecords}
+        serverOptions={serverPaged ? (baseOptions ?? {}) : undefined}
       />
     )
   } else if (mode === 'calendar' && effective.calendarDateField) {
@@ -806,15 +1267,85 @@ function TreeRenderer<T extends HasId>({
         actions={actions}
         dateField={effective.calendarDateField}
         colorField={effective.calendarColorField ?? undefined}
+        colorTagsField={effective.colorTagsField ?? undefined}
         onRecordsChange={setLiveRecords}
+        serverOptions={serverPaged ? (baseOptions ?? {}) : undefined}
       />
     )
+  } else if (mode === 'gantt' && effective.ganttStartField && effective.ganttEndField) {
+    content = (
+      <GanttRenderer
+        descriptor={descriptor}
+        initialData={liveRecords}
+        actions={actions}
+        startField={effective.ganttStartField}
+        endField={effective.ganttEndField}
+        dependencies={effective.ganttDependencies ?? undefined}
+        colorTagsField={effective.colorTagsField ?? undefined}
+        // ADR-041: the pinned project's schedule overlay and baseline snapshots.
+        schedule={effective.ganttSchedule ?? undefined}
+        baseline={effective.ganttBaseline ?? undefined}
+        milestones={effective.ganttMilestones ?? undefined}
+        onRecordsChange={setLiveRecords}
+        serverOptions={serverPaged ? (baseOptions ?? {}) : undefined}
+      />
+    )
+  } else if (mode === 'wbs' && effective.wbsParentField) {
+    content = (
+      <WbsRenderer
+        descriptor={descriptor as ViewDescriptor}
+        initialData={liveRecords}
+        actions={actions as unknown as EntityActions<HasId>}
+        parentField={effective.wbsParentField}
+        groupField={effective.wbsGroupField ?? undefined}
+        boxFields={[effective.wbsOrderField, 'name', effective.kanbanStatusField, effective.ganttStartField, effective.ganttEndField, effective.pertHoursField]}
+        hoursField={effective.pertHoursField ?? undefined}
+        orderField={effective.wbsOrderField ?? undefined}
+        deliverables={effective.wbsDeliverables ?? undefined}
+        onRecordsChange={setLiveRecords as (r: HasId[]) => void}
+        colorTagsField={effective.colorTagsField ?? undefined}
+        serverOptions={serverPaged ? (baseOptions ?? {}) : undefined}
+      />
+    )
+  } else if (mode === 'pert' && effective.pertDependencies) {
+    content = (
+      <PertRenderer
+        descriptor={descriptor as ViewDescriptor}
+        initialData={liveRecords}
+        actions={actions as unknown as EntityActions<HasId>}
+        dependencies={effective.pertDependencies}
+        startField={effective.ganttStartField ?? undefined}
+        endField={effective.ganttEndField ?? undefined}
+        hoursField={effective.pertHoursField ?? undefined}
+        orderField={effective.wbsOrderField ?? undefined}
+        boxFields={[effective.wbsOrderField, 'name', effective.kanbanStatusField, effective.ganttStartField, effective.ganttEndField, effective.pertHoursField]}
+        onRecordsChange={setLiveRecords as (r: HasId[]) => void}
+        colorTagsField={effective.colorTagsField ?? undefined}
+        serverOptions={serverPaged ? (baseOptions ?? {}) : undefined}
+      />
+    )
+  } else if (mode === 'obs' && effective.obs && availability.obs) {
+    const projectId = pinnedId(baseOptions, effective.obs.projectField)!
+    content = <ObsRenderer key={projectId} config={effective.obs} projectId={projectId} />
+  } else if (mode === 'risk' && effective.risk && availability.risk) {
+    const projectId = pinnedId(baseOptions, effective.risk.projectField)!
+    content = <RiskRenderer key={projectId} config={effective.risk} projectId={projectId} />
+  } else if (mode === 'insights' && effective.insights && availability.insights) {
+    const projectId = pinnedId(baseOptions, effective.insights.projectField)!
+    content = <InsightsRenderer key={projectId} config={effective.insights} projectId={projectId} />
+  } else if (mode === 'matrix' && effective.matrix && availability.matrix) {
+    const projectId = pinnedId(baseOptions, effective.matrix.projectField)!
+    content = <MatrixRenderer key={projectId} config={effective.matrix} projectId={projectId} />
+  } else if (mode === 'pbs' && effective.pbs && availability.pbs) {
+    const projectId = pinnedId(baseOptions, effective.pbs.projectField)!
+    content = <PbsRenderer key={projectId} config={effective.pbs} projectId={projectId} />
   } else if (mode === 'graph' && effective.enableGraphs) {
     content = (
       <GraphRenderer
         descriptor={descriptor}
         records={liveRecords}
         recordTotal={recordTotal ?? liveRecords.length}
+        listOptions={activeFilters}
       />
     )
   } else {
@@ -831,16 +1362,57 @@ function TreeRenderer<T extends HasId>({
       const fieldsByName = new Map(descriptor.fields.map((f) => [f.name, f]))
       const columns: GridColDef[] = layoutFieldOrder(normalizeLayout(descriptor))
         .map((name) => fieldsByName.get(name))
-        .filter((f) => f != null)
-        .map((f) => ({
-          field: f.name,
-          headerName: t(fieldLabel(f)),
-          flex: 1,
-        }))
+        // A geo field is a map, not a cell: it stays in a tree's fields for
+        // the search bar's near/inside/covers filters but never becomes a column.
+        .filter((f): f is FieldDescriptor => f != null && f.type !== 'geo')
+        .map((f) => {
+          // Phone: columns keep a readable width and the grid scrolls sideways instead.
+          const col: GridColDef = { field: f.name, headerName: t(fieldLabel(f)), flex: 1, ...(phone && { minWidth: 140 }) }
+          // 'user-presence' is display-only: the row IS a user record (its
+          // own id is the user id), so this renders that row's avatar + live
+          // presence bubble beside the field's own value instead of the bare
+          // text DataGrid renders by default (Settings -> Users' first user).
+          if (f.name === descriptor.viewModeDefaults?.wbsOrderField) {
+            col.valueFormatter = (_v: unknown, row: Record<string, unknown>) => orderLabel(descriptor, f.name, row)
+          }
+          if (f.widget === 'datetime') {
+            col.valueFormatter = (v: unknown) => (typeof v === 'string' && v ? new Date(v).toLocaleString() : '')
+          }
+          if (f.type === 'relation' && f.relation?.kind === 'many2one') {
+            col.valueFormatter = (v: unknown) => relationLabel(f.name, v)
+          }
+          // text/color: a swatch beside the hex (an invalid value stays plain text).
+          if (f.type === 'text' && f.widget === 'color') {
+            col.renderCell = (params) => (
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', height: '100%' }}>
+                {isHexColor(String(params.value ?? '')) ? <ColorDot color={String(params.value)} /> : null}
+                <span>{String(params.value ?? '')}</span>
+              </Stack>
+            )
+          }
+          if (f.widget === 'user-presence') {
+            col.renderCell = (params) => (
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', height: '100%' }}>
+                <AvatarWithPresence userId={String(params.row.id)} label={String(params.value ?? '')} size={20} />
+                <span>{String(params.value ?? '')}</span>
+              </Stack>
+            )
+          }
+          return col
+        })
+      // Rows from a `near` search carry `_distance_m` (meters from the center).
+      if (liveRecords.length > 0 && '_distance_m' in liveRecords[0]) {
+        columns.push({
+          field: '_distance_m',
+          headerName: t('Distance'),
+          sortable: false,
+          valueFormatter: (v: unknown) => formatDistance(v as number | null, unitSystem, i18nLocale),
+        })
+      }
       // A formPath makes rows navigable: clicking one opens that record's form.
       const { formPath } = descriptor
       content = (
-        <Box sx={{ width: '100%' }}>
+        <Box data-testid="list-grid" sx={{ width: '100%', ...(phone && { overflowX: 'auto' }) }}>
           <DataGrid
             rows={liveRecords}
             columns={columns}
@@ -851,13 +1423,33 @@ function TreeRenderer<T extends HasId>({
             onRowSelectionModelChange={setSelectionModel}
             onRowClick={
               formPath
-                ? (params) => router.push(formPath.replace(':id', String(params.id)))
+                ? (params) => router.push(erpPath(formPath.replace(':id', String(params.id))))
                 : undefined
             }
             sx={formPath ? { '& .MuiDataGrid-row': { cursor: 'pointer' } } : undefined}
-            // Controlled purely for RowsPerPageInput/page-navigation's sake —
-            // paginates client-side over whatever SearchBar already fetched
-            // (its own fixed FETCH_LIMIT), never triggers a new request.
+            // Server-paged: rowCount is Go's total over every matching row and
+            // each page change fetches that page (the effect above). An
+            // estimated total is shown, never trusted (gridApiRef's effect).
+            apiRef={gridApiRef}
+            paginationMode={serverPaged ? 'server' : 'client'}
+            rowCount={serverPaged ? (estimatedPaging ? -1 : total) : undefined}
+            estimatedRowCount={estimatedPaging ? total : undefined}
+            paginationMeta={estimatedPaging ? paginationMeta : undefined}
+            localeText={
+              estimatedPaging
+                ? {
+                    paginationDisplayedRows: ({ from, to, count, estimated }) =>
+                      `${from}–${to} ${t('of')} ${
+                        count !== -1
+                          ? count
+                          : estimated != null && estimated > to
+                            ? formatTotal(estimated, true)
+                            : `${t('more than')} ${to}`
+                      }`,
+                  }
+                : undefined
+            }
+            loading={pageLoading}
             paginationModel={paginationModel}
             onPaginationModelChange={setPaginationModel}
             pageSizeOptions={ALL_PAGE_SIZES}
@@ -881,7 +1473,13 @@ function TreeRenderer<T extends HasId>({
   // everything but the top bar — see the `pageInsetX`/`pageInsetY` tokens), not this
   // renderer's — a view-specific fix here would just be a second, competing mechanism.
   const searchBar = (
-    <SearchBar descriptor={descriptor} onResults={setLiveRecords} fallback={initialData} />
+    <SearchBar
+      descriptor={descriptor}
+      onResults={onSearchResults}
+      fallback={initialData}
+      onFiltersChange={onFiltersChange}
+      pagedByParent={paged}
+    />
   )
   // The selection toolbar (right of the search bar) only applies where
   // checkboxes actually exist — the flat grid in List mode.
@@ -893,19 +1491,24 @@ function TreeRenderer<T extends HasId>({
         selectedIds={selectedIds}
         totalLoaded={liveRecords.length}
         onSelectAll={toggleSelectAll}
+        onDelete={canDelete && actions.remove ? handleBulkDelete : undefined}
       />
     ) : null
   const searchRow = (
-    <Stack direction="row" spacing={2} sx={{ alignItems: 'center', justifyContent: 'center' }}>
+    <Stack direction="row" spacing={2} sx={{ alignItems: 'center', justifyContent: 'center', ...(phone && { width: '100%' }) }}>
       {searchBar}
       {selectionBar}
     </Stack>
   )
   return (
+    // The list's banner scope: errors from the list itself, a bulk delete,
+    // Kanban/Calendar moves or Graph show between the search row and the list.
+    <BannerScope>
     <Box>
       {title != null ? (
-        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
-          <Typography variant="h4" component="h1" sx={{ flexShrink: 0 }}>
+        // Phone: title and Create share line 1, the search bar wraps to its own line.
+        <Box data-testid="list-title-row" sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, ...(phone && { flexWrap: 'wrap' }) }}>
+          <Typography variant="h4" component="h1" sx={{ flexShrink: 0, ...(phone && { flex: 1 }) }}>
             {t(title)}
           </Typography>
           {/* Built-in search/filter bar (docs/adr/ADR-014-search-filter-bar.md) —
@@ -915,7 +1518,9 @@ function TreeRenderer<T extends HasId>({
               result shows up identically across List/Kanban/Calendar/Graph. The
               selection toolbar (SelectionBar) rides along on the SAME row, right
               of the search bar. */}
-          <Box sx={{ flex: 1, display: 'flex', justifyContent: 'center' }}>{searchRow}</Box>
+          <Box data-testid="list-search-slot" sx={{ flex: 1, display: 'flex', justifyContent: 'center', ...(phone && { order: 1, flexBasis: '100%' }) }}>
+            {searchRow}
+          </Box>
           <Box sx={{ flexShrink: 0 }}>
             <CreateBar descriptor={descriptor} />
           </Box>
@@ -923,6 +1528,11 @@ function TreeRenderer<T extends HasId>({
       ) : (
         searchRow
       )}
+      <BannerSlot sx={{ mt: 2 }} />
+      <ViewBanner status="error" open={Boolean(bulkDeleteError)}>
+        {bulkDeleteError}
+      </ViewBanner>
+      <ErrorAlert error={pageError} />
       <DisplayModeSwitcher
         entity={descriptor.entity}
         mode={mode}
@@ -931,6 +1541,7 @@ function TreeRenderer<T extends HasId>({
       />
       {content}
     </Box>
+    </BannerScope>
   )
 }
 
@@ -948,7 +1559,9 @@ function HierarchyTree<T extends HasId & TreeNode>({
   const toItem = (node: T): TreeViewDefaultItemModelProperties => ({
     id: node.id,
     label: String(
-      labelField ? ((node as Record<string, unknown>)[labelField] ?? node.id) : node.id,
+      labelField
+        ? (orderLabel(descriptor, labelField, node as Record<string, unknown>) ?? (node as Record<string, unknown>)[labelField] ?? node.id)
+        : node.id,
     ),
     children: store.getState().children(node.id).map(toItem),
   })
@@ -975,8 +1588,18 @@ function DashboardRenderer<T extends HasId>({
     createDashboardStore(descriptor, onRefresh ?? (async () => widgets ?? []), widgets ?? []),
   )
   const items = useStore(store, (s) => s.widgets)
+  const refreshError = useStore(store, (s) => s.error)
+  // A tile whose list view failed to load shows "—"; the banner says why.
+  const unavailable = items.filter((w) => typeof w.count !== 'number').map((w) => t(w.title))
 
   return (
+    // The dashboard's banner scope: its banners show above the tiles.
+    <BannerScope>
+    <BannerSlot />
+    <ErrorAlert error={refreshError ? serializeError(refreshError) : null} />
+    <ViewBanner status="warning" open={unavailable.length > 0}>
+      {t('Some counts could not be loaded')}: {unavailable.join(', ')}
+    </ViewBanner>
     <Grid container spacing={2}>
       {items.map((widget) => {
         // The server seeds count (number) or null when that list view failed to load.
@@ -991,7 +1614,7 @@ function DashboardRenderer<T extends HasId>({
               component="div"
               sx={{ mt: 0.5, fontVariantNumeric: tabularNums }}
             >
-              {typeof count === 'number' ? count : '—'}
+              {typeof count === 'number' ? formatTotal(count, widget.countEstimated === true) : '—'}
             </Typography>
           </CardContent>
         )
@@ -999,7 +1622,8 @@ function DashboardRenderer<T extends HasId>({
           <Grid key={widget.id} size={{ xs: 12, sm: 6, md: 3 }}>
             <Card variant="outlined">
               {href ? (
-                <CardActionArea component="a" href={href}>
+                // A client-side navigation, not a full page load (IntentLink).
+                <CardActionArea component={IntentLink} href={erpPath(href)}>
                   {block}
                 </CardActionArea>
               ) : (
@@ -1009,6 +1633,30 @@ function DashboardRenderer<T extends HasId>({
           </Grid>
         )
       })}
+      {/* Module pages the dashboard links to (descriptor.dashboardLinks), after the counts. */}
+      {(descriptor.dashboardLinks ?? []).map((link) => {
+        const icon = link.icon ? byPrefixAndName.fas[link.icon] : undefined
+        return (
+          <Grid key={`link:${link.path}`} size={{ xs: 12, sm: 6, md: 3 }}>
+            <Card variant="outlined" sx={{ height: '100%' }}>
+              <CardActionArea component={IntentLink} href={erpPath(link.path)} sx={{ height: '100%' }}>
+                <CardContent sx={{ p: 2 }}>
+                  <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                    {icon && <FontAwesomeIcon icon={icon} />}
+                    <Typography sx={{ fontWeight: 700 }}>{t(link.title)}</Typography>
+                  </Stack>
+                  {link.description && (
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                      {t(link.description)}
+                    </Typography>
+                  )}
+                </CardContent>
+              </CardActionArea>
+            </Card>
+          </Grid>
+        )
+      })}
     </Grid>
+    </BannerScope>
   )
 }

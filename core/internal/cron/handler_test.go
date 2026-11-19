@@ -8,9 +8,10 @@ import (
 
 	"core/internal/auth"
 	"core/orm"
+	"core/orm/model"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 type stubHistoryStore struct {
@@ -25,14 +26,14 @@ func (s *stubHistoryStore) FindInTenant(_ context.Context, tenantID, id uuid.UUI
 	return h, nil
 }
 
-func newTestContext(method, path string) (echo.Context, *httptest.ResponseRecorder) {
+func newTestContext(method, path string) (*echo.Context, *httptest.ResponseRecorder) {
 	e := echo.New()
 	req := httptest.NewRequest(method, path, nil)
 	rec := httptest.NewRecorder()
 	return e.NewContext(req, rec), rec
 }
 
-func withIdentity(c echo.Context, tenantID uuid.UUID) echo.Context {
+func withIdentity(c *echo.Context, tenantID uuid.UUID) *echo.Context {
 	ctx := auth.SetIdentity(c.Request().Context(), auth.Identity{TenantID: tenantID, UserID: uuid.New()})
 	c.SetRequest(c.Request().WithContext(ctx))
 	return c
@@ -48,14 +49,13 @@ func TestDownloadLog_StreamsExistingFile(t *testing.T) {
 	}
 
 	store := &stubHistoryStore{byID: map[uuid.UUID]CronHistory{
-		histID: {TenantID: tenant, LogsFilepath: path},
+		histID: {BaseModel: model.BaseModel{TenantID: tenant}, LogsFilepath: path},
 	}}
-	h := newHandlerWith(store)
+	h := NewHandler(store)
 
 	c, rec := newTestContext(http.MethodGet, "/api/v1/cron_history/"+histID.String()+"/log")
 	c = withIdentity(c, tenant)
-	c.SetParamNames("id")
-	c.SetParamValues(histID.String())
+	c.SetPathValues(append(c.PathValues(), echo.PathValue{Name: "id", Value: histID.String()}))
 
 	if err := h.DownloadLog(c); err != nil {
 		t.Fatalf("DownloadLog: %v", err)
@@ -74,14 +74,13 @@ func TestDownloadLog_NotFoundForOtherTenant(t *testing.T) {
 	histID := uuid.New()
 
 	store := &stubHistoryStore{byID: map[uuid.UUID]CronHistory{
-		histID: {TenantID: otherTenant, LogsFilepath: "/does/not/matter"},
+		histID: {BaseModel: model.BaseModel{TenantID: otherTenant}, LogsFilepath: "/does/not/matter"},
 	}}
-	h := newHandlerWith(store)
+	h := NewHandler(store)
 
 	c, rec := newTestContext(http.MethodGet, "/api/v1/cron_history/"+histID.String()+"/log")
 	c = withIdentity(c, tenant)
-	c.SetParamNames("id")
-	c.SetParamValues(histID.String())
+	c.SetPathValues(append(c.PathValues(), echo.PathValue{Name: "id", Value: histID.String()}))
 
 	if err := h.DownloadLog(c); err != nil {
 		t.Fatalf("DownloadLog: %v", err)

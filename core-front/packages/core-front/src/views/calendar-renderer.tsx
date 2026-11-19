@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { erpPath } from '../navigation'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
@@ -8,24 +9,39 @@ import CardContent from '@mui/material/CardContent'
 import Collapse from '@mui/material/Collapse'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
+import { serializeError, toApiError, type SerializedError } from '../api/errors'
+import { mergeListOptions, type EntityListOptions } from '../api/list-options'
 import { useT } from '../i18n/translate'
+import { usePermission } from '../auth/Can'
+import { usePhone } from './use-phone'
 import type { ViewDescriptor } from './descriptor'
 import { ErrorAlert } from './error-alert'
-import { orderedFields } from './layout-fields'
+import { orderedFields, orderLabel } from './layout-fields'
+import { formatTotal } from './total-format'
+import { useRelationOps } from './relation-ops'
 import type { EntityActions, HasId } from './stores'
 import { useUndoToastStore } from './undo-toast'
+import { isEmptyZoneClick, useQuickCreate } from './quick-create'
 import { useOptimisticFieldMove } from './use-optimistic-field-move'
+import { colorTagsFieldOf, useRecordColors } from './use-record-colors'
+import { ColorRibbon } from './color-tags'
 
 // Calendar display mode (docs/roadmaps/list-view-modes.md, Phase 3): a month
 // grid positioning records by their configured date field; records with no
 // value in that field list in an "Unscheduled" panel instead of being
-// dropped. Renders the SAME already-fetched records TreeRenderer's list mode
-// does — no new fetch, no new route; browsing months re-filters that same
-// set, it never refetches. Drag/PATCH/revert mechanics are the SAME
+// dropped. With `serverOptions` (TreeRenderer's server-paged mode) it loads
+// the visible month (a gte/lt range on the date field) and the unscheduled
+// records (`empty[]`) from the server, refetching on every month change;
+// otherwise it re-filters the records it was handed. Drag/PATCH/revert mechanics are the SAME
 // useOptimisticFieldMove hook KanbanRenderer uses (Phase 2) — reused, not
 // duplicated.
 
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+/** Records loaded for one month; past it, a caption says how many aren't shown. */
+const CALENDAR_MONTH_LIMIT = 1000
+/** Unscheduled records loaded; the panel header still shows the full count. */
+const CALENDAR_UNSCHEDULED_LIMIT = 50
 
 /** Local-time grid math throughout — never `new Date('YYYY-MM-DD')`, which
  * jsdom/browsers parse as UTC midnight and can land on the wrong local day. */
@@ -65,6 +81,12 @@ export interface CalendarRendererProps<T extends HasId> {
    * stale snapshot from whenever the page last navigated.
    */
   onRecordsChange?: (records: T[]) => void
+  /** Set ⇒ fetch the visible month + unscheduled records from the server
+   * (RelationOps.listPage) under these filters, instead of `initialData`. */
+  serverOptions?: EntityListOptions
+  /** A color-tags many2many field (ViewModeDefaults.colorTagsField): a 1px ribbon
+   * in its colors along each card's top edge. */
+  colorTagsField?: string
 }
 
 export function CalendarRenderer<T extends HasId>({
@@ -74,11 +96,83 @@ export function CalendarRenderer<T extends HasId>({
   dateField,
   colorField,
   onRecordsChange,
+  serverOptions,
+  colorTagsField,
 }: CalendarRendererProps<T>) {
   const t = useT()
+  const phone = usePhone()
+  const canWrite = usePermission(`${descriptor.entity}:${descriptor.entity}:write`)
   const router = useRouter()
   const { formPath } = descriptor
-  const { records, error, moveField } = useOptimisticFieldMove(initialData, actions, dateField)
+  const relationOps = useRelationOps()
+  const now = new Date()
+  const [cursor, setCursor] = useState({ year: now.getFullYear(), month: now.getMonth() })
+
+  const [server, setServer] = useState<{
+    records: T[]
+    monthTotal: number
+    /** Go estimated the total (past 10 000 matching rows, ADR-032). */
+    monthEstimated: boolean
+    monthLoaded: number
+    unscheduledTotal: number
+    unscheduledEstimated: boolean
+    unscheduledLoaded: number
+  } | null>(null)
+  const [loadError, setLoadError] = useState<SerializedError | null>(null)
+  const serverKey = serverOptions && relationOps?.listPage ? JSON.stringify(serverOptions) : null
+  // Bumped after a quick create: the month is read again.
+  const [reloads, setReloads] = useState(0)
+  useEffect(() => {
+    const listPage = relationOps?.listPage
+    if (serverKey == null || !listPage) {
+      setServer(null)
+      return
+    }
+    const opts = JSON.parse(serverKey) as EntityListOptions
+    const from = isoDate(cursor.year, cursor.month, 1)
+    const next = new Date(cursor.year, cursor.month + 1, 1)
+    const until = isoDate(next.getFullYear(), next.getMonth(), 1)
+    // Keep a search-bar lower bound on this same field when it's the tighter one.
+    const userFrom = opts.gte?.[dateField]
+    const monthScope: EntityListOptions = {
+      gte: { [dateField]: userFrom && userFrom > from ? userFrom : from },
+      lt: { [dateField]: until },
+    }
+    let cancelled = false
+    void Promise.all([
+      listPage(descriptor.entity, { ...mergeListOptions(opts, monthScope), pageSize: CALENDAR_MONTH_LIMIT }),
+      listPage(descriptor.entity, {
+        ...mergeListOptions(opts, { empty: [dateField] }),
+        pageSize: CALENDAR_UNSCHEDULED_LIMIT,
+      }),
+    ])
+      .then(([month, unscheduled]) => {
+        if (cancelled) return
+        setLoadError(null)
+        setServer({
+          records: [...month.records, ...unscheduled.records] as unknown as T[],
+          monthTotal: month.total,
+          monthEstimated: month.totalEstimated === true,
+          monthLoaded: month.records.length,
+          unscheduledTotal: unscheduled.total,
+          unscheduledEstimated: unscheduled.totalEstimated === true,
+          unscheduledLoaded: unscheduled.records.length,
+        })
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setLoadError(serializeError(toApiError(e)))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [serverKey, cursor.year, cursor.month, dateField, descriptor.entity, reloads])
+
+  const { records, error, moveField, addRecord } = useOptimisticFieldMove(server?.records ?? initialData, actions, dateField)
+  const quick = useQuickCreate(descriptor.entity, serverOptions ?? descriptor.listFilter, (created) => {
+    addRecord(created as unknown as T)
+    setReloads((n) => n + 1)
+  })
+  const { colors } = useRecordColors(descriptor.entity, colorTagsFieldOf(descriptor as ViewDescriptor, colorTagsField), records.map((r) => r.id))
   useEffect(() => {
     onRecordsChange?.(records)
   }, [records, onRecordsChange])
@@ -88,13 +182,16 @@ export function CalendarRenderer<T extends HasId>({
   // nothing. A ref always dereferences the latest moveField/records pair.
   const moveFieldRef = useRef(moveField)
   moveFieldRef.current = moveField
+  // Phone: the tapped day (default today, when in the shown month).
+  const [picked, setPicked] = useState<string | null>(null)
+  const monthPrefix = isoDate(cursor.year, cursor.month, 1).slice(0, 8)
+  const todayIso = isoDate(now.getFullYear(), now.getMonth(), now.getDate())
+  const selectedDay = picked?.startsWith(monthPrefix) ? picked : todayIso.startsWith(monthPrefix) ? todayIso : null
   const [dragging, setDragging] = useState<T | null>(null)
   // Set by a valid onDrop (day cell / Unscheduled) before onDragEnd fires; tells
   // onDragEnd whether the drag landed on one of THIS component's own drop targets
   // or was released somewhere outside it entirely (desktop, another panel, ...).
   const droppedRef = useRef(false)
-  const now = new Date()
-  const [cursor, setCursor] = useState({ year: now.getFullYear(), month: now.getMonth() })
 
   // Label field only — day cells are compact, unlike a Kanban card.
   const [labelField] = orderedFields(descriptor, { exclude: [dateField], limit: 1 })
@@ -125,6 +222,12 @@ export function CalendarRenderer<T extends HasId>({
     byDay.set(value, bucket)
   }
 
+  // Server totals, shifted by any cards dragged in/out of Unscheduled since.
+  const unscheduledCount = server
+    ? server.unscheduledTotal + unscheduled.length - server.unscheduledLoaded
+    : unscheduled.length
+  const monthHidden = server ? server.monthTotal - server.monthLoaded : 0
+
   function changeMonth(delta: number) {
     setCursor(({ year, month }) => {
       const next = new Date(year, month + delta, 1)
@@ -132,9 +235,15 @@ export function CalendarRenderer<T extends HasId>({
     })
   }
 
+  function dateText(iso: string): string {
+    const [y, m, d] = iso.split('-').map(Number)
+    return new Date(y, m - 1, d).toLocaleDateString()
+  }
+
   function label(record: T): string {
     if (!labelField) return record.id
-    return String((record as Record<string, unknown>)[labelField.name] ?? record.id)
+    const r = record as Record<string, unknown>
+    return orderLabel(descriptor, labelField.name, r) ?? String(r[labelField.name] ?? record.id)
   }
 
   function isFlagged(record: T): boolean {
@@ -142,12 +251,13 @@ export function CalendarRenderer<T extends HasId>({
     return (record as Record<string, unknown>)[colorField] === true
   }
 
-  function dayCard(record: T) {
+  function dayCard(record: T, scheduleOn?: string | null) {
     const flagged = isFlagged(record)
     return (
       <Card
         key={record.id}
         data-testid={`calendar-card-${record.id}`}
+        className="erp-appear"
         variant="outlined"
         draggable
         onDragStart={() => {
@@ -171,9 +281,10 @@ export function CalendarRenderer<T extends HasId>({
         // A real drag never fires click (the browser suppresses it once the pointer
         // moves past the drag threshold), so a plain click here is unambiguously
         // "clicked, didn't drag" — no separate bookkeeping needed.
-        onClick={formPath ? () => router.push(formPath.replace(':id', record.id)) : undefined}
+        onClick={formPath ? () => router.push(erpPath(formPath.replace(':id', record.id))) : undefined}
         sx={{
           cursor: formPath ? 'pointer' : 'grab',
+          position: 'relative',
           ...(flagged && {
             borderColor: 'error.main',
             borderLeftWidth: 3,
@@ -182,10 +293,23 @@ export function CalendarRenderer<T extends HasId>({
           }),
         }}
       >
+        <ColorRibbon colors={colors.get(record.id)} />
         <CardContent sx={{ p: 1, '&:last-child': { pb: 1 } }}>
           <Typography variant="caption" sx={{ display: 'block' }}>
             {label(record)}
           </Typography>
+          {phone && canWrite && scheduleOn ? (
+            <Button
+              size="small"
+              onClick={(e) => {
+                e.stopPropagation()
+                void moveField(record.id, scheduleOn)
+              }}
+              sx={{ minWidth: 40, minHeight: 40 }}
+            >
+              {`${t('Schedule on')} ${dateText(scheduleOn)}`}
+            </Button>
+          ) : null}
         </CardContent>
       </Card>
     )
@@ -197,14 +321,23 @@ export function CalendarRenderer<T extends HasId>({
 
   return (
     <Box>
-      {error ? <ErrorAlert error={error} /> : null}
-      <Stack direction="row" spacing={2} sx={{ alignItems: 'flex-start' }}>
+      <ErrorAlert error={error} />
+      <ErrorAlert error={loadError} />
+      {quick.dialog}
+      <Stack direction={phone ? 'column' : 'row'} spacing={2} sx={{ alignItems: phone ? 'stretch' : 'flex-start' }}>
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
             <Button size="small" aria-label={t('Previous month')} onClick={() => changeMonth(-1)}>
               {t('Previous')}
             </Button>
-            <Typography variant="subtitle1">{monthLabel(cursor.year, cursor.month)}</Typography>
+            <Box sx={{ textAlign: 'center' }}>
+              <Typography variant="subtitle1">{monthLabel(cursor.year, cursor.month)}</Typography>
+              {monthHidden > 0 ? (
+                <Typography variant="caption" color="text.secondary">
+                  {server!.monthLoaded} / {formatTotal(server!.monthTotal, server!.monthEstimated)} {t('shown this month')}
+                </Typography>
+              ) : null}
+            </Box>
             <Button size="small" aria-label={t('Next month')} onClick={() => changeMonth(1)}>
               {t('Next')}
             </Button>
@@ -221,6 +354,43 @@ export function CalendarRenderer<T extends HasId>({
             {days.map((day) => {
               const iso = isoDate(cursor.year, cursor.month, day)
               const cards = byDay.get(iso) ?? []
+              if (phone) {
+                return (
+                  <Box
+                    key={iso}
+                    component="button"
+                    type="button"
+                    aria-label={`${dateText(iso)} — ${t('Records: {n}').replace('{n}', String(cards.length))}`}
+                    aria-pressed={selectedDay === iso}
+                    onClick={() => setPicked(iso)}
+                    sx={{
+                      aspectRatio: '1',
+                      minHeight: 40,
+                      border: 0,
+                      borderRadius: 1,
+                      p: 0.5,
+                      font: 'inherit',
+                      color: 'text.primary',
+                      cursor: 'pointer',
+                      bgcolor: selectedDay === iso ? 'primary.main' : 'action.hover',
+                      ...(selectedDay === iso && { color: 'primary.contrastText' }),
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Typography variant="caption" sx={{ color: 'inherit' }}>
+                      {day}
+                    </Typography>
+                    {cards.length > 0 ? (
+                      <Box component="span" sx={{ fontSize: 11, fontWeight: 600, px: 0.75, borderRadius: 1, bgcolor: 'primary.light', color: 'primary.contrastText' }}>
+                        {cards.length}
+                      </Box>
+                    ) : null}
+                  </Box>
+                )
+              }
               return (
                 <Box
                   key={iso}
@@ -232,8 +402,13 @@ export function CalendarRenderer<T extends HasId>({
                     droppedRef.current = true
                     if (dragging) void moveField(dragging.id, iso)
                   }}
+                  // An empty spot of the day: create a record on it.
+                  onClick={(e) => {
+                    if (quick.canCreate && isEmptyZoneClick(e)) quick.open({ [dateField]: iso })
+                  }}
                   sx={{
                     minHeight: 72,
+                    cursor: quick.canCreate ? 'cell' : undefined,
                     bgcolor: 'action.hover',
                     borderRadius: 1,
                     p: 0.5,
@@ -243,15 +418,40 @@ export function CalendarRenderer<T extends HasId>({
                     {day}
                   </Typography>
                   <Stack spacing={0.5} sx={{ mt: 0.5 }}>
-                    {cards.map(dayCard)}
+                    {cards.map((r) => dayCard(r))}
                   </Stack>
                 </Box>
               )
             })}
           </Box>
+          {phone && selectedDay ? (
+            <Box component="ul" aria-label={dateText(selectedDay)} sx={{ listStyle: 'none', m: 0, mt: 1.5, p: 0 }}>
+              {(byDay.get(selectedDay) ?? []).map((record) => (
+                <li key={record.id}>
+                  <Button
+                    fullWidth
+                    onClick={formPath ? () => router.push(erpPath(formPath.replace(':id', record.id))) : undefined}
+                    sx={{ justifyContent: 'flex-start', minHeight: 40, textAlign: 'left' }}
+                  >
+                    {label(record)}
+                  </Button>
+                </li>
+              ))}
+            </Box>
+          ) : null}
+          {phone && selectedDay && quick.canCreate ? (
+            <Button
+              fullWidth
+              variant="outlined"
+              onClick={() => quick.open({ [dateField]: selectedDay })}
+              sx={{ mt: 1, minHeight: 40 }}
+            >
+              {t('Add')}
+            </Button>
+          ) : null}
         </Box>
 
-        <Collapse in={unscheduled.length > 0} orientation="horizontal" unmountOnExit>
+        <Collapse in={unscheduledCount > 0} orientation={phone ? 'vertical' : 'horizontal'} unmountOnExit>
           <Box
             role="group"
             aria-label={t('Unscheduled')}
@@ -261,12 +461,12 @@ export function CalendarRenderer<T extends HasId>({
               droppedRef.current = true
               if (dragging) void moveField(dragging.id, null)
             }}
-            sx={{ width: 220, flexShrink: 0, bgcolor: 'action.hover', borderRadius: 1, p: 1 }}
+            sx={{ width: phone ? '100%' : 220, flexShrink: 0, bgcolor: 'action.hover', borderRadius: 1, p: 1 }}
           >
             <Typography variant="subtitle2" sx={{ mb: 1 }}>
-              {t('Unscheduled')} ({unscheduled.length})
+              {t('Unscheduled')} ({formatTotal(unscheduledCount, server?.unscheduledEstimated)})
             </Typography>
-            <Stack spacing={0.5}>{unscheduled.map(dayCard)}</Stack>
+            <Stack spacing={0.5}>{unscheduled.map((r) => dayCard(r, selectedDay))}</Stack>
           </Box>
         </Collapse>
       </Stack>

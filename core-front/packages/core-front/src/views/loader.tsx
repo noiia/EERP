@@ -3,7 +3,8 @@ import { ApiError, serializeError, type SerializedError } from '../api/errors'
 import { createServerApiClient, type ServerApiClient } from '../api/ApiClient'
 import { EMPTY_VIEW_FIELDS, type ViewFieldsConfig } from '../api/view-fields'
 import { effectiveChatterVisible, type ChatterVisibilityConfig } from '../api/chatter-visibility'
-import type { EntityListOptions } from '../api/list-options'
+import { EMPTY_STATUS_BAR_CONFIG, type StatusBarConfig } from '../api/status-bar-config'
+import { mergeListOptions, type EntityListOptions } from '../api/list-options'
 import type { ViewDescriptor } from './descriptor'
 import { EntityView } from './renderers'
 import type { EntityActions, HasId, Widget } from './stores'
@@ -24,6 +25,8 @@ export interface LoadedView<T> {
    * silently aggregating a partial set.
    */
   total?: number
+  /** Set when `total` is Go's planner estimate rather than an exact count. */
+  totalEstimated?: boolean
 }
 
 export interface LoadViewOptions {
@@ -56,16 +59,12 @@ export async function loadView<T extends HasId>(
     // descriptor.listFilter (a route-fixed refinement) always applies, ahead
     // of whatever the caller passed — a host page's own listOptions can add
     // to it (e.g. more filter/search keys) but never has to know it exists.
-    const mergedOptions: EntityListOptions | undefined =
-      descriptor.listFilter || options.listOptions
-        ? {
-            ...descriptor.listFilter,
-            ...options.listOptions,
-            filter: { ...descriptor.listFilter?.filter, ...options.listOptions?.filter },
-          }
-        : undefined
-    const { records, total } = await api.listWithTotal<T>(descriptor.entity, mergedOptions)
-    return { initialData: records, error: null, total }
+    const mergedOptions = mergeListOptions(descriptor.listFilter, options.listOptions)
+    const { records, total, totalEstimated } = await api.listWithTotal<T>(
+      descriptor.entity,
+      mergedOptions,
+    )
+    return { initialData: records, error: null, total, totalEstimated }
   } catch (e) {
     if (e instanceof ApiError) return { initialData: [], error: serializeError(e) }
     throw e
@@ -87,6 +86,23 @@ export async function loadViewFields(
     return await api.getViewFields(entity)
   } catch (e) {
     if (e instanceof ApiError) return EMPTY_VIEW_FIELDS
+    throw e
+  }
+}
+
+/**
+ * entity's admin-configured status-breadcrumb override (Settings -> Apps ->
+ * :module). An unreadable config degrades to "no override" — the module's own
+ * field and every one of its options — rather than failing the form.
+ */
+export async function loadStatusBarConfig(
+  entity: string,
+  api: ServerApiClient = createServerApiClient(),
+): Promise<StatusBarConfig> {
+  try {
+    return await api.getStatusBarConfig(entity)
+  } catch (e) {
+    if (e instanceof ApiError) return EMPTY_STATUS_BAR_CONFIG
     throw e
   }
 }
@@ -124,7 +140,10 @@ export async function loadPictureSize(
   api: ServerApiClient = createServerApiClient(),
 ): Promise<{ width: number; height: number } | null> {
   try {
-    const [override, base] = await Promise.all([api.getPictureSize(module), api.getPictureSize('base')])
+    const [override, base] = await Promise.all([
+      api.getPictureSize(module),
+      api.getPictureSize('base'),
+    ])
     return override ?? base
   } catch (e) {
     if (e instanceof ApiError) return null
@@ -155,10 +174,19 @@ export async function loadDashboardWidgets(
   return Promise.all(
     listViews.map(async (view) => {
       try {
-        const records = await api.list(view.entity)
-        return { id: view.href, title: view.title, href: view.href, count: records.length }
+        // One row is enough: the count is the envelope's total over every
+        // row, never the length of a (default 20-row) page.
+        const { total, totalEstimated } = await api.listWithTotal(view.entity, { pageSize: 1 })
+        return {
+          id: view.href,
+          title: view.title,
+          href: view.href,
+          count: total,
+          countEstimated: totalEstimated === true,
+        }
       } catch (e) {
-        if (e instanceof ApiError) return { id: view.href, title: view.title, href: view.href, count: null }
+        if (e instanceof ApiError)
+          return { id: view.href, title: view.title, href: view.href, count: null }
         throw e
       }
     }),
@@ -200,30 +228,47 @@ export async function EntityViewServer<T extends HasId>({
   title,
 }: EntityViewServerProps<T>) {
   const client = api ?? createServerApiClient()
-  const { initialData, error, total } = await loadView(descriptor, client, { recordId, listOptions })
-  // A dashboard rolls the module's list views up into count blocks; other views ignore it.
-  const widgets =
-    descriptor.viewType === 'dashboard' && listViews?.length
-      ? await loadDashboardWidgets(listViews, client)
-      : undefined
-  // The display-mode switcher (List/Kanban/Calendar/Graph) only applies to tree
-  // views; other viewTypes never read this.
-  const viewFields =
-    descriptor.viewType === 'tree' ? await loadViewFields(descriptor.entity, client) : undefined
+  const isForm = descriptor.viewType === 'form'
   // Only a form with an actual picture field needs the size cascade — skip the
-  // round trips otherwise, same "only fetch what's needed" discipline as above.
-  const hasPictureField = descriptor.fields.some((f) => f.type === 'boolean' && f.widget === 'picture')
-  const pictureSize =
-    descriptor.viewType === 'form' && module && hasPictureField
-      ? await loadPictureSize(module, client)
-      : undefined
-  // Every form view is a chatter candidate — unlike pictureSize, there's no
-  // "has the relevant field" gate here, since the panel is keyed on the
-  // entity/record, not a specific field.
-  const chatterVisible =
-    descriptor.viewType === 'form'
-      ? effectiveChatterVisible(descriptor.showChatter, await loadChatterVisibility(descriptor.entity, client))
-      : undefined
+  // round trips otherwise ("only fetch what's needed").
+  const hasPictureField = descriptor.fields.some(
+    (f) => f.type === 'boolean' && f.widget === 'picture',
+  )
+  // Every read below depends only on the descriptor, so they all run in
+  // parallel: a form's page costs one backend round trip of latency, not five.
+  const [
+    { initialData, error, total, totalEstimated },
+    widgets,
+    viewFields,
+    pictureSize,
+    chatterVisibility,
+    formContext,
+    statusBarConfig,
+  ] = await Promise.all([
+    loadView(descriptor, client, { recordId, listOptions }),
+    // A dashboard rolls the module's list views up into count blocks; other views ignore it.
+    descriptor.viewType === 'dashboard' && listViews?.length
+      ? loadDashboardWidgets(listViews, client)
+      : undefined,
+    // The display-mode switcher (List/Kanban/Calendar/Graph) only applies to tree views.
+    descriptor.viewType === 'tree' ? loadViewFields(descriptor.entity, client) : undefined,
+    isForm && module && hasPictureField ? loadPictureSize(module, client) : undefined,
+    // Every form view is a chatter candidate — the panel is keyed on the
+    // entity/record, not a specific field.
+    isForm ? loadChatterVisibility(descriptor.entity, client) : undefined,
+    // A form's context (ViewDescriptor.formContext): degrades to none.
+    isForm && descriptor.formContext
+      ? client.getFormContext(descriptor.formContext).catch((e: unknown) => {
+          if (e instanceof ApiError) return {}
+          throw e
+        })
+      : undefined,
+    // Only a form that declares a status breadcrumb has an override to read.
+    isForm && descriptor.statusBar ? loadStatusBarConfig(descriptor.entity, client) : undefined,
+  ])
+  const chatterVisible = chatterVisibility
+    ? effectiveChatterVisible(descriptor.showChatter, chatterVisibility)
+    : undefined
   return (
     <EntityView
       descriptor={descriptor}
@@ -233,8 +278,11 @@ export async function EntityViewServer<T extends HasId>({
       widgets={widgets}
       viewFields={viewFields}
       recordTotal={total}
+      recordTotalEstimated={totalEstimated}
       pictureSize={pictureSize}
       chatterVisible={chatterVisible}
+      statusBarConfig={statusBarConfig}
+      formContext={formContext}
       title={title}
     />
   )

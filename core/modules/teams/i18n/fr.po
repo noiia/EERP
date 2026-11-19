@@ -1,0 +1,372 @@
+# Teams module — French. Locale = this file's basename ('fr').
+msgid ""
+msgstr ""
+"Project-Id-Version: teams 0.0.1\n"
+"Language: fr\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Teams"
+msgstr "Teams"
+
+msgid "All teams"
+msgstr "Toutes les équipes"
+
+msgid "Create team"
+msgstr "Créer une équipe"
+
+msgid "Name"
+msgstr "Nom"
+
+msgid "Description"
+msgstr "Description"
+
+msgid "Cancel"
+msgstr "Annuler"
+
+msgid "Create"
+msgstr "Créer"
+
+msgid "Members"
+msgstr "Membres"
+
+msgid "Channels"
+msgstr "Canaux"
+
+msgid "Add channel"
+msgstr "Ajouter un canal"
+
+msgid "New channel"
+msgstr "Nouveau canal"
+
+msgid "Folders"
+msgstr "Dossiers"
+
+msgid "All files"
+msgstr "Tous les fichiers"
+
+msgid "Shares"
+msgstr "Partages"
+
+msgid "Direct messages"
+msgstr "Messages directs"
+
+msgid "New conversation"
+msgstr "Nouvelle conversation"
+
+msgid "Person"
+msgstr "Personne"
+
+msgid "Start"
+msgstr "Démarrer"
+
+msgid "Open the sidebar"
+msgstr "Ouvrir le panneau latéral"
+
+msgid "Collapse"
+msgstr "Réduire"
+
+msgid "Expand"
+msgstr "Développer"
+
+msgid "Start a conversation with the + next to Direct messages."
+msgstr "Démarrez une conversation avec le + à côté de Messages directs."
+
+msgid "This team has no channel yet."
+msgstr "Cette équipe n'a encore aucun canal."
+
+msgid "Guests have read only access to this channel."
+msgstr "Les invités ont un accès en lecture seule à ce canal."
+
+msgid "The message could not be sent."
+msgstr "Le message n'a pas pu être envoyé."
+
+msgid "Mention someone"
+msgstr "Mentionner quelqu'un"
+
+msgid "Attach files"
+msgstr "Joindre des fichiers"
+
+msgid "Write a message"
+msgstr "Écrire un message"
+
+msgid "Message"
+msgstr "Message"
+
+msgid "Send"
+msgstr "Envoyer"
+
+msgid "Add reaction"
+msgstr "Ajouter une réaction"
+
+msgid "Message actions"
+msgstr "Actions du message"
+
+msgid "React with"
+msgstr "Réagir avec"
+
+msgid "No messages yet."
+msgstr "Aucun message pour l'instant."
+
+msgid "Role"
+msgstr "Rôle"
+
+msgid "Owner"
+msgstr "Propriétaire"
+
+msgid "Member"
+msgstr "Membre"
+
+msgid "Guest"
+msgstr "Invité"
+
+msgid "Add a person"
+msgstr "Ajouter une personne"
+
+msgid "Manage members"
+msgstr "Gérer les membres"
+
+msgid "Add"
+msgstr "Ajouter"
+
+msgid "Remove"
+msgstr "Retirer"
+
+msgid "Close"
+msgstr "Fermer"
+
+msgid "The change could not be saved."
+msgstr "La modification n'a pas pu être enregistrée."
+
+msgid "Share file"
+msgstr "Partager le fichier"
+
+msgid "Share with"
+msgstr "Partager avec"
+
+msgid "Move to"
+msgstr "Déplacer vers"
+
+msgid "Move here"
+msgstr "Déplacer ici"
+
+msgid "Shared with me"
+msgstr "Partagés avec moi"
+
+msgid "Nothing has been shared with you yet."
+msgstr "Rien n'a encore été partagé avec vous."
+
+msgid "Team"
+msgstr "Équipe"
+
+msgid "Shared by"
+msgstr "Partagé par"
+
+msgid "Size"
+msgstr "Taille"
+
+msgid "Uploaded by"
+msgstr "Déposé par"
+
+msgid "Path"
+msgstr "Chemin"
+
+msgid "New folder"
+msgstr "Nouveau dossier"
+
+msgid "Upload"
+msgstr "Déposer"
+
+msgid "Share"
+msgstr "Partager"
+
+msgid "Move"
+msgstr "Déplacer"
+
+msgid "Rename"
+msgstr "Renommer"
+
+msgid "Delete"
+msgstr "Supprimer"
+
+msgid "Save"
+msgstr "Enregistrer"
+
+msgid "This cannot be undone."
+msgstr "Cette action est irréversible."
+
+msgid "File storage is not configured."
+msgstr "Le stockage de fichiers n'est pas configuré."
+
+msgid "Team options"
+msgstr "Options de l'équipe"
+
+msgid "Channel options"
+msgstr "Options du canal"
+
+msgid "Rename team"
+msgstr "Renommer l'équipe"
+
+msgid "Delete team"
+msgstr "Supprimer l'équipe"
+
+msgid "Leave team"
+msgstr "Quitter l'équipe"
+
+msgid "Rename channel"
+msgstr "Renommer le canal"
+
+msgid "Delete channel"
+msgstr "Supprimer le canal"
+
+msgid "Are you sure?"
+msgstr "Êtes-vous sûr ?"
+
+msgid "Confirm"
+msgstr "Confirmer"
+
+msgid "Disabled user"
+msgstr "Utilisateur désactivé"
+
+msgid "This folder no longer exists."
+msgstr "Ce dossier n'existe plus."
+
+msgid "Files"
+msgstr "Fichiers"
+
+msgid "Folder"
+msgstr "Dossier"
+
+msgid "Link a folder"
+msgstr "Lier un dossier"
+
+msgid "Link this folder"
+msgstr "Lier ce dossier"
+
+msgid "No folder yet. Files sent here will create one."
+msgstr "Pas encore de dossier. Les fichiers envoyés ici en créeront un."
+
+msgid "File deleted"
+msgstr "Fichier supprimé"
+
+msgid "Download"
+msgstr "Télécharger"
+
+msgid "Back"
+msgstr "Retour"
+
+msgid "Manage access"
+msgstr "Gérer l'accès"
+
+msgid "Groups"
+msgstr "Groupes"
+
+msgid "Private"
+msgstr "Privé"
+
+msgid "Open to the whole team"
+msgstr "Ouvert à toute l'équipe"
+
+msgid "Only owners can see this conversation."
+msgstr "Seuls les propriétaires voient cette conversation."
+
+msgid "People"
+msgstr "Personnes"
+
+msgid "Group name"
+msgstr "Nom du groupe"
+
+msgid "New group"
+msgstr "Nouveau groupe"
+
+msgid "Delete group"
+msgstr "Supprimer le groupe"
+
+msgid "Saving an empty list opens this conversation to the whole team."
+msgstr "Enregistrer une liste vide ouvre cette conversation à toute l'équipe."
+
+msgid "Conversations that only this group could see will be visible to owners only."
+msgstr "Les conversations que seul ce groupe pouvait voir ne seront visibles que par les propriétaires."
+
+msgid "Format text"
+msgstr "Mettre en forme"
+
+msgid "Formatting"
+msgstr "Mise en forme"
+
+msgid "Title"
+msgstr "Titre"
+
+msgid "Bold"
+msgstr "Gras"
+
+msgid "Italic"
+msgstr "Italique"
+
+msgid "Strikethrough"
+msgstr "Barré"
+
+msgid "Code"
+msgstr "Code"
+
+msgid "Code block"
+msgstr "Bloc de code"
+
+msgid "Quote"
+msgstr "Citation"
+
+msgid "Bulleted list"
+msgstr "Liste à puces"
+
+msgid "Numbered list"
+msgstr "Liste numérotée"
+
+msgid "Link"
+msgstr "Lien"
+
+msgid "Write a message (Ctrl+Enter to send)"
+msgstr "Écrire un message (Ctrl+Entrée pour envoyer)"
+
+msgid "Message options"
+msgstr "Options du message"
+
+msgid "Delete message"
+msgstr "Supprimer le message"
+
+msgid "Modify message"
+msgstr "Modifier le message"
+
+msgid "Message to modify"
+msgstr "Message à modifier"
+
+msgid "(edited)"
+msgstr "(modifié)"
+
+msgid "The message could not be modified."
+msgstr "Le message n'a pas pu être modifié."
+
+msgid "The message could not be deleted."
+msgstr "Le message n'a pas pu être supprimé."
+
+msgid "Mute notifications"
+msgstr "Désactiver les notifications"
+
+msgid "Unmute notifications"
+msgstr "Réactiver les notifications"
+
+msgid "Muted"
+msgstr "Notifications désactivées"
+
+msgid "Delete conversation"
+msgstr "Supprimer la conversation"
+
+msgid "Conversation options"
+msgstr "Options de la conversation"
+
+msgid "The history is cleared for you only."
+msgstr "L'historique est effacé pour vous uniquement."
+
+msgid "Folder options"
+msgstr "Options du dossier"
+
+msgid "New subfolder"
+msgstr "Nouveau sous-dossier"

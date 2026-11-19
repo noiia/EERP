@@ -14,7 +14,8 @@ import (
 	"core/orm/internal/registry"
 	"core/orm/model"
 
-	"github.com/labstack/echo/v4"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/labstack/echo/v5"
 )
 
 // ── fixtures ──────────────────────────────────────────────────────────────────
@@ -44,20 +45,21 @@ func hardItemMeta() registry.TableMeta {
 // ── mock service ──────────────────────────────────────────────────────────────
 
 type mockSvc struct {
-	list     func(ctx context.Context, f crud.ListFilter) ([]map[string]any, int, error)
-	byID     func(ctx context.Context, id any) (map[string]any, error)
-	create   func(ctx context.Context, data map[string]any) (map[string]any, error)
-	update   func(ctx context.Context, id any, data map[string]any) (map[string]any, error)
-	del      func(ctx context.Context, id any) error
-	restore  func(ctx context.Context, id any) (map[string]any, error)
-	distinct func(ctx context.Context, column string, f crud.ListFilter) ([]crud.DistinctValue, error)
+	list      func(ctx context.Context, f crud.ListFilter) ([]map[string]any, crud.Total, error)
+	byID      func(ctx context.Context, id any) (map[string]any, error)
+	create    func(ctx context.Context, data map[string]any) (map[string]any, error)
+	update    func(ctx context.Context, id any, data map[string]any) (map[string]any, error)
+	del       func(ctx context.Context, id any) error
+	restore   func(ctx context.Context, id any) (map[string]any, error)
+	distinct  func(ctx context.Context, column string, f crud.ListFilter) ([]crud.DistinctValue, error)
+	aggregate func(ctx context.Context, req crud.AggregateRequest, f crud.ListFilter) ([]crud.AggregateRow, error)
 }
 
-func (m *mockSvc) List(ctx context.Context, f crud.ListFilter) ([]map[string]any, int, error) {
+func (m *mockSvc) List(ctx context.Context, f crud.ListFilter) ([]map[string]any, crud.Total, error) {
 	if m.list != nil {
 		return m.list(ctx, f)
 	}
-	return nil, 0, nil
+	return nil, crud.Total{}, nil
 }
 func (m *mockSvc) GetByID(ctx context.Context, id any) (map[string]any, error) {
 	if m.byID != nil {
@@ -98,7 +100,7 @@ func (m *mockSvc) DistinctValues(ctx context.Context, column string, f crud.List
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-func newEchoRequest(method, target, body string) (*echo.Echo, echo.Context, *httptest.ResponseRecorder) {
+func newEchoRequest(method, target, body string) (*echo.Echo, *echo.Context, *httptest.ResponseRecorder) {
 	e := echo.New()
 	var bodyReader *strings.Reader
 	if body != "" {
@@ -118,9 +120,9 @@ func newEchoRequest(method, target, body string) (*echo.Echo, echo.Context, *htt
 func TestList_DefaultPagination(t *testing.T) {
 	var gotFilter crud.ListFilter
 	svc := &mockSvc{
-		list: func(_ context.Context, f crud.ListFilter) ([]map[string]any, int, error) {
+		list: func(_ context.Context, f crud.ListFilter) ([]map[string]any, crud.Total, error) {
 			gotFilter = f
-			return []map[string]any{}, 0, nil
+			return []map[string]any{}, crud.Total{}, nil
 		},
 	}
 	h := handler.NewGenericHandlerFromSvc(svc, itemMeta())
@@ -140,9 +142,9 @@ func TestList_DefaultPagination(t *testing.T) {
 func TestList_CustomPaginationParams(t *testing.T) {
 	var gotFilter crud.ListFilter
 	svc := &mockSvc{
-		list: func(_ context.Context, f crud.ListFilter) ([]map[string]any, int, error) {
+		list: func(_ context.Context, f crud.ListFilter) ([]map[string]any, crud.Total, error) {
 			gotFilter = f
-			return nil, 0, nil
+			return nil, crud.Total{}, nil
 		},
 	}
 	h := handler.NewGenericHandlerFromSvc(svc, itemMeta())
@@ -161,8 +163,8 @@ func TestList_CustomPaginationParams(t *testing.T) {
 
 func TestList_ResponseEnvelope(t *testing.T) {
 	svc := &mockSvc{
-		list: func(_ context.Context, _ crud.ListFilter) ([]map[string]any, int, error) {
-			return []map[string]any{{"name": "foo"}}, 42, nil
+		list: func(_ context.Context, _ crud.ListFilter) ([]map[string]any, crud.Total, error) {
+			return []map[string]any{{"name": "foo"}}, crud.Total{Rows: 42}, nil
 		},
 	}
 	h := handler.NewGenericHandlerFromSvc(svc, itemMeta())
@@ -261,8 +263,7 @@ func TestGetByID_NotFound_Returns404(t *testing.T) {
 	}
 	h := handler.NewGenericHandlerFromSvc(svc, itemMeta())
 	_, c, rec := newEchoRequest(http.MethodGet, "/", "")
-	c.SetParamNames("id")
-	c.SetParamValues("00000000-0000-0000-0000-000000000001")
+	c.SetPathValues(append(c.PathValues(), echo.PathValue{Name: "id", Value: "00000000-0000-0000-0000-000000000001"}))
 
 	err := h.GetByID(c)
 	var he *echo.HTTPError
@@ -275,8 +276,7 @@ func TestGetByID_InvalidUUID_Returns400(t *testing.T) {
 	svc := &mockSvc{}
 	h := handler.NewGenericHandlerFromSvc(svc, itemMeta())
 	_, c, _ := newEchoRequest(http.MethodGet, "/", "")
-	c.SetParamNames("id")
-	c.SetParamValues("not-a-uuid")
+	c.SetPathValues(append(c.PathValues(), echo.PathValue{Name: "id", Value: "not-a-uuid"}))
 
 	err := h.GetByID(c)
 	var he *echo.HTTPError
@@ -317,6 +317,51 @@ func TestCreate_MissingRequired_Returns422(t *testing.T) {
 	}
 }
 
+// A unique-index violation is the caller's conflict, not a server fault.
+func TestWrites_UniqueViolationIs409(t *testing.T) {
+	uniq := &pgconn.PgError{Code: "23505"}
+	svc := &mockSvc{
+		create: func(context.Context, map[string]any) (map[string]any, error) { return nil, uniq },
+		update: func(context.Context, any, map[string]any) (map[string]any, error) { return nil, uniq },
+		// Restoring a soft-deleted row whose unique value was reused meanwhile.
+		restore: func(context.Context, any) (map[string]any, error) { return nil, uniq },
+	}
+	h := handler.NewGenericHandlerFromSvc(svc, itemMeta())
+	for name, call := range map[string]func(*echo.Context) error{"create": h.Create, "update": h.Update, "restore": h.Restore} {
+		t.Run(name, func(t *testing.T) {
+			_, c, _ := newEchoRequest(http.MethodPost, "/", `{"name":"x"}`)
+			c.SetPath("/:id")
+			c.SetPathValues(echo.PathValues{{Name: "id", Value: "6f1e0b0e-6a57-4c53-8d6c-0d3a1f0b7e11"}})
+			err := call(c)
+			var he *echo.HTTPError
+			if !errors.As(err, &he) || he.Code != http.StatusConflict {
+				t.Fatalf("err = %v, want 409 HTTPError", err)
+			}
+		})
+	}
+}
+
+// A check-constraint violation is bad input (e.g. event_session capacity
+// below its booked seats), not a server fault.
+func TestWrites_CheckViolationIs400(t *testing.T) {
+	check := &pgconn.PgError{Code: "23514", ConstraintName: "event_session_capacity"}
+	svc := &mockSvc{update: func(context.Context, any, map[string]any) (map[string]any, error) { return nil, check }}
+	h := handler.NewGenericHandlerFromSvc(svc, itemMeta())
+	_, c, _ := newEchoRequest(http.MethodPut, "/", `{"name":"x"}`)
+	c.SetPath("/:id")
+	c.SetPathValues(echo.PathValues{{Name: "id", Value: "6f1e0b0e-6a57-4c53-8d6c-0d3a1f0b7e11"}})
+	err := h.Update(c)
+	var he *echo.HTTPError
+	if !errors.As(err, &he) || he.Code != http.StatusBadRequest {
+		t.Fatalf("err = %v, want 400 HTTPError", err)
+	}
+	// The constraint name stays server-side: not in the message, but wrapped
+	// so the error handler can log it.
+	if strings.Contains(he.Message, "event_session_capacity") || !errors.Is(err, check) {
+		t.Fatalf("message = %q, wrapped pg error = %v", he.Message, errors.Is(err, check))
+	}
+}
+
 // ── Delete / Restore route presence ──────────────────────────────────────────
 
 func TestMeta_SoftDelete_True_ForItemStruct(t *testing.T) {
@@ -336,9 +381,9 @@ func TestMeta_SoftDelete_False_ForHardItem(t *testing.T) {
 func TestList_FilterAndSearchParams(t *testing.T) {
 	var gotFilter crud.ListFilter
 	svc := &mockSvc{
-		list: func(_ context.Context, f crud.ListFilter) ([]map[string]any, int, error) {
+		list: func(_ context.Context, f crud.ListFilter) ([]map[string]any, crud.Total, error) {
 			gotFilter = f
-			return nil, 0, nil
+			return nil, crud.Total{}, nil
 		},
 	}
 	h := handler.NewGenericHandlerFromSvc(svc, itemMeta())
@@ -359,12 +404,35 @@ func TestList_FilterAndSearchParams(t *testing.T) {
 	}
 }
 
+func TestList_EmptyFilterParam(t *testing.T) {
+	var gotFilter crud.ListFilter
+	svc := &mockSvc{
+		list: func(_ context.Context, f crud.ListFilter) ([]map[string]any, crud.Total, error) {
+			gotFilter = f
+			return nil, crud.Total{}, nil
+		},
+	}
+	h := handler.NewGenericHandlerFromSvc(svc, itemMeta())
+	_, c, _ := newEchoRequest(http.MethodGet, "/api/v1/items?empty%5Bname%5D=1", "")
+	if err := h.List(c); err != nil {
+		t.Fatalf("List error: %v", err)
+	}
+	if len(gotFilter.Empty) != 1 || gotFilter.Empty[0] != "name" {
+		t.Fatalf("Empty = %v, want [name]", gotFilter.Empty)
+	}
+
+	_, c, _ = newEchoRequest(http.MethodGet, "/api/v1/items?empty%5Bnope%5D=1", "")
+	if err := h.List(c); err == nil {
+		t.Error("expected an unknown empty[] column to be rejected")
+	}
+}
+
 func TestList_InFilterParam(t *testing.T) {
 	var gotFilter crud.ListFilter
 	svc := &mockSvc{
-		list: func(_ context.Context, f crud.ListFilter) ([]map[string]any, int, error) {
+		list: func(_ context.Context, f crud.ListFilter) ([]map[string]any, crud.Total, error) {
 			gotFilter = f
-			return nil, 0, nil
+			return nil, crud.Total{}, nil
 		},
 	}
 	h := handler.NewGenericHandlerFromSvc(svc, itemMeta())
@@ -388,9 +456,9 @@ func TestList_InFilterParam(t *testing.T) {
 func TestList_RangeFilterParams(t *testing.T) {
 	var gotFilter crud.ListFilter
 	svc := &mockSvc{
-		list: func(_ context.Context, f crud.ListFilter) ([]map[string]any, int, error) {
+		list: func(_ context.Context, f crud.ListFilter) ([]map[string]any, crud.Total, error) {
 			gotFilter = f
-			return nil, 0, nil
+			return nil, crud.Total{}, nil
 		},
 	}
 	h := handler.NewGenericHandlerFromSvc(svc, itemMeta())
@@ -419,9 +487,9 @@ func TestList_RangeFilterParams(t *testing.T) {
 func TestList_UnknownFilterColumnIs400(t *testing.T) {
 	called := false
 	svc := &mockSvc{
-		list: func(_ context.Context, _ crud.ListFilter) ([]map[string]any, int, error) {
+		list: func(_ context.Context, _ crud.ListFilter) ([]map[string]any, crud.Total, error) {
 			called = true
-			return nil, 0, nil
+			return nil, crud.Total{}, nil
 		},
 	}
 	h := handler.NewGenericHandlerFromSvc(svc, itemMeta())
@@ -447,9 +515,9 @@ func TestList_UnknownFilterColumnIs400(t *testing.T) {
 func TestList_EmptyFilterValueIgnored(t *testing.T) {
 	var gotFilter crud.ListFilter
 	svc := &mockSvc{
-		list: func(_ context.Context, f crud.ListFilter) ([]map[string]any, int, error) {
+		list: func(_ context.Context, f crud.ListFilter) ([]map[string]any, crud.Total, error) {
 			gotFilter = f
-			return nil, 0, nil
+			return nil, crud.Total{}, nil
 		},
 	}
 	h := handler.NewGenericHandlerFromSvc(svc, itemMeta())
@@ -460,5 +528,37 @@ func TestList_EmptyFilterValueIgnored(t *testing.T) {
 	}
 	if len(gotFilter.Matches) != 0 {
 		t.Errorf("empty search value must be ignored, got %v", gotFilter.Matches)
+	}
+}
+
+func (m *mockSvc) Aggregate(ctx context.Context, req crud.AggregateRequest, f crud.ListFilter) ([]crud.AggregateRow, error) {
+	if m.aggregate != nil {
+		return m.aggregate(ctx, req, f)
+	}
+	return nil, nil
+}
+
+func TestList_OrderParam(t *testing.T) {
+	var gotFilter crud.ListFilter
+	svc := &mockSvc{
+		list: func(_ context.Context, f crud.ListFilter) ([]map[string]any, crud.Total, error) {
+			gotFilter = f
+			return nil, crud.Total{}, nil
+		},
+	}
+	h := handler.NewGenericHandlerFromSvc(svc, itemMeta())
+
+	_, c, _ := newEchoRequest(http.MethodGet, "/api/v1/items?order=-name", "")
+	if err := h.List(c); err != nil {
+		t.Fatalf("List error: %v", err)
+	}
+	if gotFilter.Order != "-name" {
+		t.Errorf("Order = %q, want -name", gotFilter.Order)
+	}
+
+	_, c, _ = newEchoRequest(http.MethodGet, "/api/v1/items?order=-nope", "")
+	var he *echo.HTTPError
+	if err := h.List(c); !errors.As(err, &he) || he.Code != http.StatusBadRequest {
+		t.Errorf("unknown order column: err = %v, want 400 HTTPError", err)
 	}
 }

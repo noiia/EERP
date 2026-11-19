@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/mail"
+	"strings"
 	"time"
 
 	"core/orm"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -51,15 +53,32 @@ type Handler struct {
 	tokens  tokenIssuer
 	refresh refreshStorer
 	perms   permissionSource
+	// website flips this handler to the visitor flavour (ADR-024): only
+	// kind=website users of siteTenant may log in / refresh, and Signup works.
+	website    bool
+	siteTenant uuid.UUID
+	creator    WebsiteUserCreator
+	siteURL    string // verification links point here
 }
 
-// NewHandler constructs an auth Handler from concrete implementations.
-func NewHandler(users *UserRepository, tokens *TokenService, refresh *RefreshStore, perms *PermissionRepository) *Handler {
-	return &Handler{users: users, tokens: tokens, refresh: refresh, perms: perms}
+// WebsiteUserCreator creates a website account (Task 8: *UserRepository).
+type WebsiteUserCreator interface {
+	CreateWebsiteUser(ctx context.Context, tenantID uuid.UUID, email, password, name, siteURL string) (Users, error)
 }
 
-// newHandlerWith constructs a Handler from interface values (used in tests).
-func newHandlerWith(users userQuerier, tokens tokenIssuer, refresh refreshStorer, perms permissionSource) *Handler {
+// ForWebsite returns a copy serving website (visitor) accounts.
+func (h Handler) ForWebsite(siteTenant uuid.UUID, creator WebsiteUserCreator, siteURL string) *Handler {
+	h.website, h.siteTenant, h.creator, h.siteURL = true, siteTenant, creator, siteURL
+	return &h
+}
+
+// kindMatches: a handler only ever authenticates its own kind of user.
+func (h *Handler) kindMatches(u Users) bool {
+	return u.IsWebsite() == h.website && (!h.website || u.TenantID == h.siteTenant)
+}
+
+// NewHandler constructs an auth Handler from its dependencies (interfaces, so tests can pass fakes).
+func NewHandler(users userQuerier, tokens tokenIssuer, refresh refreshStorer, perms permissionSource) *Handler {
 	return &Handler{users: users, tokens: tokens, refresh: refresh, perms: perms}
 }
 
@@ -100,7 +119,7 @@ func mustDummyHash() []byte {
 }
 
 // Login handles POST /api/v{version}/auth/login.
-func (h *Handler) Login(c echo.Context) error {
+func (h *Handler) Login(c *echo.Context) error {
 	var req struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
@@ -110,6 +129,9 @@ func (h *Handler) Login(c echo.Context) error {
 	}
 
 	const errMsg = "Invalid email or password."
+	if h.website {
+		req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+	}
 
 	user, err := h.users.FindByEmail(c.Request().Context(), req.Email)
 	if err != nil {
@@ -129,9 +151,16 @@ func (h *Handler) Login(c echo.Context) error {
 		return h.unauthMsg(c, errMsg)
 	}
 
-	if user.DeletedAt != nil {
+	if user.DeletedAt != nil || !h.kindMatches(user) {
 		return h.unauthMsg(c, errMsg)
 	}
+
+	return h.issueSession(c, user)
+}
+
+// issueSession resolves roles/groups/permissions and issues the access token
+// plus refresh cookie for an already-authenticated user (Login, Signup).
+func (h *Handler) issueSession(c *echo.Context, user Users) error {
 
 	roles, err := h.users.FindRoleNames(c.Request().Context(), user.ID)
 	if err != nil {
@@ -173,7 +202,7 @@ func (h *Handler) Login(c echo.Context) error {
 }
 
 // Refresh handles POST /api/v{version}/auth/refresh.
-func (h *Handler) Refresh(c echo.Context) error {
+func (h *Handler) Refresh(c *echo.Context) error {
 	rawRefresh := h.readRefreshToken(c)
 	if rawRefresh == "" {
 		return h.unauthMsg(c, "Authentication required.")
@@ -192,7 +221,7 @@ func (h *Handler) Refresh(c echo.Context) error {
 	}
 
 	user, err := h.users.FindByID(c.Request().Context(), userID)
-	if err != nil || user.DeletedAt != nil {
+	if err != nil || user.DeletedAt != nil || !h.kindMatches(user) {
 		return h.unauthMsg(c, "Authentication required.")
 	}
 
@@ -236,7 +265,7 @@ func (h *Handler) Refresh(c echo.Context) error {
 }
 
 // Logout handles POST /api/v{version}/auth/logout.
-func (h *Handler) Logout(c echo.Context) error {
+func (h *Handler) Logout(c *echo.Context) error {
 	rawRefresh := h.readRefreshToken(c)
 	if rawRefresh != "" {
 		if userID, err := h.tokens.ParseRefresh(rawRefresh); err == nil {
@@ -259,7 +288,7 @@ func (h *Handler) Logout(c echo.Context) error {
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-func (h *Handler) readRefreshToken(c echo.Context) string {
+func (h *Handler) readRefreshToken(c *echo.Context) string {
 	if cookie, err := c.Cookie(refreshCookieName); err == nil && cookie.Value != "" {
 		return cookie.Value
 	}
@@ -270,7 +299,7 @@ func (h *Handler) readRefreshToken(c echo.Context) string {
 	return body.RefreshToken
 }
 
-func (h *Handler) setRefreshCookie(c echo.Context, token string, expiresAt time.Time) {
+func (h *Handler) setRefreshCookie(c *echo.Context, token string, expiresAt time.Time) {
 	cookie := &http.Cookie{
 		Name:     refreshCookieName,
 		Value:    token,
@@ -283,7 +312,7 @@ func (h *Handler) setRefreshCookie(c echo.Context, token string, expiresAt time.
 	c.SetCookie(cookie)
 }
 
-func (h *Handler) unauthMsg(c echo.Context, msg string) error {
+func (h *Handler) unauthMsg(c *echo.Context, msg string) error {
 	return c.JSON(http.StatusUnauthorized, errEnvelope{
 		Error: errorBody{
 			Code:      "UNAUTHENTICATED",
@@ -295,3 +324,56 @@ func (h *Handler) unauthMsg(c echo.Context, msg string) error {
 
 // ErrUserNotFound is the sentinel for "user not found" that stubs can return.
 var ErrUserNotFound = errors.New("user not found")
+
+// Signup handles POST /api/v1/website/auth/signup (website flavour only).
+// The "already registered" 409 does reveal that an address has an account —
+// accepted for signup (standard UX); login and booking never reveal it.
+func (h *Handler) Signup(c *echo.Context) error {
+	if !h.website || h.creator == nil {
+		return echo.NewHTTPError(http.StatusNotFound, "not found")
+	}
+	var req struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+		Name     string `json:"name"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "malformed body")
+	}
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	if addr, err := mail.ParseAddress(email); err != nil || addr.Address != email {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid email")
+	}
+	if len(req.Password) < 8 || len(req.Password) > 72 { // 72: bcrypt's input limit
+		return echo.NewHTTPError(http.StatusBadRequest, "password must be 8 to 72 characters")
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" || len(name) > 200 {
+		return echo.NewHTTPError(http.StatusBadRequest, "name is required (max 200 characters)")
+	}
+	user, err := h.creator.CreateWebsiteUser(c.Request().Context(), h.siteTenant, email, req.Password, name, h.siteURL)
+	if errors.Is(err, ErrEmailTaken) {
+		return echo.NewHTTPError(http.StatusConflict, "this email cannot be used")
+	}
+	if err != nil {
+		return fmt.Errorf("signup: %w", err)
+	}
+	return h.issueSession(c, user)
+}
+
+// IssueSessionForUser issues the normal ERP session for an already
+// externally-authenticated user (LDAP/OIDC, internal/auth/providers).
+// A deleted or website user gets the same generic 401 as a bad password.
+func (h *Handler) IssueSessionForUser(c *echo.Context, userID uuid.UUID) error {
+	user, err := h.users.FindByID(c.Request().Context(), userID)
+	if err != nil {
+		if errors.Is(err, orm.ErrNotFound) || errors.Is(err, ErrUserNotFound) {
+			return h.unauthMsg(c, "Invalid username or password.")
+		}
+		return fmt.Errorf("external login: %w", err)
+	}
+	if user.DeletedAt != nil || !h.kindMatches(user) {
+		return h.unauthMsg(c, "Invalid username or password.")
+	}
+	return h.issueSession(c, user)
+}

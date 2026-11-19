@@ -1,6 +1,8 @@
 package sale
 
 import (
+	"context"
+	"fmt"
 	"time"
 
 	"core/internal/module"
@@ -22,34 +24,33 @@ func init() {
 // issuer, client, line items, HT/TVA/TTC totals, payment terms.
 type Invoice struct {
 	model.BaseModel
-	TenantID uuid.UUID `db:"tenant_id"`
 	// Logo backs the boolean/picture widget in the form's top-left corner —
 	// same flag-column contract as crm.CRM's Picture (true ⇔ a picture exists
 	// on the (invoice, record, logo) anchor; the picture service owns the
 	// bytes). The print route resolves it to a data: URL before rendering
 	// (docs/adr/ADR-011) — ReportRenderer never talks to the picture service.
 	Logo *bool `db:"logo"`
-	// Issuer* is the seller's own letterhead block — a snapshot on the
-	// invoice, not a live join to a workspace-wide "company profile" (no
-	// such concept exists yet in this codebase; app_settings would be the
-	// natural home for one once multiple invoices need to share a single
-	// issuer identity without re-entering it).
-	IssuerName string `db:"issuer_name"`
+	// Issuer* is an optional per-document override of the seller's
+	// letterhead block. The form no longer offers it: a blank value prints
+	// the active company's own profile instead (the report's companyFallback,
+	// Settings -> Company). Pointers, so a create may omit them — a
+	// non-pointer column is required on every generic-API create.
+	IssuerName *string `db:"issuer_name"`
 	// IssuerAddress* — the type: 'address' composite field's 7 sibling
 	// columns (core-front's AddressWidget, core/CLAUDE.md's ORM section),
 	// prefixed to match the frontend field name 'issuer_address'. Real
 	// columns rather than a JSON blob for the same reason
 	// property_management.Address is: they stay filterable/searchable
 	// through the generic list endpoint.
-	IssuerAddressNumber     *int   `db:"issuer_address_number"`
-	IssuerAddressComplement string `db:"issuer_address_complement"`
-	IssuerAddressStreet     string `db:"issuer_address_street"`
-	IssuerAddressZipCode    string `db:"issuer_address_zip_code"`
-	IssuerAddressCity       string `db:"issuer_address_city"`
-	IssuerAddressState      string `db:"issuer_address_state"`
-	IssuerAddressCountry    string `db:"issuer_address_country"`
-	IssuerPhone             string `db:"issuer_phone"`
-	IssuerEmail             string `db:"issuer_email"`
+	IssuerAddressNumber     *int    `db:"issuer_address_number"`
+	IssuerAddressComplement *string `db:"issuer_address_complement"`
+	IssuerAddressStreet     *string `db:"issuer_address_street"`
+	IssuerAddressZipCode    *string `db:"issuer_address_zip_code"`
+	IssuerAddressCity       *string `db:"issuer_address_city"`
+	IssuerAddressState      *string `db:"issuer_address_state"`
+	IssuerAddressCountry    *string `db:"issuer_address_country"`
+	IssuerPhone             *string `db:"issuer_phone"`
+	IssuerEmail             *string `db:"issuer_email"`
 	// Number is the human-facing invoice reference (e.g. "INV-2026-0001"),
 	// distinct from the record's own UUID id.
 	Number    string     `db:"number"`
@@ -137,7 +138,6 @@ type Invoice struct {
 // one.
 type SaleLine struct {
 	model.BaseModel
-	TenantID uuid.UUID `db:"tenant_id" json:"tenant_id"`
 	// InvoiceID is the parent FK — the one2many inverse field the invoice
 	// form's line-items table filters on (views/invoice_views.ts).
 	InvoiceID uuid.UUID `db:"invoice_id" json:"invoice_id"`
@@ -157,6 +157,10 @@ type SaleLine struct {
 	Unit      string  `db:"unit" json:"unit"`
 	TaxRate   float64 `db:"tax_rate" json:"tax_rate"`
 	UnitPrice float64 `db:"unit_price" json:"unit_price"`
+	// UomID is the line's unit of measure (a warehouse.ProductUoms row):
+	// the one the line names, else its product's (resolveLineUnit). Unit
+	// above is its printed label, rewritten on every write.
+	UomID *uuid.UUID `db:"uom_id" json:"uom_id"`
 	// Total is this line's own final price — quantity × unit_price, plus
 	// TaxRate above, PLUS every tax tagged on it via SaleLineTax below
 	// (percentage or fixed, see SaleTax) — computed server-side ONLY
@@ -193,8 +197,7 @@ type SaleLine struct {
 // and a junction struct only needs the tax's bare uuid).
 type SaleTax struct {
 	model.BaseModel
-	TenantID uuid.UUID `db:"tenant_id" json:"tenant_id"`
-	Name     string    `db:"name" json:"name"`
+	Name string `db:"name" json:"name"`
 	// Kind is "percentage" or "fixed" — selects which of Rate/Amount below
 	// the computation actually reads; the other stays whatever the form left
 	// it at, unused. A selection field on the frontend (sale_tax_views.ts),
@@ -216,7 +219,6 @@ type SaleTax struct {
 // see handler.go's CreateLineTax/DeleteLineTax.
 type SaleLineTax struct {
 	model.BaseModel
-	TenantID   uuid.UUID `db:"tenant_id" json:"tenant_id"`
 	SaleLineID uuid.UUID `db:"sale_line_id" json:"sale_line_id"`
 	SaleTaxID  uuid.UUID `db:"sale_tax_id" json:"sale_tax_id"`
 }
@@ -226,24 +228,23 @@ type SaleLineTax struct {
 // letterhead template (Invoice's doc comment above). Kept a SEPARATE table
 // rather than an Invoice row with an "is_quote" flag: a quote and an invoice
 // are distinct documents with their own number sequence and status flow, and
-// a future quote -> invoice conversion needs two real rows to link between,
-// not a flag flip — that conversion isn't built yet.
+// the quote -> invoice conversion (workflow.go's AcceptQuote) needs two real
+// rows to link between, not a flag flip.
 type Quote struct {
 	model.BaseModel
-	TenantID   uuid.UUID `db:"tenant_id"`
-	Logo       *bool     `db:"logo"`
-	IssuerName string    `db:"issuer_name"`
+	Logo       *bool   `db:"logo"`
+	IssuerName *string `db:"issuer_name"`
 	// IssuerAddress*/CustomerAddress* mirror Invoice's own 7-column
 	// type: 'address' composite shape (see Invoice's doc comment above).
 	IssuerAddressNumber       *int       `db:"issuer_address_number"`
-	IssuerAddressComplement   string     `db:"issuer_address_complement"`
-	IssuerAddressStreet       string     `db:"issuer_address_street"`
-	IssuerAddressZipCode      string     `db:"issuer_address_zip_code"`
-	IssuerAddressCity         string     `db:"issuer_address_city"`
-	IssuerAddressState        string     `db:"issuer_address_state"`
-	IssuerAddressCountry      string     `db:"issuer_address_country"`
-	IssuerPhone               string     `db:"issuer_phone"`
-	IssuerEmail               string     `db:"issuer_email"`
+	IssuerAddressComplement   *string    `db:"issuer_address_complement"`
+	IssuerAddressStreet       *string    `db:"issuer_address_street"`
+	IssuerAddressZipCode      *string    `db:"issuer_address_zip_code"`
+	IssuerAddressCity         *string    `db:"issuer_address_city"`
+	IssuerAddressState        *string    `db:"issuer_address_state"`
+	IssuerAddressCountry      *string    `db:"issuer_address_country"`
+	IssuerPhone               *string    `db:"issuer_phone"`
+	IssuerEmail               *string    `db:"issuer_email"`
 	Number                    string     `db:"number"`
 	IssueDate                 *time.Time `db:"issue_date"`
 	Subject                   string     `db:"subject"`
@@ -259,9 +260,10 @@ type Quote struct {
 	CustomerAddressCountry    string     `db:"customer_address_country"`
 	// DueDate is the quote's validity/expiry date — same column shape as
 	// Invoice.DueDate, different meaning ("valid until" vs "payment due by").
-	DueDate   *time.Time `db:"due_date"`
-	Status    string     `db:"status"` // "draft", "sent", "accepted", "declined", "expired"
-	Reference string     `db:"reference"`
+	DueDate *time.Time `db:"due_date"`
+	Status  string     `db:"status"` // "draft", "confirmed", "sent", "accepted", "declined", "expired"
+	// No Reference column on the struct any more (removed from the quote): the
+	// DB column stays, NOT NULL DEFAULT '', since migrations never drop one.
 	// See Invoice's doc comment: Subtotal/TaxAmount/Total is the HT/TVA/TTC
 	// breakdown, no Discount/Currency column anymore.
 	Subtotal      *float64 `db:"subtotal"`
@@ -277,7 +279,6 @@ type Quote struct {
 // reasoning, which applies here unchanged.
 type QuoteLine struct {
 	model.BaseModel
-	TenantID    uuid.UUID `db:"tenant_id" json:"tenant_id"`
 	QuoteID     uuid.UUID `db:"quote_id" json:"quote_id"`
 	VariantID   uuid.UUID `db:"variant_id" json:"variant_id"`
 	VariantName string    `db:"variant_name" json:"variant_name"`
@@ -285,9 +286,74 @@ type QuoteLine struct {
 	Unit        string    `db:"unit" json:"unit"`
 	TaxRate     float64   `db:"tax_rate" json:"tax_rate"`
 	UnitPrice   float64   `db:"unit_price" json:"unit_price"`
+	// UomID: see SaleLine.UomID.
+	UomID *uuid.UUID `db:"uom_id" json:"uom_id"`
+}
+
+// QuoteRecipient / InvoiceRecipient: the extra contacts a quote or invoice
+// is emailed to on Send, beside its Customer — many2many junctions riding the
+// generic CRUD surface (the form's tags widget writes them, like crm_tag), a
+// hand-written unique (document, contact) index in Migrate. Accepting a quote
+// copies its recipients onto the invoice.
+type QuoteRecipient struct {
+	model.BaseModel
+	QuoteID   uuid.UUID `db:"quote_id,index" json:"quote_id"`
+	ContactID uuid.UUID `db:"contact_id" json:"contact_id"`
+}
+
+type InvoiceRecipient struct {
+	model.BaseModel
+	InvoiceID uuid.UUID `db:"invoice_id,index" json:"invoice_id"`
+	ContactID uuid.UUID `db:"contact_id" json:"contact_id"`
 }
 
 type saleModule struct{}
+
+// issuerColumns are Invoice/Quote's Issuer* columns, made optional (plain
+// string -> *string) once the issuer moved to the company profile.
+var issuerColumns = []string{
+	"issuer_name", "issuer_address_complement", "issuer_address_street",
+	"issuer_address_zip_code", "issuer_address_city", "issuer_address_state",
+	"issuer_address_country", "issuer_phone", "issuer_email",
+}
+
+// Migrate drops the NOT NULL a pre-existing invoice/quote table kept on its
+// Issuer* columns: auto-migration is purely additive and never relaxes a
+// constraint (same reasoning as propertymanagement's Migrate). A no-op on a
+// fresh database, which creates them nullable already.
+func (m *saleModule) Migrate(ctx context.Context, db *orm.DB) error {
+	for _, table := range []string{"invoice", "quote"} {
+		for _, col := range issuerColumns {
+			// #nosec G201 — table/column names are the constants above.
+			if _, err := db.Exec(ctx, fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s DROP NOT NULL", table, col)); err != nil {
+				return fmt.Errorf("sale: drop %s.%s NOT NULL: %w", table, col, err)
+			}
+		}
+	}
+	for _, ddl := range []string{
+		// The quote/invoice number sequences (sequence.go): one row per
+		// tenant, company, kind and year.
+		`CREATE TABLE IF NOT EXISTS sale_sequence (
+			tenant_id  uuid    NOT NULL,
+			company_id uuid    NOT NULL,
+			kind       text    NOT NULL,
+			year       integer NOT NULL,
+			last       integer NOT NULL,
+			PRIMARY KEY (tenant_id, company_id, kind, year)
+		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_quote_recipient_unique
+			ON quote_recipient (quote_id, contact_id) WHERE deleted_at IS NULL`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_invoice_recipient_unique
+			ON invoice_recipient (invoice_id, contact_id) WHERE deleted_at IS NULL`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_product_tax_unique
+			ON product_tax (product_id, sale_tax_id) WHERE deleted_at IS NULL`,
+	} {
+		if _, err := db.Exec(ctx, ddl); err != nil {
+			return fmt.Errorf("sale: migrate: %w", err)
+		}
+	}
+	return migrateProductTaxRates(ctx, db)
+}
 
 func (m *saleModule) Name() string { return "sale" }
 
@@ -307,5 +373,14 @@ func (m *saleModule) Register() error {
 	if err := orm.Register[Quote](); err != nil {
 		return err
 	}
-	return orm.Register[QuoteLine]()
+	if err := orm.Register[QuoteLine](); err != nil {
+		return err
+	}
+	if err := orm.Register[QuoteRecipient](); err != nil {
+		return err
+	}
+	if err := orm.Register[ProductTax](); err != nil {
+		return err
+	}
+	return orm.Register[InvoiceRecipient]()
 }

@@ -19,7 +19,7 @@ export interface NumberFormatPreference {
 /** The caller's current company (multi-company) — the minimal shape a
  * switcher needs, not the full profile (address/phone/email, only the
  * Company settings form itself needs those). */
-export interface ActiveCompanyRef {
+interface ActiveCompanyRef {
   id: string
   name: string
   /** e.g. "USD" — what `number/monetary` fields (core-front's widgets.tsx)
@@ -43,11 +43,19 @@ export interface LocalePreferences {
   /** The caller's own account email — the closest thing to a "display name"
    * this schema has (Users carries no separate name field). */
   email?: string
+  /** The caller has a photo (GET /avatars/:user serves it). */
+  has_avatar?: boolean
   preferred_locale: string | null
   default_locale: string | null
   number_format?: NumberFormatPreference | null
+  /** Workspace short date pattern (format.date, e.g. 'dd/MM/yyyy'); null = locale default. */
+  date_format?: string | null
   active_company?: ActiveCompanyRef | null
   username_at_format?: boolean
+  /** The workspace's unit system (GET /me/preferences). */
+  unit_system?: 'metric' | 'imperial'
+  /** This deployment's backend types.Config.Environment ("development"/"production"). */
+  environment?: string
 }
 
 /**

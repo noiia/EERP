@@ -96,14 +96,12 @@ func TestParseAccess_ExpiredToken_ReturnsError(t *testing.T) {
 
 	// Build a token that expired 1 second ago.
 	claims := &auth.Claims{
-		Sub:    u.ID,
-		Tenant: u.TenantID,
-		Roles:  nil,
-		RegisteredClaims: jwt.RegisteredClaims{
-			Subject:   u.ID.String(),
-			IssuedAt:  jwt.NewNumericDate(time.Now().Add(-2 * time.Hour)),
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(-1 * time.Hour)),
-		},
+		Sub:       u.ID,
+		Tenant:    u.TenantID,
+		Roles:     nil,
+		Subject:   u.ID.String(),
+		IssuedAt:  jwt.NewNumericDate(time.Now().Add(-2 * time.Hour)),
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(-1 * time.Hour)),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	raw, _ := token.SignedString([]byte(cfg.MasterPassword))
@@ -187,5 +185,22 @@ func TestTokenService_ZeroTTL_UsesDefaults(t *testing.T) {
 	}
 	if claims.Sub != u.ID {
 		t.Errorf("sub mismatch")
+	}
+}
+
+func TestIssueAccess_AudienceFollowsUserKind(t *testing.T) {
+	svc := auth.NewTokenService(testConfig())
+	for _, tt := range []struct {
+		kind string
+		want bool
+	}{{"", false}, {auth.KindWebsite, true}} {
+		raw, err := svc.IssueAccess(auth.Users{Kind: tt.kind}, nil, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		claims, err := svc.ParseAccess(raw)
+		if err != nil || claims.IsWebsite() != tt.want {
+			t.Errorf("kind %q: IsWebsite = %v (err %v), want %v", tt.kind, claims.IsWebsite(), err, tt.want)
+		}
 	}
 }

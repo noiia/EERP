@@ -5,6 +5,7 @@ import {
   loadChatterVisibility,
   loadDashboardWidgets,
   loadPictureSize,
+  loadStatusBarConfig,
   loadView,
   loadViewFields,
 } from './loader'
@@ -28,6 +29,7 @@ function fakeApi(overrides: Partial<ServerApiClient> = {}): ServerApiClient {
     remove: vi.fn(),
     getViewFields: vi.fn(async () => EMPTY_VIEW_FIELDS),
     getChatterVisibility: vi.fn(async () => EMPTY_CHATTER_VISIBILITY),
+    getStatusBarConfig: vi.fn(async () => ({ field: null, steps: null })),
     getPictureSize: vi.fn(async () => null),
     ...overrides,
   } as ServerApiClient
@@ -212,6 +214,72 @@ describe('EntityViewServer', () => {
     expect(element.props.chatterVisible).toBe(true)
   })
 
+  it('passes the status-bar override to a form that declares a breadcrumb', async () => {
+    const getStatusBarConfig = vi.fn(async () => ({ field: null, steps: ['won'] }))
+    const api = fakeApi({ get: vi.fn(async () => ({ id: '1' })) as never, getStatusBarConfig: getStatusBarConfig as never })
+    const element = await EntityViewServer({
+      descriptor: {
+        ...form,
+        fields: [{ name: 'status', label: 'Status', type: 'selection', selection: { options: ['new', 'won'] } }],
+        statusBar: { field: 'status' },
+      },
+      actions: { create: vi.fn(), update: vi.fn() },
+      api,
+      recordId: '1',
+    })
+    expect(getStatusBarConfig).toHaveBeenCalledWith('crm')
+    expect(element.props.statusBarConfig).toEqual({ field: null, steps: ['won'] })
+  })
+
+  it('reads a form context only for a form that names one; an unreadable one is empty', async () => {
+    const getFormContext = vi.fn(async () => ({ auto_reference: true }))
+    const api = fakeApi({ get: vi.fn(async () => ({ id: '1' })) as never, getFormContext: getFormContext as never })
+    const withContext = await EntityViewServer({
+      descriptor: { ...form, formContext: '/settings/warehouse' },
+      actions: { create: vi.fn(), update: vi.fn() },
+      api,
+      recordId: '1',
+    })
+    expect(getFormContext).toHaveBeenCalledWith('/settings/warehouse')
+    expect(withContext.props.formContext).toEqual({ auto_reference: true })
+
+    getFormContext.mockClear()
+    const without = await EntityViewServer({ descriptor: form, actions: { create: vi.fn(), update: vi.fn() }, api, recordId: '1' })
+    expect(getFormContext).not.toHaveBeenCalled()
+    expect(without.props.formContext).toBeUndefined()
+
+    const denied = fakeApi({
+      get: vi.fn(async () => ({ id: '1' })) as never,
+      getFormContext: vi.fn(async () => {
+        throw new ApiError({ code: 'FORBIDDEN', message: 'no', status: 403 })
+      }) as never,
+    })
+    const empty = await EntityViewServer({
+      descriptor: { ...form, formContext: '/settings/warehouse' },
+      actions: { create: vi.fn(), update: vi.fn() },
+      api: denied,
+      recordId: '1',
+    })
+    expect(empty.props.formContext).toEqual({})
+  })
+
+  it('never reads a status-bar override for a form without a breadcrumb', async () => {
+    const getStatusBarConfig = vi.fn(async () => ({ field: null, steps: null }))
+    const api = fakeApi({ get: vi.fn(async () => ({ id: '1' })) as never, getStatusBarConfig: getStatusBarConfig as never })
+    const element = await EntityViewServer({ descriptor: form, actions: { create: vi.fn(), update: vi.fn() }, api, recordId: '1' })
+    expect(getStatusBarConfig).not.toHaveBeenCalled()
+    expect(element.props.statusBarConfig).toBeUndefined()
+  })
+
+  it('an unreadable status-bar override reads as none', async () => {
+    const api = fakeApi({
+      getStatusBarConfig: vi.fn(async () => {
+        throw new ApiError({ code: 'FORBIDDEN', message: 'no', requestId: 'r', status: 403 })
+      }) as never,
+    })
+    await expect(loadStatusBarConfig('crm', api)).resolves.toEqual({ field: null, steps: null })
+  })
+
   it('skips chatterVisible entirely for a non-form view', async () => {
     const getChatterVisibility = vi.fn(async () => ({ enabled: false }))
     const api = fakeApi({ getChatterVisibility: getChatterVisibility as never })
@@ -285,11 +353,12 @@ describe('EntityViewServer', () => {
 
 describe('loadDashboardWidgets', () => {
   it('builds one block per list view, each carrying its entry count and link', async () => {
-    const api = fakeApi({
-      list: vi.fn(async (entity: string) =>
-        entity === 'crm' ? [{ id: '1' }, { id: '2' }, { id: '3' }] : [{ id: 'a' }],
-      ) as never,
-    })
+    // The count is the envelope's total over every row, not the page length —
+    // a one-row page of a 100 000-row table must still read 100 000.
+    const listWithTotal = vi.fn(async (entity: string) =>
+      entity === 'crm' ? { records: [{ id: '1' }], total: 100_000 } : { records: [{ id: 'a' }], total: 1 },
+    )
+    const api = fakeApi({ listWithTotal: listWithTotal as never })
     const widgets = await loadDashboardWidgets(
       [
         { entity: 'crm', title: 'Crm', href: '/crm/list' },
@@ -298,14 +367,15 @@ describe('loadDashboardWidgets', () => {
       api,
     )
     expect(widgets).toEqual([
-      { id: '/crm/list', title: 'Crm', href: '/crm/list', count: 3 },
-      { id: '/sales/list', title: 'Orders', href: '/sales/list', count: 1 },
+      { id: '/crm/list', title: 'Crm', href: '/crm/list', count: 100_000, countEstimated: false },
+      { id: '/sales/list', title: 'Orders', href: '/sales/list', count: 1, countEstimated: false },
     ])
+    expect(listWithTotal).toHaveBeenCalledWith('crm', { pageSize: 1 })
   })
 
   it('leaves a block count null when its list view fails to load', async () => {
     const api = fakeApi({
-      list: vi.fn(async () => {
+      listWithTotal: vi.fn(async () => {
         throw new ApiError({ code: 'FORBIDDEN', message: 'no', status: 403 })
       }) as never,
     })

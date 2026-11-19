@@ -1,18 +1,17 @@
-// Split out of dev-seed.ts: that file is 'use server', and Next.js requires every
-// top-level export of a 'use server' module to be an async Server Action — a plain
-// sync env check doesn't qualify, so it lives here instead and dev-seed.ts imports it.
+import 'server-only'
+import { getMyLocalePreferences } from './preferences'
 
 /**
- * NODE_ENV alone can't tell "a real production deployment" apart from "a dev/local
- * deployment running the production Next build" — the standalone Docker image (see
- * core-front/Dockerfile) always sets NODE_ENV=production, since that's required for
- * `next start` to run correctly, even when compose.yml is standing it up for local
- * dev. ALLOW_DEMO_SEED lets such a deployment opt back in explicitly, the same way
- * COOKIE_SECURE overrides the NODE_ENV-derived default in session-cookies.ts.
+ * Whether the demo-seed tool may run. Sourced from the SAME backend config the
+ * Go server itself boots from (types.Config.Environment, "development"/"production"
+ * — echoed back on GET /me/preferences, since core-front never reads the backend
+ * config file at runtime, only at build time for module discovery — see
+ * core-front/CLAUDE.md's BFF boundary). Replaces the old NODE_ENV/ALLOW_DEMO_SEED
+ * pair: the standalone Docker image always sets NODE_ENV=production regardless of
+ * whether the deployment is a real tenant, so that env var could never tell the two
+ * apart on its own — a single, explicit backend switch does.
  */
-export function seedingAllowed(): boolean {
-  if (process.env.ALLOW_DEMO_SEED !== undefined) {
-    return process.env.ALLOW_DEMO_SEED === 'true'
-  }
-  return process.env.NODE_ENV !== 'production'
+export async function seedingAllowed(): Promise<boolean> {
+  const preferences = await getMyLocalePreferences()
+  return preferences?.environment === 'development'
 }

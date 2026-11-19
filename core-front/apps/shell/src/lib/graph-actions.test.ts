@@ -2,18 +2,44 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@eerp/core-front/server'
 
 const apiRequestMock = vi.fn()
+const aggregateMock = vi.fn()
 vi.mock('@eerp/core-front/server', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@eerp/core-front/server')>()
   return {
     ...actual,
     apiRequest: (...args: unknown[]) => apiRequestMock(...args),
+    createServerApiClient: () => ({ aggregate: (...args: unknown[]) => aggregateMock(...args) }),
   }
 })
 
-import { getEntityGraphLayout, setEntityGraphLayout } from './graph-actions'
+import {
+  aggregateEntity,
+  createEntityGraphField,
+  deleteEntityGraphField,
+  getEntityGraphLayout,
+  listEntityGraphFields,
+  setEntityGraphLayout,
+  updateEntityGraphField,
+} from './graph-actions'
 
 beforeEach(() => {
   apiRequestMock.mockReset()
+  aggregateMock.mockReset()
+})
+
+describe('aggregateEntity', () => {
+  it('forwards to the server ApiClient and returns its rows', async () => {
+    const rows = [{ x: '2026-01', value: 3, count: 1 }]
+    aggregateMock.mockResolvedValue(rows)
+    const req = { aggregate: 'sum' as const, value: 'total', x: 'issue_date', bucket: 'month' as const }
+    await expect(aggregateEntity('invoice', req, { filter: { status: 'paid' } })).resolves.toEqual(rows)
+    expect(aggregateMock).toHaveBeenCalledWith('invoice', req, { filter: { status: 'paid' } })
+  })
+
+  it('returns null on failure so the tile falls back to the client path', async () => {
+    aggregateMock.mockRejectedValue(new ApiError({ code: 'BAD_REQUEST', message: 'x', status: 400 }))
+    await expect(aggregateEntity('invoice', { aggregate: 'count' })).resolves.toBeNull()
+  })
 })
 
 describe('getEntityGraphLayout', () => {
@@ -42,7 +68,11 @@ describe('setEntityGraphLayout', () => {
 
   it('maps a failed save to { ok:false } carrying the envelope message', async () => {
     apiRequestMock.mockRejectedValue(
-      new ApiError({ code: 'FORBIDDEN', message: 'Missing permission settings:views:write', status: 403 }),
+      new ApiError({
+        code: 'FORBIDDEN',
+        message: 'Missing permission settings:views:write',
+        status: 403,
+      }),
     )
 
     await expect(setEntityGraphLayout('crm', [])).resolves.toEqual({
@@ -58,5 +88,45 @@ describe('setEntityGraphLayout', () => {
       ok: false,
       message: 'Could not save the graph layout.',
     })
+  })
+})
+
+describe('graph calculated fields', () => {
+  const draft = { key: 'calc_margin', label: 'Margin', formula: 'a - b', roles: [], dated: false }
+
+  it("lists an entity's fields, and degrades to none on failure", async () => {
+    apiRequestMock.mockResolvedValueOnce({ data: [{ id: 'f1', ...draft }] })
+    await expect(listEntityGraphFields('crm')).resolves.toEqual([{ id: 'f1', ...draft }])
+    expect(apiRequestMock).toHaveBeenCalledWith('GET', '/graph_fields?entity=crm')
+    apiRequestMock.mockRejectedValueOnce(new TypeError('fetch failed'))
+    await expect(listEntityGraphFields('crm')).resolves.toEqual([])
+  })
+
+  it('creates, updates and deletes through the dedicated routes', async () => {
+    apiRequestMock.mockResolvedValue(undefined)
+    await expect(createEntityGraphField('crm', draft as never)).resolves.toEqual({ ok: true })
+    expect(apiRequestMock).toHaveBeenLastCalledWith('POST', '/graph_fields', {
+      entity: 'crm',
+      ...draft,
+    })
+    await expect(updateEntityGraphField('f1', { label: 'M' } as never)).resolves.toEqual({
+      ok: true,
+    })
+    expect(apiRequestMock).toHaveBeenLastCalledWith('PUT', '/graph_fields/f1', { label: 'M' })
+    await expect(deleteEntityGraphField('f1')).resolves.toEqual({ ok: true })
+    expect(apiRequestMock).toHaveBeenLastCalledWith('DELETE', '/graph_fields/f1')
+  })
+
+  it.each([
+    ['create', () => createEntityGraphField('crm', draft as never), 'Could not create the field.'],
+    ['update', () => updateEntityGraphField('f1', {} as never), 'Could not update the field.'],
+    ['delete', () => deleteEntityGraphField('f1'), 'Could not delete the field.'],
+  ])('%s surfaces the Go message, else a generic one', async (_, call, generic) => {
+    apiRequestMock.mockRejectedValueOnce(
+      new ApiError({ code: 'FORBIDDEN', message: 'nope', status: 403 }),
+    )
+    await expect(call()).resolves.toEqual({ ok: false, message: 'nope' })
+    apiRequestMock.mockRejectedValueOnce(new TypeError('fetch failed'))
+    await expect(call()).resolves.toEqual({ ok: false, message: generic })
   })
 })

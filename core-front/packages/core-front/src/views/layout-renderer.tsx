@@ -19,9 +19,11 @@ import {
   FORM_HEADER_ID,
   type FieldDescriptor,
   type LayoutContainerNode,
+  type LayoutFieldNode,
   type LayoutNode,
   type ViewDescriptor,
 } from './descriptor'
+import { useConditionRecord } from './form-context'
 import { ErrorAlert } from './error-alert'
 import { useNotebookOps, type NotebookPageRecord } from './notebook-ops'
 import { useSessionStore } from './session-store'
@@ -188,7 +190,7 @@ function StoredPageEditor({
   return (
     <Box hidden={hidden}>
       <Stack spacing={2}>
-        {error ? <ErrorAlert error={error} /> : null}
+        <ErrorAlert error={error} />
         <TextField
           label={t('Title')}
           value={title}
@@ -256,8 +258,20 @@ function NotebookNode({
   hidden?: ReadonlySet<string>
 }) {
   const t = useT()
-  const [active, setActive] = useState(0)
+  const [selected, setSelected] = useState(0)
   const pages = node.children as LayoutContainerNode[]
+  const callerGroups = useSessionStore((s) => s.identity?.groups ?? NO_GROUPS)
+  const conditionRecord = useConditionRecord(draft)
+  // A page whose every field is hidden right now (invisible, states.visible,
+  // groups) has nothing to show: its tab goes too — e.g. a contact's
+  // "Companies" page vs a company's "Contacts" page, by its kind.
+  const pageShown = pages.map((page) =>
+    hasVisibleField(page, fieldsByName, conditionRecord, callerGroups, hidden),
+  )
+  const firstShown = Math.max(pageShown.indexOf(true), 0)
+  // The selected tab may just have hidden itself: fall back to the first one shown.
+  const active = selected < pages.length && !pageShown[selected] ? firstShown : selected
+  const setActive = setSelected
 
   const ops = useNotebookOps()
   const canWrite = usePermission('notebook_pages:notebook_pages:write')
@@ -346,13 +360,13 @@ function NotebookNode({
           scrollButtons="auto"
           sx={{ flexGrow: 1, minHeight: 0, borderBottom: 0 }}
         >
-          {pages.map((page, i) => (
-            <Tab key={`d:${page.id ?? i}`} label={t(page.title ?? '')} />
-          ))}
-          {storedPages.map((page) => (
+          {pages.map((page, i) =>
+            pageShown[i] ? <Tab key={`d:${page.id ?? i}`} value={i} label={t(page.title ?? '')} /> : null,
+          )}
+          {storedPages.map((page, i) => (
             // Stored titles are user data, never translated (msgids are
             // static developer strings; a record's own page title is not).
-            <Tab key={`s:${page.id}`} label={page.title} />
+            <Tab key={`s:${page.id}`} value={pages.length + i} label={page.title} />
           ))}
         </Tabs>
         {showAdd ? (
@@ -365,7 +379,7 @@ function NotebookNode({
           )
         ) : null}
       </Stack>
-      {opsError ? <ErrorAlert error={opsError} /> : null}
+      <ErrorAlert error={opsError} />
       {pages.map((page, i) => (
         <Box key={`d:${page.id ?? i}`} hidden={active !== i}>
           <Stack spacing={2.5}>
@@ -400,6 +414,40 @@ function NotebookNode({
   )
 }
 
+/** Whether a layout subtree renders at least one field right now. A
+ * page with no field leaf at all (pure structure) counts as shown. */
+function hasVisibleField(
+  node: LayoutNode,
+  fieldsByName: Map<string, FieldDescriptor>,
+  conditionRecord: Record<string, unknown>,
+  callerGroups: string[],
+  hidden?: ReadonlySet<string>,
+): boolean {
+  const leaves: LayoutFieldNode[] = []
+  const walk = (n: LayoutNode) => (n.kind === 'field' ? leaves.push(n) : n.children.forEach(walk))
+  walk(node)
+  if (leaves.length === 0) return true
+  return leaves.some((leaf) => {
+    if (hidden?.has(leaf.name)) return false
+    const field = fieldsByName.get(leaf.name)
+    return field ? isFieldVisible(field, conditionRecord, callerGroups) : false
+  })
+}
+
+/**
+ * `offsetTop`'s own `mt`, forced with `!important`: a plain `sx.mt` on a
+ * `Stack` child loses to Stack's OWN generated sibling-margin rule (`&
+ * > :not(style) ~ :not(style)`, a higher-specificity selector than this
+ * node's single emotion class) — without `!important` a negative offsetTop
+ * meant to CLOSE the gap between two top-level nodes (both direct children
+ * of the form's own outer `Stack spacing={2.5}`) would silently do nothing.
+ * Harmless on a `columns` grid parent too: CSS Grid's `gap` is never
+ * margin-based, so there's no rule to fight there in the first place.
+ */
+function offsetTopSx(node: LayoutContainerNode): string | undefined {
+  return node.offsetTop !== undefined ? `${node.offsetTop}rem !important` : undefined
+}
+
 function LayoutNodeView({
   node,
   fieldsByName,
@@ -419,6 +467,8 @@ function LayoutNodeView({
 }) {
   const t = useT()
   const callerGroups = useSessionStore((s) => s.identity?.groups ?? NO_GROUPS)
+  // What conditions read: the draft plus the form's context (form-context.tsx).
+  const conditionRecord = useConditionRecord(draft)
 
   if (node.kind === 'field') {
     if (hidden?.has(node.name)) return null
@@ -434,9 +484,9 @@ function LayoutNodeView({
     // states.visible back on shows it unchanged. `field.groups` is the same
     // static-hide family — see FieldDescriptor.groups's doc on why this is a
     // UX mirror, not the security boundary.
-    if (!isFieldVisible(field, draft, callerGroups)) return null
+    if (!isFieldVisible(field, conditionRecord, callerGroups)) return null
     const stateReadOnly = field.states?.readOnly
-      ? evaluateCondition(field.states.readOnly, draft)
+      ? evaluateCondition(field.states.readOnly, conditionRecord)
       : false
     // Static readOnly (docs/roadmaps/app-store.md, Phase 2) OR's in alongside
     // compute and the declarative states.readOnly — static wins, since
@@ -508,8 +558,25 @@ function LayoutNodeView({
   // the form page, or single-column inside the relation wizard's narrow
   // dialog — no cooperation needed from the caller.
   if (node.columns) {
+    // columnWidths (opt-in, e.g. propertymanagement's floor_area|uom_id
+    // split): relative `fr` ratios instead of the default `repeat(N, 1fr)`
+    // even split — "resizable" in the sense that a module DECLARES the
+    // ratio it wants (2:1, 3:2, ...) rather than a live end-user drag
+    // handle, matching every other rendering hint in this DSL being plain
+    // JSON, not stateful UI. Length must match `columns`; falls back to the
+    // even split otherwise (a mismatch is a descriptor bug, not something
+    // to guess at render time).
+    const gridTemplateColumns =
+      node.columnWidths && node.columnWidths.length === node.columns
+        ? node.columnWidths.map((w) => `${w}fr`).join(' ')
+        : `repeat(${node.columns}, 1fr)`
+    // minWidth (opt-in, e.g. a `columns` group NESTED inside another
+    // column): overrides the 640px default, which never activates for a
+    // sub-split that never reaches that width on its own — see
+    // descriptor.ts's own doc comment on minWidth.
+    const containerMinWidth = node.minWidth ?? layoutTokens.formTwoColumnMinWidth
     return (
-      <Box sx={{ containerType: 'inline-size' }}>
+      <Box sx={{ containerType: 'inline-size', mt: offsetTopSx(node) }}>
         {node.title ? (
           <Typography variant="subtitle2" sx={{ mb: 1 }}>
             {t(node.title)}
@@ -519,10 +586,13 @@ function LayoutNodeView({
           sx={{
             display: 'grid',
             gridTemplateColumns: '1fr',
-            gap: 2.5,
+            // Same vertical rhythm as a single-column group (Stack spacing 2.5),
+            // and a wider gutter so side-by-side fields don't touch.
+            rowGap: 2.5,
+            columnGap: 3,
             alignItems: 'start',
-            [`@container (min-width: ${layoutTokens.formTwoColumnMinWidth}px)`]: {
-              gridTemplateColumns: `repeat(${node.columns}, 1fr)`,
+            [`@container (min-width: ${containerMinWidth}px)`]: {
+              gridTemplateColumns,
             },
           }}
         >
@@ -545,7 +615,10 @@ function LayoutNodeView({
       <Stack
         direction={isHeader ? 'row' : { xs: 'column', sm: 'row' }}
         spacing={2}
-        sx={{ alignItems: isHeader ? 'center' : { xs: 'stretch', sm: 'flex-start' } }}
+        sx={{
+          alignItems: isHeader ? 'center' : { xs: 'stretch', sm: 'flex-start' },
+          mt: offsetTopSx(node),
+        }}
       >
         {node.title ? (
           <Typography variant="subtitle2" sx={{ width: '100%' }}>
@@ -559,7 +632,7 @@ function LayoutNodeView({
 
   if (node.kind === 'section') {
     return (
-      <Box>
+      <Box sx={{ mt: offsetTopSx(node) }}>
         {node.title ? (
           <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
             {t(node.title)}
@@ -576,7 +649,7 @@ function LayoutNodeView({
   // the exact same vertical rhythm as the old single flat Stack did — nesting
   // doesn't compound MUI's Stack spacing, it only adds a transparent wrapper.
   return (
-    <Stack spacing={2.5}>
+    <Stack spacing={2.5} sx={{ mt: offsetTopSx(node) }}>
       {node.title ? <Typography variant="subtitle2">{t(node.title)}</Typography> : null}
       {children}
     </Stack>

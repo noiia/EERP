@@ -20,10 +20,11 @@ const DefaultLocaleKey = "i18n.default_locale"
 // Absent (or unparsable) means the frontend's built-in default (1,234.56).
 const NumberFormatKey = "format.number"
 
-// ViewFieldsKey returns the app_settings key holding entity's Kanban/Calendar
+// ViewFieldsKey returns the app_settings key holding entity's Kanban/Calendar/Gantt
 // field configuration plus its Graph mode override (docs/roadmaps/
 // list-view-modes.md), stored as JSON: {"kanban_status_field":"status",
-// "calendar_date_field":"due_date","enable_graphs":true}. One key per entity
+// "calendar_date_field":"due_date","enable_graphs":true,
+// "gantt_start_field":"date_start","gantt_end_field":"deadline"}. One key per entity
 // — unlike DefaultLocaleKey/NumberFormatKey, which are tenant-wide singletons,
 // this setting is inherently per-entity, so the key is computed rather than a
 // fixed constant. Absent (or a null field) means no workspace override for
@@ -53,6 +54,17 @@ func ViewGraphKey(entity string) string {
 // none).
 func ViewChatterKey(entity string) string {
 	return "views." + entity + ".chatter"
+}
+
+// ViewStatusBarKey returns the app_settings key holding entity's form
+// status-breadcrumb override — which selection field the breadcrumb follows
+// and which of its options it lists, in order — stored as JSON:
+// {"field":"status","steps":["incoming","won"]}. Same per-entity shape as
+// ViewChatterKey; absent (or a null part) means no workspace override for
+// that part — the frontend falls back to the module's own
+// ViewDescriptor.statusBar field and every one of its options.
+func ViewStatusBarKey(entity string) string {
+	return "views." + entity + ".status_bar"
 }
 
 // PictureSizeKey is the app_settings key holding the workspace-wide ("Base")
@@ -97,6 +109,24 @@ const (
 	TaxPriceModeIncluded = "tax_included"
 )
 
+// UnitSystemKey is the app_settings key holding the workspace's default unit
+// system — metric (UnitSystemMetric) or imperial (UnitSystemImperial).
+// Stored as JSON: {"system":"metric"}. Absent means UnitSystemMetric.
+// Consumed by propertymanagement's own property Create override
+// (handler.go's defaultFloorAreaUom) to pick a sensible starting `uom_id`
+// (square meter vs. square foot) for a new property's floor_area — never
+// forced afterward, still freely re-pickable from the surface-only catalog
+// (see property_management_views.ts's `uom_id` field, filtered to
+// `type: 'surface'`).
+const UnitSystemKey = "units.system"
+
+// UnitSystemMetric/UnitSystemImperial are the only two valid UnitSystemKey
+// values (see its own doc comment above).
+const (
+	UnitSystemMetric   = "metric"
+	UnitSystemImperial = "imperial"
+)
+
 // AccountsUsernameAtFormatKey is the app_settings key holding whether the
 // workspace always renders a user's `username` (core/internal/auth.Users)
 // with a leading "@", like a handle — a pure DISPLAY choice, never rewriting
@@ -127,7 +157,6 @@ const OSMConnectorKey = "integrations.osm"
 // at boot, before the new index is created.
 type AppSettings struct {
 	model.BaseModel
-	TenantID  uuid.UUID  `db:"tenant_id,index"`
 	CompanyID *uuid.UUID `db:"company_id"`
 	Key       string     `db:"key"`
 	Value     string     `db:"value"`

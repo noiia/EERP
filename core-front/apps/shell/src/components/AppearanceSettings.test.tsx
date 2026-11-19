@@ -7,6 +7,7 @@ describe('AppearanceSettings', () => {
   beforeEach(() => {
     useUiStore.getState().resetPalette()
     useUiStore.getState().setTheme('light')
+    useUiStore.getState().setUiStyle('pretty')
   })
 
   it('renders an editor for each color labeled by its software role, seeded from the store', () => {
@@ -37,6 +38,12 @@ describe('AppearanceSettings', () => {
     expect(useUiStore.getState().theme).toBe('dark')
   })
 
+  it('toggles performance mode', () => {
+    render(<AppearanceSettings />)
+    fireEvent.click(screen.getByLabelText('Performance mode'))
+    expect(useUiStore.getState().uiStyle).toBe('performance')
+  })
+
   it('resets the palette to defaults', () => {
     useUiStore.getState().setPaletteColor('goBlue', '#000000')
     render(<AppearanceSettings />)
@@ -56,5 +63,12 @@ describe('AppearanceSettings', () => {
     expect(screen.getByText('Tax')).toBeInTheDocument()
     expect(screen.getByLabelText(/tax computed on top of the price/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/tax computed on top of the price/i)).toBeChecked()
+  })
+
+  it('renders the Units section holding the default unit system settings', () => {
+    render(<AppearanceSettings />)
+    expect(screen.getByText('Units')).toBeInTheDocument()
+    expect(screen.getByLabelText(/metric/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/metric/i)).toBeChecked()
   })
 })

@@ -174,7 +174,13 @@ export function buildBehaviorPlan<T>(descriptor: ViewDescriptor<T>): BehaviorPla
     // unstored regardless of the module's own `store` declaration, same
     // "the type itself decides, not the flag" posture o2m/m2m relations have.
     unstored: descriptor.fields
-      .filter((f) => f.store === false || isVirtualRelation(f) || f.type === 'address')
+      .filter(
+        (f) =>
+          f.store === false ||
+          isVirtualRelation(f) ||
+          f.type === 'address' ||
+          f.type === 'distance',
+      )
       .map((f) => f.name),
     defaults: buildDefaults(descriptor),
   }

@@ -1,5 +1,11 @@
 # Build-time context excludes for the repo-root Docker builds (core-back + core-front).
 # Only build artifacts / VCS — both services COPY source explicitly.
+# eerp-config.json carries real secrets (db/S3 credentials, the JWT master key) and must
+# never enter a build context at all, even a local dev machine's where the file happens
+# to exist on disk — core-front/Dockerfile's own module_root need is served by the
+# MODULE_ROOTS/REPO_ROOT build ARGs instead (see its top-of-file comment); core-back
+# reads its config from a real path at container RUNTIME, never at build time.
+/eerp-config.json
 **/node_modules
 **/.next
 **/dist

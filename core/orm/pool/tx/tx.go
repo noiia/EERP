@@ -4,6 +4,7 @@ import (
 	"context"
 	"core/orm/log"
 	"core/orm/pool/config"
+	"core/orm/qcache"
 	"fmt"
 	"time"
 
@@ -30,6 +31,10 @@ type Tx struct {
 	pgxTx  pgx.Tx
 	logger log.Logger
 	cfg    config.Config
+	// written / writtenAll record which tables the transaction wrote, so
+	// DB.Transaction can invalidate the read cache after COMMIT.
+	written    map[string]bool
+	writtenAll bool
 }
 
 // New wraps pgxTx in a Tx with the provided logger and config.
@@ -44,6 +49,7 @@ func New(pgxTx pgx.Tx, logger log.Logger, cfg config.Config) *Tx {
 func (t *Tx) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 	caller := log.Caller()
 	start := time.Now()
+	t.record(sql)
 	rows, err := t.pgxTx.Query(ctx, sql, args...)
 	t.log(ctx, sql, args, time.Since(start), err, caller)
 	return rows, err
@@ -53,6 +59,7 @@ func (t *Tx) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, erro
 func (t *Tx) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
 	caller := log.Caller()
 	start := time.Now()
+	t.record(sql)
 	row := t.pgxTx.QueryRow(ctx, sql, args...)
 	return &txLoggedRow{row: row, tx: t, ctx: ctx, sql: sql, args: args, start: start, caller: caller}
 }
@@ -61,9 +68,33 @@ func (t *Tx) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
 func (t *Tx) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 	caller := log.Caller()
 	start := time.Now()
+	t.record(sql)
 	tag, err := t.pgxTx.Exec(ctx, sql, args...)
 	t.log(ctx, sql, args, time.Since(start), err, caller)
 	return tag, err
+}
+
+// Written reports the tables this transaction wrote; all is true when some
+// statement's target couldn't be determined (invalidate the whole database).
+func (t *Tx) Written() (tables []string, all bool) {
+	for name := range t.written {
+		tables = append(tables, name)
+	}
+	return tables, t.writtenAll
+}
+
+func (t *Tx) record(sql string) {
+	table, write := qcache.WriteTarget(sql)
+	switch {
+	case !write:
+	case table == "":
+		t.writtenAll = true
+	default:
+		if t.written == nil {
+			t.written = map[string]bool{}
+		}
+		t.written[table] = true
+	}
 }
 
 // ── Savepoints ────────────────────────────────────────────────────────────────

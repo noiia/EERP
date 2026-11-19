@@ -2,16 +2,20 @@ package server_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"core/internal/testdb"
+	"core/orm"
 	"core/orm/internal/crud"
 	"core/orm/internal/handler"
 	"core/orm/internal/registry"
 	ormserver "core/orm/server"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -32,29 +36,33 @@ func buildHandler(routePrefix string, softDelete bool) *handler.GenericHandler {
 // routeSet returns a set of "METHOD /path" strings for all registered routes.
 func routeSet(e *echo.Echo) map[string]bool {
 	set := make(map[string]bool)
-	for _, r := range e.Routes() {
+	for _, r := range e.Router().Routes() {
 		set[r.Method+" "+r.Path] = true
 	}
 	return set
 }
 
+// mount registers h the way production does (RegisterRoutes) and returns the Echo.
+func mount(h *handler.GenericHandler) *echo.Echo {
+	s := ormserver.New(nil, ormserver.Config{})
+	s.RegisterRoutes(map[string]*handler.GenericHandler{"h": h}, nil)
+	return s.Echo()
+}
+
 // doErrorRequest registers a one-shot route returning err, then GETs it.
 func doErrorRequest(t *testing.T, returnErr error) *httptest.ResponseRecorder {
 	t.Helper()
-	e := ormserver.NewEcho(nil)
-	e.GET("/probe", func(c echo.Context) error { return returnErr })
+	e := ormserver.New(nil, ormserver.Config{}).Echo()
+	e.GET("/probe", func(c *echo.Context) error { return returnErr })
 	req := httptest.NewRequest(http.MethodGet, "/probe", nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 	return rec
 }
 
-// ── NewEcho ───────────────────────────────────────────────────────────────────
-
-func TestNewEcho_NilApp_ReturnsEcho(t *testing.T) {
-	e := ormserver.NewEcho(nil)
-	if e == nil {
-		t.Fatal("NewEcho(nil) returned nil")
+func TestNew_NilApp_ReturnsEcho(t *testing.T) {
+	if ormserver.New(nil, ormserver.Config{}).Echo() == nil {
+		t.Fatal("New(nil).Echo() returned nil")
 	}
 }
 
@@ -72,8 +80,7 @@ func TestNew_EmptyConfig_NoPanic(t *testing.T) {
 // ── Route registration ────────────────────────────────────────────────────────
 
 func TestMountHandler_BaseRoutes_Registered(t *testing.T) {
-	e := ormserver.NewEcho(nil)
-	ormserver.MountHandler(e, buildHandler("items", false))
+	e := mount(buildHandler("items", false))
 
 	routes := routeSet(e)
 	want := []string{
@@ -91,8 +98,7 @@ func TestMountHandler_BaseRoutes_Registered(t *testing.T) {
 }
 
 func TestMountHandler_SoftDelete_RestoreRoutePresent(t *testing.T) {
-	e := ormserver.NewEcho(nil)
-	ormserver.MountHandler(e, buildHandler("things", true))
+	e := mount(buildHandler("things", true))
 
 	routes := routeSet(e)
 	if !routes["POST /api/v1/things/:id/restore"] {
@@ -101,8 +107,7 @@ func TestMountHandler_SoftDelete_RestoreRoutePresent(t *testing.T) {
 }
 
 func TestMountHandler_NoSoftDelete_NoRestoreRoute(t *testing.T) {
-	e := ormserver.NewEcho(nil)
-	ormserver.MountHandler(e, buildHandler("hards", false))
+	e := mount(buildHandler("hards", false))
 
 	routes := routeSet(e)
 	if routes["POST /api/v1/hards/:id/restore"] {
@@ -111,8 +116,7 @@ func TestMountHandler_NoSoftDelete_NoRestoreRoute(t *testing.T) {
 }
 
 func TestMountHandler_SoftDelete_AllSixRoutes(t *testing.T) {
-	e := ormserver.NewEcho(nil)
-	ormserver.MountHandler(e, buildHandler("widgets", true))
+	e := mount(buildHandler("widgets", true))
 
 	routes := routeSet(e)
 	want := []string{
@@ -213,8 +217,8 @@ func TestErrorHandler_UnknownHTTPStatus_ReturnsErrorCode(t *testing.T) {
 }
 
 func TestErrorHandler_PlainError_Returns500WithInternalCode(t *testing.T) {
-	e := ormserver.NewEcho(nil)
-	e.GET("/boom", func(c echo.Context) error {
+	e := ormserver.New(nil, ormserver.Config{}).Echo()
+	e.GET("/boom", func(c *echo.Context) error {
 		return &plainError{"something exploded"}
 	})
 	req := httptest.NewRequest(http.MethodGet, "/boom", nil)
@@ -244,11 +248,11 @@ func (e *plainError) Error() string { return e.msg }
 
 func TestAuthRateLimiter_BlocksAfterBurst(t *testing.T) {
 	e := echo.New()
-	e.GET("/x", func(c echo.Context) error { return c.NoContent(http.StatusOK) },
+	e.GET("/x", func(c *echo.Context) error { return c.NoContent(http.StatusOK) },
 		ormserver.AuthRateLimiter(2)) // burst = 2
 
 	codes := make([]int, 0, 4)
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		req := httptest.NewRequest(http.MethodGet, "/x", nil)
 		req.RemoteAddr = "203.0.113.7:5555" // same client IP → shared bucket
 		rec := httptest.NewRecorder()
@@ -261,5 +265,127 @@ func TestAuthRateLimiter_BlocksAfterBurst(t *testing.T) {
 	}
 	if codes[3] != http.StatusTooManyRequests {
 		t.Errorf("expected 429 once the burst is exhausted, got %v", codes)
+	}
+}
+
+// Behind nginx/Next every request comes from a private address; the rate
+// limiters must key on the X-Forwarded-For client, not the proxy.
+func TestRealIP_TrustsPrivateProxyXFF(t *testing.T) {
+	tests := []struct{ name, remote, xff, want string }{
+		{"proxied client", "172.18.0.5:1234", "203.0.113.7, 172.18.0.9", "203.0.113.7"},
+		{"public peer cannot spoof", "198.51.100.1:1234", "203.0.113.7", "198.51.100.1"},
+		{"no header", "172.18.0.5:1234", "", "172.18.0.5"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := ormserver.New(nil, ormserver.Config{}).Echo()
+			var got string
+			e.GET("/ip", func(c *echo.Context) error { got = c.RealIP(); return c.NoContent(http.StatusOK) })
+			req := httptest.NewRequest(http.MethodGet, "/ip", nil)
+			req.RemoteAddr = tt.remote
+			if tt.xff != "" {
+				req.Header.Set("X-Forwarded-For", tt.xff)
+			}
+			e.ServeHTTP(httptest.NewRecorder(), req)
+			if got != tt.want {
+				t.Errorf("RealIP = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHealth(t *testing.T) {
+	up := testdb.Open(t)
+	down := testdb.Open(t)
+	down.DB.Close() // a closed pool fails its ping like an unreachable database
+
+	tests := []struct {
+		name string
+		app  *orm.App
+		want int
+	}{
+		{"no database wired", nil, http.StatusOK},
+		{"database reachable", up, http.StatusOK},
+		{"database unreachable", down, http.StatusServiceUnavailable},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := ormserver.New(tt.app, ormserver.Config{}).Echo()
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/health", nil))
+			if rec.Code != tt.want {
+				t.Errorf("status = %d, want %d (%s)", rec.Code, tt.want, rec.Body)
+			}
+		})
+	}
+}
+
+// v5's router sentinels (echo.ErrNotFound, ErrMethodNotAllowed) are no longer
+// *echo.HTTPError: an unmatched route must still answer 404 NOT_FOUND, not 500.
+func TestErrorHandler_UnmatchedRoute_Returns404(t *testing.T) {
+	e := ormserver.New(nil, ormserver.Config{}).Echo()
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/nope", nil))
+
+	var body ormserver.ErrorResponse
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if rec.Code != http.StatusNotFound || body.Error.Code != "NOT_FOUND" {
+		t.Fatalf("status=%d code=%q, want 404 NOT_FOUND", rec.Code, body.Error.Code)
+	}
+}
+
+func TestBodyLimit_ParsesConfigSize(t *testing.T) {
+	for _, tc := range []struct {
+		limit string
+		size  int
+		want  int
+	}{
+		{"1K", 1024, http.StatusOK},
+		{"1K", 1025, http.StatusRequestEntityTooLarge},
+		{"", 1 << 20, http.StatusOK},
+		{"bogus", 1<<20 + 1, http.StatusRequestEntityTooLarge},
+	} {
+		t.Run(tc.limit, func(t *testing.T) {
+			e := ormserver.New(nil, ormserver.Config{BodyLimit: tc.limit}).Echo()
+			e.POST("/p", func(c *echo.Context) error { return c.NoContent(http.StatusOK) })
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/p", strings.NewReader(strings.Repeat("x", tc.size))))
+			if rec.Code != tc.want {
+				t.Fatalf("limit %q, %d bytes: status %d, want %d", tc.limit, tc.size, rec.Code, tc.want)
+			}
+		})
+	}
+}
+
+// An exempt prefix skips the global cap and is bounded by its own BodyLimit;
+// a look-alike path ("/up-x") and everything else keep the global cap.
+func TestBodyLimit_ExemptPrefixUsesOwnLimit(t *testing.T) {
+	e := ormserver.New(nil, ormserver.Config{BodyLimit: "1K", BodyLimitExempt: []string{"/up", "/t/*/files"}}).Echo()
+	ok := func(c *echo.Context) error { return c.NoContent(http.StatusOK) }
+	e.Group("/up", ormserver.BodyLimit("4K")).POST("/file", ok)
+	e.POST("/t/:id/files", ok, ormserver.BodyLimit("4K"))
+	e.POST("/t/:id/other", ok)
+	e.POST("/up-x", ok)
+	e.POST("/json", ok)
+	for _, tc := range []struct {
+		path string
+		size int
+		want int
+	}{
+		{"/up/file", 2048, http.StatusOK},
+		{"/up/file", 4097, http.StatusRequestEntityTooLarge},
+		{"/up-x", 2048, http.StatusRequestEntityTooLarge},
+		{"/json", 2048, http.StatusRequestEntityTooLarge},
+		{"/json", 1024, http.StatusOK},
+		{"/t/abc/files", 2048, http.StatusOK}, // "*" matches one segment
+		{"/t/abc/other", 2048, http.StatusRequestEntityTooLarge},
+	} {
+		t.Run(fmt.Sprintf("%s/%d", tc.path, tc.size), func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(strings.Repeat("x", tc.size))))
+			if rec.Code != tc.want {
+				t.Fatalf("status %d, want %d", rec.Code, tc.want)
+			}
+		})
 	}
 }

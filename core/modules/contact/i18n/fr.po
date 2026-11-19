@@ -5,6 +5,9 @@ msgstr ""
 "Language: fr\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 
+msgid "Contact"
+msgstr "Contact"
+
 msgid "Name"
 msgstr "Nom"
 
@@ -19,3 +22,36 @@ msgstr "Statut"
 
 msgid "CRM records"
 msgstr "Fiches CRM"
+
+msgid "Website"
+msgstr "Site web"
+
+msgid "Location"
+msgstr "Emplacement"
+
+msgid "Company service zone"
+msgstr "Zone de service de l'entreprise"
+
+msgid "Type"
+msgstr "Type"
+
+msgid "company"
+msgstr "Société"
+
+msgid "contact"
+msgstr "Contact"
+
+msgid "Companies"
+msgstr "Sociétés"
+
+msgid "Contacts"
+msgstr "Contacts"
+
+msgid "Surname"
+msgstr "Prénom"
+
+msgid "Phone"
+msgstr "Téléphone"
+
+msgid "Address"
+msgstr "Adresse"

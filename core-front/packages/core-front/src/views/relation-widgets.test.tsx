@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
 import Typography from '@mui/material/Typography'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -9,9 +9,12 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock }),
 }))
 
-import type { FieldDescriptor } from './descriptor'
+import type { FieldDescriptor, ViewDescriptor } from './descriptor'
 import { moduleRegistry } from '../registry'
+import { useCompanyStore } from './company-store'
+import { useEntityRefreshStore } from './entity-refresh-store'
 import { RelationOpsProvider, type RelationOps, type RelationRecord } from './relation-ops'
+import { useHasLinksStore } from './required-relation-store'
 import { fieldWidget, type WidgetProps } from './widgets'
 
 // Relation widgets against stubbed RelationOps (the bound Server Actions the
@@ -37,14 +40,20 @@ function Harness({
   field,
   ops,
   onChange,
+  onChangeField,
   initialValue,
   recordId,
+  draft,
+  disabled,
 }: {
   field: FieldDescriptor
   ops: RelationOps
   onChange: (next: unknown) => void
+  onChangeField: (name: string, value: unknown) => void
   initialValue: unknown
   recordId: string | null
+  draft?: Record<string, unknown>
+  disabled?: boolean
 }) {
   const [value, setValue] = useState<unknown>(initialValue)
   const Widget = fieldWidget(field)
@@ -57,8 +66,11 @@ function Harness({
           onChange(next)
           setValue(next)
         }}
+        onChangeField={onChangeField}
         entity="crm"
         recordId={recordId}
+        draft={draft}
+        disabled={disabled}
       />
     </RelationOpsProvider>
   )
@@ -70,16 +82,20 @@ function renderWidget(
   props: Partial<WidgetProps> = {},
 ) {
   const onChange = vi.fn()
+  const onChangeField = vi.fn()
   render(
     <Harness
       field={field}
       ops={ops}
       onChange={onChange}
+      onChangeField={onChangeField}
       initialValue={props.value ?? null}
       recordId={props.recordId !== undefined ? props.recordId : 'r1'}
+      draft={props.draft}
+      disabled={props.disabled}
     />,
   )
-  return { onChange }
+  return { onChange, onChangeField }
 }
 
 const searchField: FieldDescriptor = {
@@ -124,6 +140,50 @@ describe('relation/search (many2one)', () => {
     expect(onChange).toHaveBeenCalledWith('c1')
     // The picked record renders as a tag.
     expect(await screen.findByText('Acme')).toBeInTheDocument()
+  })
+
+  it('widgetOptions.fillFields: picking a record patches sibling fields via onChangeField (e.g. sale\'s customer_id -> customer_name/email)', async () => {
+    const ops = stubOps()
+    const { onChange, onChangeField } = renderWidget(
+      { ...searchField, widgetOptions: { fillFields: { name: 'customer_name', status: 'customer_status' } } },
+      ops,
+    )
+
+    const input = screen.getByRole('combobox')
+    fireEvent.click(input)
+    fireEvent.change(input, { target: { value: 'ac' } })
+    fireEvent.click(await screen.findByText('Acme'))
+
+    expect(onChange).toHaveBeenCalledWith('c1')
+    // Both mapped columns come straight off the ALREADY-loaded search result
+    // (companies' own 'Acme' row) — no second fetch.
+    expect(onChangeField).toHaveBeenCalledWith('customer_name', 'Acme')
+    expect(onChangeField).toHaveBeenCalledWith('customer_status', 'customer')
+  })
+
+  it('with no widgetOptions.fillFields declared, picking a record never touches onChangeField', async () => {
+    const ops = stubOps()
+    const { onChangeField } = renderWidget(searchField, ops)
+
+    const input = screen.getByRole('combobox')
+    fireEvent.click(input)
+    fireEvent.change(input, { target: { value: 'ac' } })
+    fireEvent.click(await screen.findByText('Acme'))
+
+    expect(onChangeField).not.toHaveBeenCalled()
+  })
+
+  it('excludes the current record\'s own id from the results — by design, no per-field opt-in', async () => {
+    const ops = stubOps()
+    renderWidget(searchField, ops, { recordId: 'c1' })
+
+    const input = screen.getByRole('combobox')
+    fireEvent.click(input)
+    fireEvent.change(input, { target: { value: 'a' } })
+
+    await waitFor(() => expect(ops.list).toHaveBeenCalled())
+    expect(await screen.findByText('Globex')).toBeInTheDocument()
+    expect(screen.queryByText('Acme')).not.toBeInTheDocument()
   })
 
   it('renders the current FK as a tag and unlinks to null from its cross', async () => {
@@ -187,6 +247,139 @@ describe('relation/search (many2one)', () => {
     expect(screen.queryByText('Company')).not.toBeInTheDocument()
     expect(screen.getByRole('combobox')).toBeInTheDocument()
   })
+
+  describe('relation.filter — static server-side scope (e.g. propertymanagement\'s uom_id: surface only)', () => {
+    const scopedField: FieldDescriptor = {
+      ...searchField,
+      relation: { ...searchField.relation!, filter: { type: 'surface' } },
+    }
+
+    it('applies the filter to the dropdown\'s search read', async () => {
+      const ops = stubOps()
+      renderWidget(scopedField, ops)
+
+      const input = screen.getByRole('combobox')
+      fireEvent.click(input)
+      fireEvent.change(input, { target: { value: 'ac' } })
+      await waitFor(() =>
+        expect(ops.list).toHaveBeenCalledWith(
+          'contact',
+          expect.objectContaining({ filter: { type: 'surface' } }),
+        ),
+      )
+    })
+
+    it('applies the filter to the link-icon wizard\'s own grid read', async () => {
+      const ops = stubOps()
+      renderWidget(scopedField, ops)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Open selection wizard' }))
+      await waitFor(() =>
+        expect(ops.list).toHaveBeenCalledWith(
+          'contact',
+          expect.objectContaining({ filter: { type: 'surface' } }),
+        ),
+      )
+    })
+
+    it('with no relation.filter declared, filter is omitted — unchanged for every existing many2one', async () => {
+      const ops = stubOps()
+      renderWidget(searchField, ops)
+
+      const input = screen.getByRole('combobox')
+      fireEvent.click(input)
+      fireEvent.change(input, { target: { value: 'ac' } })
+      await waitFor(() => expect(ops.list).toHaveBeenCalled())
+      const [, options] = vi.mocked(ops.list).mock.calls[0]
+      expect(options?.filter).toBeUndefined()
+    })
+  })
+
+  describe('relation.filterFields — scope by a sibling field of the draft (project\'s stage_id by project_id)', () => {
+    const scopedField: FieldDescriptor = {
+      ...searchField,
+      relation: { ...searchField.relation!, filter: { kind: 'x' }, filterFields: { project_id: 'project_id' } },
+    }
+
+    it('adds the draft value to the static filter, on the dropdown and the wizard', async () => {
+      const ops = stubOps()
+      renderWidget(scopedField, ops, { draft: { project_id: 'p1' } })
+
+      const input = screen.getByRole('combobox')
+      fireEvent.click(input)
+      fireEvent.change(input, { target: { value: 'ac' } })
+      await waitFor(() =>
+        expect(ops.list).toHaveBeenCalledWith('contact', expect.objectContaining({ filter: { kind: 'x', project_id: 'p1' } })),
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Open selection wizard' }))
+      await waitFor(() =>
+        expect(ops.list).toHaveBeenLastCalledWith('contact', expect.objectContaining({ filter: { kind: 'x', project_id: 'p1' } })),
+      )
+    })
+
+    it('leaves the column out while the sibling field is empty', async () => {
+      const ops = stubOps()
+      renderWidget(scopedField, ops, { draft: { project_id: null } })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Open selection wizard' }))
+      await waitFor(() =>
+        expect(ops.list).toHaveBeenCalledWith('contact', expect.objectContaining({ filter: { kind: 'x' } })),
+      )
+    })
+  })
+
+  describe('click-to-navigate', () => {
+    beforeEach(() => {
+      pushMock.mockClear()
+      // moduleRegistry.formPathFor('contact') — resolved off the target
+      // entity's own registered LIST view, same lookup FormListNav uses
+      // (renderers.test.tsx's 'form record navigator' describe block).
+      moduleRegistry.register({
+        name: 'contact-nav-test-fixture',
+        routes: [
+          {
+            path: '/contact/list',
+            descriptor: { entity: 'contact', viewType: 'tree', fields: [], formPath: '/contact/:id' },
+          },
+        ],
+      })
+    })
+
+    it('clicking the tag label navigates to the linked record\'s own form', async () => {
+      const ops = stubOps()
+      renderWidget(searchField, ops, { value: 'c2' })
+      fireEvent.click(await screen.findByText('Globex'))
+      expect(pushMock).toHaveBeenCalledWith('/app/contact/c2')
+    })
+
+    it('clicking the unlink cross unlinks instead of navigating', async () => {
+      const ops = stubOps()
+      const { onChange } = renderWidget(searchField, ops, { value: 'c2' })
+      const tag = (await screen.findByText('Globex')).closest('.MuiChip-root')!
+      fireEvent.click(tag.querySelector('.MuiChip-deleteIcon')!)
+      expect(onChange).toHaveBeenCalledWith(null)
+      expect(pushMock).not.toHaveBeenCalled()
+    })
+  })
+
+  it('renders a fixed-height bordered box matching a sibling TextField, label positioned over the top border line', async () => {
+    const ops = stubOps()
+    renderWidget(searchField, ops)
+    const label = screen.getByText('Company')
+    expect(getComputedStyle(label).position).toBe('absolute')
+    const box = label.parentElement!
+    expect(getComputedStyle(box).minHeight).not.toBe('')
+    expect(getComputedStyle(box).borderStyle).toBe('solid')
+    expect(await screen.findByRole('combobox')).toBeInTheDocument()
+  })
+
+  it('hideLabel: true keeps the border (same as an unlabelled TextField still draws its outline) but omits the label text', async () => {
+    const ops = stubOps()
+    renderWidget({ ...searchField, hideLabel: true }, ops)
+    expect(screen.queryByText('Company')).not.toBeInTheDocument()
+    const row = (await screen.findByRole('combobox')).closest('.MuiStack-root')!
+    expect(getComputedStyle(row.parentElement!).borderStyle).toBe('solid')
+  })
 })
 
 describe('relation/tags (many2many)', () => {
@@ -194,6 +387,21 @@ describe('relation/tags (many2many)', () => {
     { id: 'j1', crm_id: 'r1', tag_id: 'c1' },
     { id: 'j2', crm_id: 'r1', tag_id: 'c2' },
   ]
+
+  it('excludes the current record\'s own id from the dropdown options — by design, no per-field opt-in', async () => {
+    const ops = stubOps({
+      list: vi.fn(async (entity: string) => (entity === 'crm_tag' ? [] : companies)),
+    })
+    renderWidget(tagsField, ops, { recordId: 'c1' })
+
+    const input = screen.getByRole('combobox')
+    fireEvent.click(input)
+    fireEvent.change(input, { target: { value: 'a' } })
+
+    await waitFor(() => expect(ops.list).toHaveBeenCalledWith('tag', expect.anything()))
+    expect(await screen.findByText('Globex')).toBeInTheDocument()
+    expect(screen.queryByText('Acme')).not.toBeInTheDocument()
+  })
 
   it('loads junction rows as tags and unlinks by deleting the junction row', async () => {
     const ops = stubOps({
@@ -235,6 +443,21 @@ describe('relation/tags (many2many)', () => {
     )
     // The new link renders as a tag.
     expect(await screen.findByText('Globex')).toBeInTheDocument()
+  })
+
+  it('clears the typed text once a value is picked', async () => {
+    const ops = stubOps({
+      list: vi.fn(async (entity: string) => (entity === 'crm_tag' ? [] : companies)),
+    })
+    renderWidget(tagsField, ops)
+
+    const input = screen.getByRole('combobox') as HTMLInputElement
+    fireEvent.click(input)
+    fireEvent.change(input, { target: { value: 'glo' } })
+    fireEvent.click(await screen.findByText('Globex'))
+
+    await waitFor(() => expect(ops.create).toHaveBeenCalled())
+    expect(input.value).toBe('')
   })
 
   it('create-from-search: the last option creates the tag AND its junction row', async () => {
@@ -310,6 +533,41 @@ describe('relation/tags (many2many)', () => {
     expect(await screen.findByText('Acme')).toBeInTheDocument()
   })
 
+  describe('click-to-navigate', () => {
+    beforeEach(() => {
+      pushMock.mockClear()
+      moduleRegistry.register({
+        name: 'tag-nav-test-fixture',
+        routes: [
+          {
+            path: '/tag/list',
+            descriptor: { entity: 'tag', viewType: 'tree', fields: [], formPath: '/tag/:id' },
+          },
+        ],
+      })
+    })
+
+    it('clicking a tag\'s label navigates to its linked record\'s own form', async () => {
+      const ops = stubOps({
+        list: vi.fn(async (entity: string) => (entity === 'crm_tag' ? junctions : companies)),
+      })
+      renderWidget(tagsField, ops)
+      fireEvent.click(await screen.findByText('Acme'))
+      expect(pushMock).toHaveBeenCalledWith('/app/tag/c1')
+    })
+
+    it('clicking the unlink cross unlinks instead of navigating', async () => {
+      const ops = stubOps({
+        list: vi.fn(async (entity: string) => (entity === 'crm_tag' ? junctions : companies)),
+      })
+      renderWidget(tagsField, ops)
+      const tag = (await screen.findByText('Acme')).closest('.MuiChip-root')!
+      fireEvent.click(tag.querySelector('.MuiChip-deleteIcon')!)
+      await waitFor(() => expect(ops.remove).toHaveBeenCalledWith('crm_tag', 'j1'))
+      expect(pushMock).not.toHaveBeenCalled()
+    })
+  })
+
   describe('widgetOptions.deferred — stage instead of writing junction rows immediately', () => {
     const deferredTagsField: FieldDescriptor = {
       ...tagsField,
@@ -350,6 +608,26 @@ describe('relation/tags (many2many)', () => {
       expect(onChange).toHaveBeenCalledWith({ toLink: [], toUnlinkJunctionIds: ['j1'] })
     })
 
+    it('stays usable on a brand-new, unsaved record (recordId: null) instead of showing the "saved first" hint', async () => {
+      const ops = stubOps({
+        list: vi.fn(async (entity: string) => (entity === 'crm_tag' ? [] : companies)),
+      })
+      const { onChange } = renderWidget(deferredTagsField, ops, { recordId: null })
+
+      expect(screen.queryByText('Available once the record has been saved.')).not.toBeInTheDocument()
+      const input = screen.getByRole('combobox')
+      fireEvent.click(input)
+      fireEvent.change(input, { target: { value: 'glo' } })
+      fireEvent.click(await screen.findByText('Globex'))
+
+      expect(await screen.findByText('Globex')).toBeInTheDocument()
+      expect(ops.create).not.toHaveBeenCalled()
+      expect(onChange).toHaveBeenCalledWith({
+        toLink: [{ id: 'c2', name: 'Globex', status: 'lead' }],
+        toUnlinkJunctionIds: [],
+      })
+    })
+
     it('removing a just-staged (not yet persisted) tag drops it back out of the pending diff entirely', async () => {
       const ops = stubOps({
         list: vi.fn(async (entity: string) => (entity === 'crm_tag' ? [] : companies)),
@@ -368,6 +646,53 @@ describe('relation/tags (many2many)', () => {
       await waitFor(() => expect(screen.queryByText('Globex')).not.toBeInTheDocument())
       expect(ops.create).not.toHaveBeenCalled()
       expect(onChange).toHaveBeenLastCalledWith({ toLink: [], toUnlinkJunctionIds: [] })
+    })
+
+    describe('required: reports live fill state to required-relation-store', () => {
+      const requiredDeferredTagsField: FieldDescriptor = { ...deferredTagsField, required: true }
+
+      beforeEach(() => useHasLinksStore.setState({ hasLinks: {} }))
+
+      it('reports true once the existing links resolve', async () => {
+        const ops = stubOps({
+          list: vi.fn(async (entity: string) => (entity === 'crm_tag' ? junctions : companies)),
+        })
+        renderWidget(requiredDeferredTagsField, ops)
+        await waitFor(() => expect(useHasLinksStore.getState().hasLinks.tags).toBe(true))
+      })
+
+      it('reports false once the last existing link is staged for removal', async () => {
+        const ops = stubOps({
+          list: vi.fn(async (entity: string) => (entity === 'crm_tag' ? [junctions[0]] : companies)),
+        })
+        renderWidget(requiredDeferredTagsField, ops)
+        const tag = (await screen.findByText('Acme')).closest('.MuiChip-root')!
+        fireEvent.click(tag.querySelector('.MuiChip-deleteIcon')!)
+        await waitFor(() => expect(useHasLinksStore.getState().hasLinks.tags).toBe(false))
+      })
+
+      it('reports false with no links at all, true once one is staged to link', async () => {
+        const ops = stubOps({
+          list: vi.fn(async (entity: string) => (entity === 'crm_tag' ? [] : companies)),
+        })
+        renderWidget(requiredDeferredTagsField, ops)
+        await waitFor(() => expect(useHasLinksStore.getState().hasLinks.tags).toBe(false))
+
+        const input = screen.getByRole('combobox')
+        fireEvent.click(input)
+        fireEvent.change(input, { target: { value: 'glo' } })
+        fireEvent.click(await screen.findByText('Globex'))
+        await waitFor(() => expect(useHasLinksStore.getState().hasLinks.tags).toBe(true))
+      })
+
+      it('a non-required deferred field never reports', async () => {
+        const ops = stubOps({
+          list: vi.fn(async (entity: string) => (entity === 'crm_tag' ? [] : companies)),
+        })
+        renderWidget(deferredTagsField, ops)
+        await waitFor(() => expect(ops.list).toHaveBeenCalled())
+        expect(useHasLinksStore.getState().hasLinks.tags).toBeUndefined()
+      })
     })
   })
 })
@@ -402,7 +727,7 @@ describe('relation/list (one2many)', () => {
     }
     renderWidget(navigableField, ops)
     fireEvent.click(await screen.findByText('Acme'))
-    expect(pushMock).toHaveBeenCalledWith('/crm/lines/c1')
+    expect(pushMock).toHaveBeenCalledWith('/app/crm/lines/c1')
   })
 
   it('create line: creates with the inverse FK preset and hidden, row joins the grid', async () => {
@@ -426,6 +751,64 @@ describe('relation/list (one2many)', () => {
     )
     // The new record lands in the embedded list.
     expect(await screen.findByText('New deal')).toBeInTheDocument()
+  })
+
+  describe('double-click a row: edit it in the same wizard', () => {
+    it('opens the wizard on the row, saves through update and refreshes the row', async () => {
+      const update = vi.fn(async (_entity: string, id: string, body: Record<string, unknown>) => ({ ...body, id }) as RelationRecord)
+      const ops = stubOps({ update })
+      renderWidget(listField, ops)
+
+      fireEvent.doubleClick(await screen.findByText('Acme'))
+      const dialog = await screen.findByRole('dialog')
+      expect(dialog).toHaveTextContent('Edit Crm')
+      // The inverse FK stays hidden, as on creation.
+      expect(within(dialog).queryByText('contact_id')).not.toBeInTheDocument()
+      const name = within(dialog).getByRole('textbox')
+      expect(name).toHaveValue('Acme')
+
+      fireEvent.change(name, { target: { value: 'Acme Corp' } })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+      await waitFor(() =>
+        expect(update).toHaveBeenCalledWith('crm', 'c1', expect.objectContaining({ id: 'c1', name: 'Acme Corp' })),
+      )
+      expect(ops.create).not.toHaveBeenCalled()
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    })
+
+    it('tells the rest of the form the lines changed, without leaving the current page', async () => {
+      const update = vi.fn(async (_entity: string, id: string, body: Record<string, unknown>) => ({ ...body, id }) as RelationRecord)
+      const ops = stubOps({ update })
+      renderWidget(listField, ops)
+      const before = useEntityRefreshStore.getState().bumps.crm ?? 0
+
+      fireEvent.doubleClick(await screen.findByText('Acme'))
+      fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Save' }))
+
+      await waitFor(() => expect(useEntityRefreshStore.getState().bumps.crm).toBe(before + 1))
+      // ...and the table itself refetches its rows (server-computed totals).
+      await waitFor(() => expect((ops.list as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(1))
+    })
+
+    it.each([
+      ['the host binds no update', {}, {}],
+      ['the form is read-only', { update: vi.fn() }, { disabled: true }],
+    ])('stays off when %s', async (_why, opsOverrides, props) => {
+      renderWidget(listField, stubOps(opsOverrides as Partial<RelationOps>), props as Partial<WidgetProps>)
+      fireEvent.doubleClick(await screen.findByText('Acme'))
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
+    it('stays off on a table whose rows open their own form (relation.formPath)', async () => {
+      const navigableField: FieldDescriptor = {
+        ...listField,
+        relation: { ...listField.relation!, formPath: '/crm/lines/:id' },
+      }
+      renderWidget(navigableField, stubOps({ update: vi.fn() }))
+      fireEvent.doubleClick(await screen.findByText('Acme'))
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
   })
 
   it('shows a hint before the record exists', () => {
@@ -500,6 +883,270 @@ describe('relation/list (one2many)', () => {
     expect(await screen.findByText('Hot, VIP')).toBeInTheDocument()
     const cells = [...document.querySelectorAll('.MuiDataGrid-cell[data-field="labels"]')].map((el) => el.textContent)
     expect(cells).toEqual(['Hot, VIP', ''])
+  })
+
+  describe('widgetOptions.deletable — trailing trash-icon column (e.g. sale_line/billing_line rows)', () => {
+  it('without the flag, no delete column renders', async () => {
+    const ops = stubOps()
+    renderWidget(listField, ops)
+    await screen.findByText('Acme')
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+  })
+
+  it('clicking the trash icon removes the row only after ops.remove resolves (never optimistic)', async () => {
+    let resolveRemove: () => void = () => {}
+    const removePromise = new Promise<void>((resolve) => {
+      resolveRemove = resolve
+    })
+    const ops = stubOps({ remove: vi.fn(() => removePromise) })
+    renderWidget({ ...listField, widgetOptions: { deletable: true } }, ops)
+    await screen.findByText('Acme')
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Delete' })[0])
+    expect(ops.remove).toHaveBeenCalledWith('crm', 'c1')
+
+    // Still visible while the request is in flight.
+    expect(screen.getByText('Acme')).toBeInTheDocument()
+
+    resolveRemove()
+    await waitFor(() => expect(screen.queryByText('Acme')).not.toBeInTheDocument())
+    expect(screen.getByText('Globex')).toBeInTheDocument()
+  })
+
+  it('a rejected delete leaves the row in place and surfaces the error', async () => {
+    const ops = stubOps({
+      remove: vi.fn(async () => {
+        throw new Error('boom')
+      }),
+    })
+    renderWidget({ ...listField, widgetOptions: { deletable: true } }, ops)
+    await screen.findByText('Acme')
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Delete' })[0])
+
+    expect(await screen.findByText('boom')).toBeInTheDocument()
+    expect(screen.getByText('Acme')).toBeInTheDocument()
+  })
+})
+
+describe('widgetOptions.columns — explicit column override (e.g. propertymanagement\'s billing_lines)', () => {
+  it('renders Name (labelField) then the declared columns, in order, instead of the generic row-key derivation', async () => {
+    const ops = stubOps()
+    renderWidget(
+      { ...listField, widgetOptions: { columns: [{ key: 'status', label: 'Status' }] } },
+      ops,
+    )
+    await screen.findByText('Acme')
+    const headers = [...document.querySelectorAll('.MuiDataGrid-columnHeaderTitle')].map((el) => el.textContent)
+    expect(headers).toEqual(['Name', 'Status'])
+    expect(
+      [...document.querySelectorAll('.MuiDataGrid-cell[data-field="status"]')].map((el) => el.textContent),
+    ).toEqual(['customer', 'lead'])
+  })
+
+  it('a column with a literal `value` shows that same value on every row, ignoring the row\'s own data', async () => {
+    const ops = stubOps()
+    renderWidget(
+      { ...listField, widgetOptions: { columns: [{ key: 'quantity', label: 'Quantity', value: 1 }] } },
+      ops,
+    )
+    await screen.findByText('Acme')
+    expect(
+      [...document.querySelectorAll('.MuiDataGrid-cell[data-field="quantity"]')].map((el) => el.textContent),
+    ).toEqual(['1', '1'])
+  })
+})
+
+describe('widgetOptions.previewRow — synthetic leading row from sibling draft fields (e.g. propertymanagement\'s rent_price line)', () => {
+  it('prepends one row built from the named draft fields, named by the record\'s own name field', async () => {
+    const ops = stubOps()
+    renderWidget(
+      {
+        ...listField,
+        widgetOptions: {
+          columns: [{ key: 'unit_price', label: 'Price' }],
+          previewRow: { nameField: 'name', amountField: 'rent_price', amountColumns: ['unit_price'] },
+        },
+      },
+      ops,
+      { draft: { name: 'Studio 4B', rent_price: 900 } },
+    )
+    await screen.findByText('Acme')
+    const names = [...document.querySelectorAll('.MuiDataGrid-cell[data-field="name"]')].map((el) => el.textContent)
+    expect(names).toEqual(['Studio 4B', 'Acme', 'Globex'])
+    const prices = [...document.querySelectorAll('.MuiDataGrid-cell[data-field="unit_price"]')].map(
+      (el) => el.textContent,
+    )
+    expect(prices[0]).toBe('900')
+  })
+
+  it('gets no delete button, unlike the real rows beside it', async () => {
+    const ops = stubOps()
+    renderWidget(
+      {
+        ...listField,
+        widgetOptions: {
+          deletable: true,
+          previewRow: { nameField: 'name', amountField: 'rent_price', amountColumns: [] },
+        },
+      },
+      ops,
+      { draft: { name: 'Studio 4B', rent_price: 900 } },
+    )
+    await screen.findByText('Acme')
+    expect(screen.getByText('Studio 4B')).toBeInTheDocument()
+    // Only the two real rows (Acme, Globex) get a delete button — none for the preview row.
+    expect(screen.getAllByRole('button', { name: 'Delete' })).toHaveLength(2)
+  })
+
+  it('is not clickable even when relation.formPath would otherwise navigate on row click', async () => {
+    pushMock.mockClear()
+    const ops = stubOps()
+    renderWidget(
+      {
+        ...listField,
+        widgetOptions: { previewRow: { nameField: 'name', amountField: 'rent_price', amountColumns: [] } },
+        relation: { ...listField.relation, formPath: '/crm/:id' } as FieldDescriptor['relation'],
+      },
+      ops,
+      { draft: { name: 'Studio 4B', rent_price: 900 } },
+    )
+    await screen.findByText('Studio 4B')
+    fireEvent.click(screen.getByText('Studio 4B'))
+    expect(pushMock).not.toHaveBeenCalled()
+
+    fireEvent.click(await screen.findByText('Acme'))
+    expect(pushMock).toHaveBeenCalledWith('/app/crm/c1')
+  })
+})
+
+describe('widgetOptions.multiCreate — bulk-add checkbox wizard (e.g. the Role form\'s Views table)', () => {
+    const permissionRowForm: ViewDescriptor = {
+      entity: 'permission_row',
+      viewType: 'form',
+      fields: [
+        { name: 'owner_id', type: 'relation', relation: { entity: 'owner', kind: 'many2one' } },
+        { name: 'view', type: 'relation', relation: { entity: 'catalog', kind: 'many2one', labelField: 'name' } },
+      ],
+    }
+    const multiCreateField: FieldDescriptor = {
+      name: 'view_permissions',
+      label: 'Views',
+      type: 'relation',
+      relation: { entity: 'permission_row', kind: 'one2many', inverseField: 'owner_id', labelField: 'view' },
+      widgetOptions: { multiCreate: { field: 'view', groupByModule: true } },
+    }
+    const catalogRows: RelationRecord[] = [
+      { id: 'view_a', name: 'Alpha view' },
+      { id: 'view_b', name: 'Beta view' },
+    ]
+
+    beforeEach(() => {
+      moduleRegistry.register({
+        name: 'permission-row-fixture',
+        routes: [{ path: '/__test__/permission-row/:id', descriptor: permissionRowForm }],
+      })
+      moduleRegistry.register(
+        {
+          name: 'app-a-fixture',
+          routes: [{ path: '/__test__/app-a/list', descriptor: { entity: 'view_a', viewType: 'tree', fields: [] } }],
+        },
+        { appMode: true, displayName: 'App A' },
+      )
+      moduleRegistry.register(
+        {
+          name: 'app-b-fixture',
+          routes: [{ path: '/__test__/app-b/list', descriptor: { entity: 'view_b', viewType: 'tree', fields: [] } }],
+        },
+        { appMode: true, displayName: 'App B' },
+      )
+    })
+
+    function opsFor(existingRows: RelationRecord[] = []) {
+      const created: Record<string, unknown>[] = []
+      const ops: RelationOps = {
+        list: vi.fn(async (entity: string) => {
+          if (entity === 'permission_row') return existingRows
+          if (entity === 'catalog') return catalogRows
+          return []
+        }),
+        get: vi.fn(async (_entity, id) => ({ id })),
+        create: vi.fn(async (_entity, body) => {
+          created.push(body as Record<string, unknown>)
+          return { id: `pr${created.length}`, ...(body as object) }
+        }),
+        remove: vi.fn(async () => {}),
+      }
+      return { ops, created }
+    }
+
+    it('shows "Add <label>" instead of "Create a new <entity>", opening the bulk picker over the target catalog', async () => {
+      const { ops } = opsFor()
+      renderWidget(multiCreateField, ops)
+      expect(screen.queryByRole('button', { name: /Create a new/i })).not.toBeInTheDocument()
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Add Views' }))
+      expect(await screen.findByText('Alpha view')).toBeInTheDocument()
+      expect(screen.getByText('Beta view')).toBeInTheDocument()
+    })
+
+    it('typing filters the picker client-side', async () => {
+      const { ops } = opsFor()
+      renderWidget(multiCreateField, ops)
+      fireEvent.click(await screen.findByRole('button', { name: 'Add Views' }))
+      await screen.findByText('Alpha view')
+
+      fireEvent.change(screen.getByLabelText('Search'), { target: { value: 'beta' } })
+      expect(screen.queryByText('Alpha view')).not.toBeInTheDocument()
+      expect(screen.getByText('Beta view')).toBeInTheDocument()
+    })
+
+    it('excludes views this owner already has a row for — no adding the same one twice', async () => {
+      const { ops } = opsFor([{ id: 'pr1', owner_id: 'r1', view: 'view_a' }])
+      renderWidget(multiCreateField, ops)
+      await waitFor(() => expect(ops.list).toHaveBeenCalledWith('permission_row', expect.anything()))
+
+      fireEvent.click(screen.getByRole('button', { name: 'Add Views' }))
+      await screen.findByText('Beta view')
+      expect(screen.queryByText('Alpha view')).not.toBeInTheDocument()
+    })
+
+    it('groupByModule offers an App filter — picking one narrows the picker to that app\'s own views', async () => {
+      const { ops } = opsFor()
+      renderWidget(multiCreateField, ops)
+      fireEvent.click(await screen.findByRole('button', { name: 'Add Views' }))
+      await screen.findByText('Alpha view')
+      expect(screen.getByText('Beta view')).toBeInTheDocument()
+
+      fireEvent.mouseDown(screen.getByLabelText('App'))
+      fireEvent.click(await screen.findByRole('option', { name: 'App A' }))
+
+      expect(await screen.findByText('Alpha view')).toBeInTheDocument()
+      expect(screen.queryByText('Beta view')).not.toBeInTheDocument()
+    })
+
+    it('checking rows then Add creates one row per selection, each preset with the inverse FK', async () => {
+      const { ops, created } = opsFor()
+      renderWidget(multiCreateField, ops)
+      fireEvent.click(await screen.findByRole('button', { name: 'Add Views' }))
+      await screen.findByText('Alpha view')
+
+      // Clicking a DataGrid row toggles its checkbox (checkboxSelection is on,
+      // disableRowSelectionOnClick is NOT set) — avoids poking MUI's own
+      // internal checkbox DOM structure directly.
+      fireEvent.click(screen.getByText('Alpha view'))
+      fireEvent.click(screen.getByText('Beta view'))
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Add (2)' }))
+
+      await waitFor(() => expect(created).toHaveLength(2))
+      expect(created).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ owner_id: 'r1', view: 'view_a' }),
+          expect.objectContaining({ owner_id: 'r1', view: 'view_b' }),
+        ]),
+      )
+    })
   })
 })
 
@@ -590,6 +1237,17 @@ describe('totals/recap', () => {
     expect(screen.getByText('273.00')).toBeInTheDocument()
   })
 
+  it('recomputes when the lines table announces a created or edited line', async () => {
+    const ops = stubOps({ list: vi.fn(async () => [{ id: 'l1', quantity: 1, unit_price: 100, tax_rate: 0.2, total: 120 }]) })
+    renderWidget(totalsField, ops, { recordId: 'inv1' })
+    expect(await screen.findByText('100.00')).toBeInTheDocument()
+    ;(ops.list as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'l1', quantity: 3, unit_price: 100, tax_rate: 0.2, total: 360 },
+    ])
+    useEntityRefreshStore.getState().bump('sale_line')
+    expect(await screen.findByText('300.00')).toBeInTheDocument()
+  })
+
   it('falls back to tax_rate applied inline when total is absent (quote_line, which never got the many2many taxes/Total column)', async () => {
     const lines: RelationRecord[] = [
       { id: 'l1', quantity: 2, unit_price: 50, tax_rate: 0.2 }, // 100 HT, 20 tax
@@ -631,5 +1289,101 @@ describe('totals/recap', () => {
     // Untaxed amount, the 20% tax line, and the grand total all read 0.00 —
     // a wrongly-upgraded-to-1 quantity would instead show 100.00/20.00/120.00.
     await waitFor(() => expect(screen.getAllByText('0.00')).toHaveLength(3))
+  })
+
+  it('suffixes every figure with the active company\'s currency, same as any number/monetary field', async () => {
+    useCompanyStore.getState().setCurrency('USD')
+    try {
+      const lines: RelationRecord[] = [{ id: 'l1', quantity: 1, unit_price: 100, tax_rate: 0.2 }]
+      const ops = stubOps({ list: vi.fn(async () => lines) })
+      renderWidget(totalsField, ops, { recordId: 'inv1' })
+
+      expect(await screen.findByText('100.00 USD')).toBeInTheDocument()
+      expect(screen.getByText('20.00 USD')).toBeInTheDocument()
+      expect(screen.getByText('120.00 USD')).toBeInTheDocument()
+    } finally {
+      useCompanyStore.getState().setCurrency('')
+    }
+  })
+})
+
+describe('relation/list by zone (inside)', () => {
+  it('lists rows inside the record zone for an inside relation', async () => {
+    const list = vi.fn<(entity: string, options?: unknown) => Promise<RelationRecord[]>>(async () => [])
+    const field: FieldDescriptor = {
+      name: 'zone_contacts',
+      type: 'relation',
+      readOnly: true,
+      relation: { entity: 'contact', kind: 'one2many', inside: { field: 'geo_location', zone: 'service_zone' }, labelField: 'name' },
+    }
+    const Widget = fieldWidget(field)
+    render(
+      <RelationOpsProvider ops={stubOps({ list })}>
+        <Widget field={field} value={null} onChange={vi.fn()} entity="company" recordId="co1" />
+      </RelationOpsProvider>,
+    )
+    await waitFor(() => expect(list).toHaveBeenCalled())
+    expect(list.mock.calls[0][1]).toMatchObject({ inside: { geo_location: 'company:co1:service_zone' } })
+    expect(screen.queryByRole('button', { name: /create a new/i })).toBeNull()
+  })
+})
+
+describe('relation/list server paging', () => {
+  const field: FieldDescriptor = {
+    name: 'receipts',
+    type: 'relation',
+    relation: { entity: 'receipt', kind: 'one2many', inverseField: 'property_id', labelField: 'name' },
+  }
+  const rowsOf = (from: number, n: number): RelationRecord[] =>
+    Array.from({ length: n }, (_, i) => ({ id: `r${from + i}`, name: `Receipt ${from + i}` }))
+
+  function renderPaged(listPage: RelationOps['listPage'], f: FieldDescriptor = field) {
+    const Widget = fieldWidget(f)
+    render(
+      <RelationOpsProvider ops={stubOps({ listPage })}>
+        <Widget field={f} value={null} onChange={vi.fn()} entity="property" recordId="p1" />
+      </RelationOpsProvider>,
+    )
+  }
+
+  it('loads one short sorted page, then the next one on demand', async () => {
+    const listPage = vi.fn(async (_e: string, o?: { page?: number }) => ({
+      records: rowsOf(((o?.page ?? 1) - 1) * 10, 10),
+      total: 35,
+    }))
+    renderPaged(listPage)
+    expect(await screen.findByText('Receipt 0')).toBeInTheDocument()
+    expect(listPage).toHaveBeenCalledWith('receipt', {
+      filter: { property_id: 'p1' },
+      page: 1,
+      pageSize: 10,
+      order: 'created_at',
+    })
+    expect(screen.getByText(/1–10 of 35/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /next page/i }))
+    expect(await screen.findByText('Receipt 10')).toBeInTheDocument()
+    expect(listPage).toHaveBeenLastCalledWith('receipt', expect.objectContaining({ page: 2, pageSize: 10 }))
+  })
+
+  it('sorts newest first on the server under widgetOptions.reverse, without flipping the page', async () => {
+    const listPage = vi.fn(async () => ({ records: rowsOf(0, 2), total: 2 }))
+    renderPaged(listPage, { ...field, widgetOptions: { reverse: true } })
+    expect(await screen.findByText('Receipt 0')).toBeInTheDocument()
+    expect(listPage).toHaveBeenCalledWith('receipt', expect.objectContaining({ order: '-created_at' }))
+    const names = screen.getAllByText(/^Receipt \d$/).map((el) => el.textContent)
+    expect(names).toEqual(['Receipt 0', 'Receipt 1'])
+    // Fits the smallest page: no pagination footer.
+    expect(screen.queryByRole('button', { name: /next page/i })).toBeNull()
+  })
+
+  it('falls back to an unsorted page when the entity refuses the sort', async () => {
+    const listPage = vi.fn(async (_e: string, o?: { order?: string }) => {
+      if (o?.order) throw new Error('unknown order column: created_at')
+      return { records: rowsOf(0, 1), total: 1 }
+    })
+    renderPaged(listPage)
+    expect(await screen.findByText('Receipt 0')).toBeInTheDocument()
+    expect(listPage).toHaveBeenLastCalledWith('receipt', { filter: { property_id: 'p1' }, page: 1, pageSize: 10 })
   })
 })

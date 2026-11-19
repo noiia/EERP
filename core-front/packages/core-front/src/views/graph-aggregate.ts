@@ -123,8 +123,18 @@ export function xySeries<T>(
     aggregate: NumericAggregate
     bucket: BucketGranularity
     seriesField?: string
+    /** Several Y fields = several lines on the same chart (ignored when
+     * `seriesField` is set — one split dimension at a time). */
+    yFields?: string[]
+    yLabels?: Record<string, string>
   },
 ): XySeries[] {
+  if (!config.seriesField && config.yFields && config.yFields.length > 1) {
+    return config.yFields.map((y) => ({
+      label: config.yLabels?.[y] ?? y,
+      points: xyPoints(records, { ...config, yField: y }),
+    }))
+  }
   if (!config.seriesField) {
     return [{ label: '', points: xyPoints(records, config) }]
   }
@@ -191,9 +201,20 @@ export function pieSlices<T>(records: T[], config: { groupByField: string; value
     }
     groups.set(label, entry)
   }
-  const slices = Array.from(groups.entries())
-    .map(([label, { count, sum }]) => ({ label, count, displayValue: config.valueField ? sum : count }))
-    .sort((a, b) => b.count - a.count)
+  return foldPieSlices(
+    Array.from(groups.entries()).map(([label, { count, sum }]) => ({
+      label,
+      count,
+      displayValue: config.valueField ? sum : count,
+    })),
+  )
+}
+
+/** Sort slices by count (largest first) and fold everything past
+ * MAX_PIE_SLICES-1 into one OTHER_LABEL slice — shared by the client-side
+ * pieSlices and the server-aggregated path. */
+function foldPieSlices(input: PieSlice[]): PieSlice[] {
+  const slices = [...input].sort((a, b) => b.count - a.count)
   if (slices.length <= MAX_PIE_SLICES) return slices
   const kept = slices.slice(0, MAX_PIE_SLICES - 1)
   const folded = slices.slice(MAX_PIE_SLICES - 1)
@@ -222,11 +243,252 @@ export function statValue<T>(records: T[], config: { field: string; aggregate: F
  */
 export function niceTicks(max: number, targetCount = 4): number[] {
   if (max <= 0) return [0]
-  const roughStep = max / targetCount
+  return niceRange(0, max, targetCount)
+}
+
+/**
+ * "Nice" ticks covering the whole of [min, max] — zero always included, the
+ * last tick never below `max` nor the first above `min`, so every value inside
+ * the range lands inside the drawn axis (rounding the end down used to leave
+ * the highest points above the chart).
+ */
+export function niceRange(min: number, max: number, targetCount = 4): number[] {
+  const lo = Math.min(0, min)
+  const hi = Math.max(0, max)
+  if (hi - lo <= 0) return [0]
+  const roughStep = (hi - lo) / targetCount
   const magnitude = 10 ** Math.floor(Math.log10(roughStep))
   const residual = roughStep / magnitude
   const step = (residual > 5 ? 10 : residual > 2 ? 5 : residual > 1 ? 2 : 1) * magnitude
+  const first = Math.floor(lo / step + 1e-9)
+  const last = Math.ceil(hi / step - 1e-9)
   const ticks: number[] = []
-  for (let v = 0; v <= max + step / 2; v += step) ticks.push(Math.round(v * 1e6) / 1e6)
+  for (let i = first; i <= last; i++) ticks.push(Math.round(i * step * 1e6) / 1e6 || 0)
   return ticks
+}
+
+/** Tukey fence multiplier: 3 × IQR is the conventional "far out" threshold. */
+const OUTLIER_FENCE = 3
+
+/**
+ * The range a chart's axis should cover so that a few values far from the
+ * rest don't squash every other value against one edge: values outside
+ * [low, high] are outliers (Tukey's far-out fences, 3 × IQR beyond the
+ * quartiles). Under 4 values there is no meaningful spread, so nothing is an
+ * outlier. With a zero IQR (most values equal) the fence falls back to the
+ * quartile's own magnitude, so a small wobble around a flat line stays inside.
+ * A value must also lie more than one axis span beyond the others (below).
+ */
+export function outlierFences(values: number[]): { low: number; high: number } {
+  const none = { low: -Infinity, high: Infinity }
+  if (values.length < 4) return none
+  const sorted = [...values].sort((a, b) => a - b)
+  const q = (p: number) => {
+    const i = (sorted.length - 1) * p
+    const lo = Math.floor(i)
+    return sorted[lo]! + (sorted[Math.ceil(i)]! - sorted[lo]!) * (i - lo)
+  }
+  const q1 = q(0.25)
+  const q3 = q(0.75)
+  const spread = q3 - q1 || Math.max(Math.abs(q1), Math.abs(q3))
+  if (spread === 0) return none
+  const tukeyLow = q1 - OUTLIER_FENCE * spread
+  const tukeyHigh = q3 + OUTLIER_FENCE * spread
+  // Far in the statistical sense isn't enough: a value is only worth cropping
+  // when showing it would at least double the (zero-inclusive) axis the other
+  // values need — 40 below a 0–120 axis just extends it a little.
+  const inliers = sorted.filter((v) => v >= tukeyLow && v <= tukeyHigh)
+  const lo = Math.min(0, inliers[0]!)
+  const hi = Math.max(0, inliers[inliers.length - 1]!)
+  const span = hi - lo
+  return { low: Math.min(tukeyLow, lo - span), high: Math.max(tukeyHigh, hi + span) }
+}
+
+// ── Calculated (chart-only) fields ───────────────────────────────────────
+
+/** A calculated field as the GraphOps API returns it. */
+export interface CalcField {
+  id: string
+  key: string
+  label: string
+  formula: string
+  roles: string[]
+  dated?: boolean
+}
+
+/** Keys a calculated field's key must match (mirrors the Go keyPattern). */
+export const CALC_KEY_PREFIX = 'calc_'
+
+/**
+ * Evaluate an infix formula (+ - * / parentheses, unary minus, number
+ * literals, identifiers looked up in `values`). Hand-rolled recursive descent
+ * — never eval/Function, the formula is user-authored text. An unknown
+ * identifier reads as 0 (that is how a deleted calculated field "becomes 0"
+ * everywhere it was used); division by zero and a malformed formula read as 0.
+ */
+export function evalFormula(formula: string, values: Record<string, number>): number {
+  const tokens = formula.match(/\d+\.?\d*|\.\d+|[A-Za-z_]\w*|[-+*/()]/g) ?? []
+  let i = 0
+  const primary = (): number => {
+    const tok = tokens[i++]
+    if (tok === undefined) return 0
+    if (tok === '(') {
+      const v = expr()
+      if (tokens[i] === ')') i++
+      return v
+    }
+    if (tok === '-') return -primary()
+    if (tok === '+') return primary()
+    if (/^[\d.]/.test(tok)) return Number(tok)
+    return values[tok] ?? 0
+  }
+  const term = (): number => {
+    let v = primary()
+    while (tokens[i] === '*' || tokens[i] === '/') {
+      const op = tokens[i++]
+      const r = primary()
+      v = op === '*' ? v * r : r === 0 ? 0 : v / r
+    }
+    return v
+  }
+  const expr = (): number => {
+    let v = term()
+    while (tokens[i] === '+' || tokens[i] === '-') v = tokens[i++] === '+' ? v + term() : v - term()
+    return v
+  }
+  const result = expr()
+  return Number.isFinite(result) ? result : 0
+}
+
+/**
+ * Return `records` with every calculated field added as a plain numeric
+ * column, so every widget type reads it like a real one. `referenced` are the
+ * calc keys tiles mention (see calcKeysIn): any not in `fields` (deleted, or
+ * hidden from this user by role) is filled with 0. Calc-of-calc references
+ * resolve in `fields` order; a later/missing one reads 0 (no cycles possible).
+ */
+export function withCalculatedFields<T>(records: T[], fields: CalcField[], referenced: string[]): T[] {
+  const missing = referenced.filter((k) => !fields.some((f) => f.key === k))
+  if (fields.length === 0 && missing.length === 0) return records
+  return records.map((record) => {
+    const values: Record<string, number> = {}
+    for (const [k, v] of Object.entries(record as Record<string, unknown>)) {
+      const n = toNumber(v)
+      if (n != null) values[k] = n
+    }
+    const out: Record<string, unknown> = { ...(record as Record<string, unknown>) }
+    for (const f of fields) {
+      const v = evalFormula(f.formula, values)
+      values[f.key] = v
+      out[f.key] = v
+    }
+    for (const k of missing) out[k] = 0
+    return out as T
+  })
+}
+
+/** Every calculated-field key a set of tile configs mentions. */
+export function calcKeysIn(configs: unknown[]): string[] {
+  return Array.from(new Set(JSON.stringify(configs).match(/calc_[a-z0-9_]+/g) ?? []))
+}
+
+/**
+ * Dated variables: replace each record by one row per dated child row
+ * (e.g. each rent receipt of a property). The child's own columns win over the
+ * parent's (a receipt's snapshotted rent_price is the historical figure), the
+ * parent's id is kept, and a record with no child rows drops out (no date to
+ * plot it at). `lastPerDay` keeps only the latest child per record per
+ * calendar day of `dateField`.
+ */
+export function expandByChildren<T extends { id: string }>(
+  records: T[],
+  children: Record<string, unknown>[],
+  link: string,
+  opts: { dateField: string; lastPerDay: boolean },
+): T[] {
+  const byParent = new Map<string, Record<string, unknown>[]>()
+  for (const child of children) {
+    const parent = String(child[link] ?? '')
+    byParent.set(parent, [...(byParent.get(parent) ?? []), child])
+  }
+  const out: T[] = []
+  for (const record of records) {
+    let rows = byParent.get(record.id) ?? []
+    if (opts.lastPerDay) {
+      const latest = new Map<string, Record<string, unknown>>()
+      for (const row of rows) {
+        const stamp = String(row[opts.dateField] ?? '')
+        const day = stamp.slice(0, 10)
+        const cur = latest.get(day)
+        if (!cur || stamp > String(cur[opts.dateField] ?? '')) latest.set(day, row)
+      }
+      rows = [...latest.values()]
+    }
+    for (const row of rows) out.push({ ...record, ...row, id: record.id } as T)
+  }
+  return out
+}
+
+// ── Server-side aggregation (docs/adr/ADR-023-graph-server-aggregation.md) ──
+
+const FORMULA_TOKEN = /\d+\.?\d*|\.\d+|[A-Za-z_]\w*|[-+*/()]/g
+
+/**
+ * The formula Go should aggregate for a tile's field: a plain column stays
+ * its name; a calculated field becomes its formula with every calc_
+ * reference inlined (parenthesized), recursively — Go knows columns, not
+ * calculated fields. Mirrors withCalculatedFields exactly: a reference to a
+ * calc field declared LATER (or missing, or hidden by role) reads 0, which
+ * also makes cycles impossible.
+ */
+export function expandCalcFormula(key: string, fields: CalcField[]): string {
+  if (!key.startsWith(CALC_KEY_PREFIX)) return key
+  const index = fields.findIndex((f) => f.key === key)
+  if (index < 0) return '0'
+  const expand = (formula: string, upTo: number): string =>
+    (formula.match(FORMULA_TOKEN) ?? [])
+      .map((tok) => {
+        if (!tok.startsWith(CALC_KEY_PREFIX)) return tok
+        const ref = fields.findIndex((f) => f.key === tok)
+        return ref >= 0 && ref < upTo ? `(${expand(fields[ref]!.formula, ref)})` : '0'
+      })
+      .join(' ')
+  return expand(fields[index]!.formula, index)
+}
+
+/** A server-aggregated cell (GraphAggregateRow, redeclared structurally to
+ * keep this module free of API imports). */
+export interface AggregateCell {
+  x?: string
+  group?: string
+  value: number
+  count: number
+}
+
+/** Chart points per series from server cells: one series per distinct
+ * `group` (sorted, like xySeries), or a single unnamed series when the
+ * request had no group. Points sort chronologically by bucket. */
+export function seriesFromCells(cells: AggregateCell[], label = ''): XySeries[] {
+  const bySeries = new Map<string, XyPoint[]>()
+  for (const cell of cells) {
+    if (cell.x == null || cell.x === '') continue
+    const name = cell.group ?? label
+    bySeries.set(name, [...(bySeries.get(name) ?? []), { bucket: cell.x, value: cell.value }])
+  }
+  return Array.from(bySeries.entries())
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([name, points]) => ({
+      label: name,
+      points: points.sort((a, b) => (a.bucket < b.bucket ? -1 : a.bucket > b.bucket ? 1 : 0)),
+    }))
+}
+
+/** Pie slices from server cells: size = row count, display = the summed
+ * value when a valueField was requested (pieSlices' contract). */
+export function slicesFromCells(cells: AggregateCell[], hasValue: boolean): PieSlice[] {
+  return foldPieSlices(
+    cells
+      .filter((c) => c.group != null && c.group !== '')
+      .map((c) => ({ label: c.group!, count: c.count, displayValue: hasValue ? c.value : c.count })),
+  )
 }

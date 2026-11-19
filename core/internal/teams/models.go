@@ -1,0 +1,168 @@
+// Package teams owns the Teams app: teams with roles, chat channels and a
+// shared file space. Every table is tenant-pinned and kept off the generic
+// CRUD surface — the dedicated handlers are the only HTTP path to them.
+package teams
+
+import (
+	"time"
+
+	"core/orm/model"
+
+	"github.com/google/uuid"
+)
+
+const (
+	KindChannel = "channel"
+	KindDirect  = "direct"
+)
+
+type Team struct {
+	model.BaseModel
+	TenantID    uuid.UUID `db:"tenant_id,index"`
+	Name        string    `db:"name"`
+	Description string    `db:"description"`
+}
+
+type Member struct {
+	model.BaseModel
+	TenantID uuid.UUID `db:"tenant_id,index"`
+	TeamID   uuid.UUID `db:"team_id,index"`
+	UserID   uuid.UUID `db:"user_id,index"`
+	Role     string    `db:"role"`
+}
+
+// Channel is a team channel (TeamID set) or a direct conversation (Kind
+// "direct", DirectKey = DirectKey(a, b)).
+type Channel struct {
+	model.BaseModel
+	TenantID  uuid.UUID  `db:"tenant_id,index"`
+	TeamID    *uuid.UUID `db:"team_id,index"`
+	Kind      string     `db:"kind"`
+	Name      string     `db:"name"`
+	DirectKey string     `db:"direct_key"`
+	// Restricted: only owners and the access list see the channel. Set only by an
+	// explicit access-list PUT, so an access list emptied by a side effect stays private.
+	Restricted bool `db:"restricted"`
+	// FolderID: the team folder files sent here go into (one channel per folder; team channels only).
+	FolderID *uuid.UUID `db:"folder_id"`
+}
+
+type ChannelMember struct {
+	model.BaseModel
+	TenantID   uuid.UUID  `db:"tenant_id,index"`
+	ChannelID  uuid.UUID  `db:"channel_id,index"`
+	UserID     uuid.UUID  `db:"user_id,index"`
+	LastReadAt *time.Time `db:"last_read_at"`
+	// Position is the user's own sidebar order of the channel (nil = unordered, last).
+	Position *int `db:"position"`
+	// Muted: the user gets no notification from this channel, mentions included.
+	Muted bool `db:"muted"`
+	// Hidden: a direct conversation the user deleted; it comes back on the next message.
+	Hidden bool `db:"hidden"`
+	// ClearedAt: messages up to it are gone for this user (set when they delete a direct conversation).
+	ClearedAt *time.Time `db:"cleared_at"`
+}
+
+type Message struct {
+	model.BaseModel
+	TenantID  uuid.UUID  `db:"tenant_id,index"`
+	ChannelID uuid.UUID  `db:"channel_id,index"`
+	AuthorID  uuid.UUID  `db:"author_id"`
+	Body      string     `db:"body"`
+	EditedAt  *time.Time `db:"edited_at"` // last edit of the body by its author; nil = never edited
+}
+
+type Attachment struct {
+	model.BaseModel
+	TenantID  uuid.UUID `db:"tenant_id,index"`
+	MessageID uuid.UUID `db:"message_id,index"`
+	Filename  string    `db:"filename"`
+	Mime      string    `db:"mime"`
+	Size      int64     `db:"size"`
+	ObjectKey string    `db:"object_key"`
+}
+
+// MessageFile links a team-channel message to a team_file sent with it.
+type MessageFile struct {
+	model.BaseModel
+	TenantID  uuid.UUID `db:"tenant_id,index"`
+	MessageID uuid.UUID `db:"message_id,index"`
+	FileID    uuid.UUID `db:"file_id,index"`
+}
+
+type Reaction struct {
+	model.BaseModel
+	TenantID  uuid.UUID `db:"tenant_id,index"`
+	MessageID uuid.UUID `db:"message_id,index"`
+	UserID    uuid.UUID `db:"user_id"`
+	Emoji     string    `db:"emoji"`
+}
+
+type Folder struct {
+	model.BaseModel
+	TenantID  uuid.UUID  `db:"tenant_id,index"`
+	TeamID    uuid.UUID  `db:"team_id,index"`
+	ParentID  *uuid.UUID `db:"parent_id"`
+	Name      string     `db:"name"`
+	CreatedBy uuid.UUID  `db:"created_by"`
+}
+
+type File struct {
+	model.BaseModel
+	TenantID   uuid.UUID  `db:"tenant_id,index"`
+	TeamID     uuid.UUID  `db:"team_id,index"`
+	FolderID   *uuid.UUID `db:"folder_id"`
+	Name       string     `db:"name"`
+	Mime       string     `db:"mime"`
+	Size       int64      `db:"size"`
+	ObjectKey  string     `db:"object_key"`
+	UploadedBy uuid.UUID  `db:"uploaded_by"`
+}
+
+type Share struct {
+	model.BaseModel
+	TenantID uuid.UUID `db:"tenant_id,index"`
+	FileID   uuid.UUID `db:"file_id,index"`
+	UserID   uuid.UUID `db:"user_id,index"`
+}
+
+// Group is a team's hand-managed set of members, used in channel access lists.
+type Group struct {
+	model.BaseModel
+	TenantID uuid.UUID `db:"tenant_id,index"`
+	TeamID   uuid.UUID `db:"team_id,index"`
+	Name     string    `db:"name"`
+}
+
+type GroupMember struct {
+	model.BaseModel
+	TenantID uuid.UUID `db:"tenant_id,index"`
+	GroupID  uuid.UUID `db:"group_id,index"`
+	UserID   uuid.UUID `db:"user_id,index"`
+}
+
+// ChannelAccess is one entry of a channel's access list: exactly one of UserID/GroupID is set.
+// A channel with no entry is open to the whole team.
+type ChannelAccess struct {
+	model.BaseModel
+	TenantID  uuid.UUID  `db:"tenant_id,index"`
+	ChannelID uuid.UUID  `db:"channel_id,index"`
+	UserID    *uuid.UUID `db:"user_id"`
+	GroupID   *uuid.UUID `db:"group_id"`
+}
+
+// Table names: the repository derives them from these, matching modules/teams' registration.
+func (Team) TableName() string          { return "team" }
+func (Member) TableName() string        { return "team_member" }
+func (Channel) TableName() string       { return "chat_channel" }
+func (ChannelMember) TableName() string { return "chat_channel_member" }
+func (Message) TableName() string       { return "chat_message" }
+func (Attachment) TableName() string    { return "chat_attachment" }
+func (Reaction) TableName() string      { return "chat_reaction" }
+func (MessageFile) TableName() string   { return "chat_message_file" }
+func (Folder) TableName() string        { return "team_folder" }
+func (File) TableName() string          { return "team_file" }
+func (Share) TableName() string         { return "team_file_share" }
+func (Group) TableName() string         { return "team_group" }
+func (GroupMember) TableName() string   { return "team_group_member" }
+func (ChannelAccess) TableName() string { return "chat_channel_access" }

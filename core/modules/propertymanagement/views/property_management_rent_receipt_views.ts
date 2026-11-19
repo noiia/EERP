@@ -43,37 +43,41 @@ export interface PropertyManagementRentReceipt {
   receipt_file?: boolean
 }
 
-// property_management_rent_receipt's own read-only descriptor — needed so
-// the Rent receipt notebook page's formPath has somewhere to navigate: a
-// generated receipt's snapshot fields + its saved PDF (boolean/file,
-// readOnly — a receipt is append-only server-side too, see module.go).
+// property_management_rent_receipt's own descriptor — needed so the Rent
+// receipt notebook page's formPath has somewhere to navigate: a generated
+// receipt's snapshot fields + its saved PDF (boolean/file). None of these
+// are readOnly — a receipt row is append-only in the sense that it's never
+// DELETED (module.go's doc comment), but every field, PUT included, is
+// editable after the fact; PUT rides the generic CRUD surface like any other
+// entity's (handler.go only still hand-mounts a DELETE override).
 const rentReceiptFields: ViewDescriptor['fields'] = [
-  { name: 'period', label: 'Period', type: 'text', readOnly: true },
-  { name: 'generated_at', label: 'Generated at', type: 'text', readOnly: true },
-  { name: 'property_name', label: 'Property', type: 'text', readOnly: true },
-  { name: 'property_address', label: 'Address', type: 'text', readOnly: true },
-  { name: 'floor_area', label: 'Floor area', type: 'number', widget: 'float', readOnly: true },
-  { name: 'rent_price', label: 'Rent price', type: 'number', widget: 'monetary', readOnly: true },
-  { name: 'subtotal', label: 'Subtotal (excl. tax)', type: 'number', widget: 'monetary', readOnly: true },
-  { name: 'tax_amount', label: 'Tax', type: 'number', widget: 'monetary', readOnly: true },
-  { name: 'total', label: 'Total (incl. tax)', type: 'number', widget: 'monetary', readOnly: true },
-  { name: 'tenant_names', label: 'Tenant(s)', type: 'text', readOnly: true },
-  { name: 'receipt_file', label: 'Receipt PDF', type: 'boolean', widget: 'file', readOnly: true },
+  { name: 'period', label: 'Period', type: 'text' },
+  { name: 'generated_at', label: 'Generated at', type: 'text' },
+  { name: 'property_name', label: 'Property', type: 'text' },
+  { name: 'property_address', label: 'Address', type: 'text' },
+  { name: 'floor_area', label: 'Floor area', type: 'number', widget: 'float' },
+  { name: 'rent_price', label: 'Rent price', type: 'number', widget: 'monetary' },
+  { name: 'subtotal', label: 'Subtotal (excl. tax)', type: 'number', widget: 'monetary' },
+  { name: 'tax_amount', label: 'Tax', type: 'number', widget: 'monetary' },
+  { name: 'total', label: 'Total (incl. tax)', type: 'number', widget: 'monetary' },
+  { name: 'tenant_names', label: 'Tenant(s)', type: 'text' },
+  { name: 'receipt_file', label: 'Receipt PDF', type: 'boolean', widget: 'file' },
 ]
 
 // Form-only, NOT part of rentReceiptFields (which the cross-property
 // rentReceiptListView's DataGrid columns also read — a one2many relation
 // field has no sensible DataGrid column rendering): on a PARENT row's own
-// form, embeds the per-tenant CHILD rows this generation produced
-// (module.go's doc comment on PropertyManagementRentReceipt). On a CHILD
-// row's own form this is simply empty — a child has no children of its own.
+// form, embeds the per-tenant CHILD rows this generation produced, PLUS every
+// later "Regenerate report" version of each (below) — every row sharing this
+// parent's own id (module.go's doc comment on PropertyManagementRentReceipt).
+// On a CHILD row's own form this is simply empty — a child has no children
+// of its own.
 const rentReceiptFormFields: ViewDescriptor['fields'] = [
   ...rentReceiptFields,
   {
     name: 'children',
     label: 'Tenant receipts',
     type: 'relation',
-    readOnly: true,
     relation: {
       entity: 'property_management_rent_receipt',
       kind: 'one2many',
@@ -110,6 +114,80 @@ registerHeaderButtonAction({
   },
 })
 
+// Regenerate report: unlike Regenerate PDF above (repairs THIS row's own
+// missing file, in place), this produces a whole NEW version — a sibling
+// CHILD row (same parent_id) with its own fresh snapshot (copied from
+// whatever is currently on screen, including any unsaved edits — a receipt's
+// fields are no longer read-only, see module.go's doc comment) and its own
+// receipt_line copies and PDF. Every version this ever produces stays
+// visible side by side in the parent's own "Tenant receipts" notebook table
+// (receiptExtendOperations, below) instead of overwriting one in place —
+// the append-only discipline module.go documents, now expressed as "add a
+// sibling" rather than "reject the edit." Always visible on a child (no
+// receipt_file gate, unlike Regenerate PDF) — regenerating a fresh version
+// is meaningful whether or not this one already has a PDF.
+registerHeaderButtonAction({
+  entity: 'property_management_rent_receipt',
+  name: 'propertymanagement.regenerateReceipt',
+  handler: async (ctx) => {
+    const ops = ctx.relationOps
+    if (!ops) return
+
+    const lines = await ops.list('property_management_rent_receipt_line', {
+      filter: { rent_receipt_id: ctx.recordId },
+      pageSize: 100,
+    })
+
+    const version = await ops.create('property_management_rent_receipt', {
+      parent_id: ctx.draft.parent_id,
+      is_parent: false,
+      period: ctx.draft.period,
+      generated_at: new Date().toISOString(),
+      property_name: ctx.draft.property_name,
+      property_address: ctx.draft.property_address,
+      floor_area: ctx.draft.floor_area,
+      uom: ctx.draft.uom,
+      rent_price: ctx.draft.rent_price,
+      // Upfront estimate copied straight from this row's own current totals
+      // (about to be re-derived anyway, below) — same "estimate now, let the
+      // backend correct it" posture property_management_views.ts's
+      // generateRentReceipt already takes for a brand-new receipt.
+      subtotal: ctx.draft.subtotal,
+      tax_amount: ctx.draft.tax_amount,
+      total: ctx.draft.total,
+      tenant_names: ctx.draft.tenant_names,
+      receipt_file: false,
+    })
+
+    // Each create triggers the backend's own recomputeReceiptTotals
+    // (handler.go's CreateRentReceiptLine) from ALL of this new version's
+    // lines so far — the same double-check generateRentReceipt's own child
+    // rows get, not just the upfront estimate above.
+    for (const line of lines) {
+      await ops.create('property_management_rent_receipt_line', {
+        rent_receipt_id: version.id,
+        name: line.name,
+        unit_price: line.unit_price,
+        tax_rate: line.tax_rate,
+        subtotal: line.subtotal,
+        total: line.total,
+      })
+    }
+
+    const pdf = await fetchReportPDF('propertymanagement.rentReceipt', version.id)
+    await createAttachmentClient().upload(
+      { table: 'property_management_rent_receipt', recordId: version.id, field: 'receipt_file' },
+      pdf,
+      `rent-receipt-${String(ctx.draft.period ?? '')}.pdf`,
+    )
+
+    // The new version's own row never reaches this (already-open) record's
+    // own draft — bump so the parent's "Tenant receipts" table (a
+    // RelationListWidget scoped by parent_id) picks it up.
+    useEntityRefreshStore.getState().bump('property_management_rent_receipt')
+  },
+})
+
 const rentReceiptHeaderButtons: HeaderButtonDescriptor[] = [
   {
     name: 'propertymanagement.regenerateReceiptPdf',
@@ -124,6 +202,15 @@ const rentReceiptHeaderButtons: HeaderButtonDescriptor[] = [
           { field: 'parent_id', op: 'set' },
         ],
       },
+    },
+  },
+  {
+    name: 'propertymanagement.regenerateReceipt',
+    label: 'Regenerate report',
+    // Same "child only" gate as Regenerate PDF above, minus the
+    // receipt_file condition — see the handler's own doc comment.
+    states: {
+      visible: { field: 'parent_id', op: 'set' },
     },
   },
 ]

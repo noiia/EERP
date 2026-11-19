@@ -1,3 +1,7 @@
+// @vitest-environment node
+// Route handlers are server code: under jsdom, FormData/Blob are jsdom's while
+// Request is Node's (undici), which never finishes streaming a jsdom Blob — a
+// multipart request.formData() then hangs until the test times out.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const cookieJar = new Map<string, string>()

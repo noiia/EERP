@@ -4,6 +4,7 @@
 package registry
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"reflect"
@@ -11,8 +12,9 @@ import (
 	"sync"
 
 	"core/orm/internal/cache"
+	"core/orm/query"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // FieldMeta describes one API-visible column.
@@ -32,14 +34,23 @@ type FieldMeta struct {
 
 // TableMeta is the fully resolved descriptor for one registered struct.
 type TableMeta struct {
-	TableName   string           // snake_case table name
-	RoutePrefix string           // URL segment, e.g. "products" → /api/v1/products
-	Fields      []FieldMeta      // all API-visible fields
-	PKField     FieldMeta        // the primary key field
-	SoftDelete  bool             // true when any field carries the softdelete tag
-	Excluded    bool             // true when api.yaml marks this table exclude: true
-	TypeRef     reflect.Type     // for instantiating values at runtime
-	StructMeta  cache.StructMeta // passed to query builders by the crud layer
+	TableName   string      // snake_case table name
+	RoutePrefix string      // URL segment, e.g. "products" → /api/v1/products
+	Fields      []FieldMeta // all API-visible fields
+	PKField     FieldMeta   // the primary key field
+	SoftDelete  bool        // true when any field carries the softdelete tag
+	Excluded    bool        // true when api.yaml marks this table exclude: true
+	// PublicFields is the module-declared CEILING of what anonymous website
+	// visitors may ever read (ADR-024). Empty = never public. An admin
+	// publishes a subset at runtime; only the intersection is served.
+	// Names are not validated against columns: a picture/attachment anchor
+	// field (e.g. "picture") is not a column but is publishable.
+	PublicFields []string
+	// RowScope restricts every generic CRUD read/write to the rows the
+	// caller may see (ADR-038). nil = no row restriction. Set via WithRowScope.
+	RowScope   RowScopeFunc
+	TypeRef    reflect.Type     // for instantiating values at runtime
+	StructMeta cache.StructMeta // passed to query builders by the crud layer
 }
 
 // HasField returns true when the table has a column named col.
@@ -68,11 +79,13 @@ func (m TableMeta) FieldByColumn(col string) (FieldMeta, bool) {
 type Option func(*regOptions)
 
 type regOptions struct {
-	tableName   string
-	readOnly    []string
-	excludeCols []string
-	excluded    bool
-	fieldGroups map[string][]string
+	tableName    string
+	readOnly     []string
+	excludeCols  []string
+	excluded     bool
+	publicFields []string
+	fieldGroups  map[string][]string
+	rowScope     RowScopeFunc
 }
 
 // WithTableName overrides the table name derived from the struct name.
@@ -102,6 +115,30 @@ func WithFieldGroups(groups map[string][]string) Option {
 	return func(o *regOptions) { o.fieldGroups = groups }
 }
 
+// RowScopeFunc returns the WHERE condition limiting a request to the rows its
+// caller may see (ADR-038). ok=false means no restriction (e.g. an admin); an
+// error fails closed — the query is not run. The condition binds its values
+// as $n parameters, renumbered like every other query.Condition.
+type RowScopeFunc func(ctx context.Context) (cond query.Condition, ok bool, err error)
+
+// WithRowScope restricts every generic CRUD read and write on the table to
+// the rows fn allows for the request's caller. See ADR-038.
+func WithRowScope(fn RowScopeFunc) Option {
+	return func(o *regOptions) { o.rowScope = fn }
+}
+
+// AllPublicFields, passed to WithPublicFields, declares every API column of the
+// table public-capable — except tenant_id, deleted_at, the PK (always served
+// anyway) and group-gated columns (ADR-013: gated means sensitive). The admin
+// still publishes a subset; this only raises the ceiling.
+const AllPublicFields = "*"
+
+// WithPublicFields declares the columns (and picture anchor fields) a table
+// may expose on /api/v1/public. See ADR-024.
+func WithPublicFields(fields ...string) Option {
+	return func(o *regOptions) { o.publicFields = append(o.publicFields, fields...) }
+}
+
 // WithExcluded keeps the table off the HTTP surface entirely: it is still
 // registered with the ORM (typed repos, migrations) but BuildHandlers mounts no
 // CRUD routes for it. This is the code-level, fail-closed equivalent of the
@@ -117,6 +154,8 @@ func WithExcluded() Option {
 var (
 	mu      sync.RWMutex
 	entries = map[string]TableMeta{}
+	// extensions holds every ExtendSchema call per table, re-applied by Register.
+	extensions = map[string][]SchemaField{}
 
 	apiCfg     *apiConfig
 	apiCfgOnce sync.Once
@@ -131,9 +170,9 @@ func Register[T any](opts ...Option) error {
 	var zero T
 	t := reflect.TypeOf(zero)
 	if t == nil {
-		t = reflect.TypeOf((*T)(nil)).Elem()
+		t = reflect.TypeFor[T]()
 	}
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 
@@ -151,20 +190,28 @@ func Register[T any](opts ...Option) error {
 	applyAPIConfig(&meta, ensureAPIConfig())
 
 	mu.Lock()
-	entries[meta.TableName] = meta
+	entries[meta.TableName] = applyExtensions(meta, extensions[meta.TableName])
 	mu.Unlock()
 	return nil
 }
 
-// AutoScan is a no-op placeholder. Go does not support runtime package
-// discovery in compiled binaries — use Register[T] for explicit registration.
-func AutoScan(_ string) error { return nil }
-
-// ExtendSchema appends extra columns to an already-registered table.
-// Use this from an inheriting module to add fields to another module's entity
-// without touching the base module's code.
-// Returns an error if tableName has not been registered yet — ensure the base
-// module's Register() runs before the inheriting module's (import it with _).
+// ExtendSchema appends extra columns to an already-registered table — the
+// composable way for a module to add fields to another module's entity
+// without touching its code: several modules may extend the same table, each
+// with its own columns (unlike re-registering an embedding struct under the
+// base table name, where the last Register replaces the whole entry).
+//
+// Extension columns are always nullable: a required column would make every
+// create of the base table fail for writers that don't know the extension
+// exists (the base module's own form included). A field's Type sets the SQL
+// type and the API's GoType (range-filter casts, graph aggregation); nil means
+// TEXT. A non-pointer Type is stored as its pointer.
+//
+// Extensions are remembered: a later Register of the same table (an embedding
+// extender, or every module re-running on a database switch) keeps them.
+// Columns already present are skipped. Returns an error if tableName has not
+// been registered yet — the base module's Register() must run first (depend on
+// it in module.json and import its package).
 func ExtendSchema(tableName string, extra []SchemaField) error {
 	mu.Lock()
 	defer mu.Unlock()
@@ -173,39 +220,59 @@ func ExtendSchema(tableName string, extra []SchemaField) error {
 	if !ok {
 		return fmt.Errorf("registry: extend: table %q is not registered", tableName)
 	}
-
-	existingCols := make(map[string]bool, len(existing.StructMeta.Fields))
-	for _, f := range existing.StructMeta.Fields {
-		existingCols[f.Column] = true
-	}
-
-	cacheFields := make([]cache.FieldMeta, len(existing.StructMeta.Fields))
-	copy(cacheFields, existing.StructMeta.Fields)
-	regFields := make([]FieldMeta, len(existing.Fields))
-	copy(regFields, existing.Fields)
-
 	for _, f := range extra {
-		if existingCols[f.Column] {
+		if f.Column == "" || f.IsPK || f.SoftDel {
+			return fmt.Errorf("registry: extend %q: column %q must be a named, non-PK, non-softdelete column", tableName, f.Column)
+		}
+	}
+	extensions[tableName] = mergeExtensions(extensions[tableName], extra)
+	entries[tableName] = applyExtensions(existing, extensions[tableName])
+	return nil
+}
+
+// mergeExtensions appends extra to have, a later declaration of a column
+// replacing the earlier one.
+func mergeExtensions(have, extra []SchemaField) []SchemaField {
+	out := append([]SchemaField{}, have...)
+	for _, f := range extra {
+		replaced := false
+		for i := range out {
+			if out[i].Column == f.Column {
+				out[i], replaced = f, true
+			}
+		}
+		if !replaced {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// applyExtensions returns meta with every extension column it lacks appended
+// (nullable; typed when Type is set).
+func applyExtensions(meta TableMeta, ext []SchemaField) TableMeta {
+	if len(ext) == 0 {
+		return meta
+	}
+	cacheFields := append([]cache.FieldMeta{}, meta.StructMeta.Fields...)
+	regFields := append([]FieldMeta{}, meta.Fields...)
+	for _, f := range ext {
+		if meta.StructMeta.ColumnIndex(f.Column) >= 0 {
 			continue
 		}
-		cacheFields = append(cacheFields, cache.FieldMeta{
-			Name:    f.Column,
-			Column:  f.Column,
-			IsPK:    f.IsPK,
-			SoftDel: f.SoftDel,
-		})
-		regFields = append(regFields, FieldMeta{
-			Name:     f.Column,
-			Column:   f.Column,
-			Nullable: f.Nullable,
-			ReadOnly: f.IsPK,
-		})
+		t, goType := f.Type, "*string"
+		if t != nil {
+			if t.Kind() != reflect.Pointer {
+				t = reflect.PointerTo(t)
+			}
+			goType = goTypeName(t)
+		}
+		cacheFields = append(cacheFields, cache.FieldMeta{Name: f.Column, Column: f.Column, Type: t})
+		regFields = append(regFields, FieldMeta{Name: f.Column, Column: f.Column, GoType: goType, Nullable: true})
 	}
-
-	existing.StructMeta = cache.NewStructMeta(existing.TableName, existing.StructMeta.PK, cacheFields)
-	existing.Fields = regFields
-	entries[tableName] = existing
-	return nil
+	meta.StructMeta = cache.NewStructMeta(meta.TableName, meta.StructMeta.PK, cacheFields)
+	meta.Fields = regFields
+	return meta
 }
 
 // SchemaField describes one column for dynamic (non-reflect) registration.
@@ -214,6 +281,9 @@ type SchemaField struct {
 	Nullable bool
 	IsPK     bool
 	SoftDel  bool
+	// Type is the column's Go type (e.g. reflect.TypeFor[time.Time]()); it
+	// sets the SQL type on migration. nil means TEXT.
+	Type reflect.Type
 }
 
 // RegisterSchema stores a TableMeta built entirely from runtime data.
@@ -233,6 +303,7 @@ func RegisterSchema(tableName string, fields []SchemaField) error {
 			Column:  f.Column,
 			IsPK:    f.IsPK,
 			SoftDel: f.SoftDel,
+			Type:    f.Type,
 		}
 		if f.IsPK {
 			pkCol = f.Column
@@ -245,6 +316,9 @@ func RegisterSchema(tableName string, fields []SchemaField) error {
 			Column:   f.Column,
 			Nullable: f.Nullable,
 			ReadOnly: f.IsPK,
+		}
+		if f.Type != nil {
+			rf.GoType = goTypeName(f.Type)
 		}
 		if f.IsPK {
 			pkField = rf
@@ -264,7 +338,7 @@ func RegisterSchema(tableName string, fields []SchemaField) error {
 	applyAPIConfig(&meta, ensureAPIConfig())
 
 	mu.Lock()
-	entries[meta.TableName] = meta
+	entries[meta.TableName] = applyExtensions(meta, extensions[meta.TableName])
 	mu.Unlock()
 	return nil
 }
@@ -419,8 +493,8 @@ func buildFromCache(t reflect.Type, sm cache.StructMeta, o *regOptions) TableMet
 			Name:      cf.Column,
 			Column:    cf.Column,
 			GoType:    goTypeName(cf.Type),
-			Nullable:  cf.Type.Kind() == reflect.Ptr,
-			ReadOnly:  roSet[cf.Column],
+			Nullable:  cf.Type.Kind() == reflect.Pointer,
+			ReadOnly:  roSet[cf.Column] || cf.Generated,
 			IndexPath: cf.IndexPath,
 			Groups:    o.fieldGroups[cf.Column],
 		}
@@ -436,23 +510,28 @@ func buildFromCache(t reflect.Type, sm cache.StructMeta, o *regOptions) TableMet
 	tableName := sm.Table
 	if o.tableName != "" {
 		tableName = o.tableName
+		// sm is a copy: the query builders read StructMeta.Table, so the override
+		// must land there too or generic CRUD queries the derived name.
+		sm.Table = tableName
 	}
 
 	return TableMeta{
-		TableName:   tableName,
-		RoutePrefix: tableName,
-		Fields:      fields,
-		PKField:     pkField,
-		SoftDelete:  hasSoftDel,
-		Excluded:    o.excluded,
-		TypeRef:     t,
-		StructMeta:  sm,
+		TableName:    tableName,
+		RoutePrefix:  tableName,
+		Fields:       fields,
+		PKField:      pkField,
+		SoftDelete:   hasSoftDel,
+		Excluded:     o.excluded,
+		PublicFields: expandPublic(o.publicFields, fields, pkField.Column),
+		RowScope:     o.rowScope,
+		TypeRef:      t,
+		StructMeta:   sm,
 	}
 }
 
 // goTypeName returns a human-readable type string, e.g. "string", "uuid.UUID", "*time.Time".
 func goTypeName(t reflect.Type) string {
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		return "*" + goTypeName(t.Elem())
 	}
 	pkg := t.PkgPath()
@@ -469,4 +548,30 @@ func toSet(ss []string) map[string]bool {
 		m[s] = true
 	}
 	return m
+}
+
+// expandPublic replaces AllPublicFields by every eligible API column, keeping
+// the other names (picture anchors aren't columns) and dropping duplicates.
+func expandPublic(declared []string, fields []FieldMeta, pk string) []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(n string) {
+		if !seen[n] {
+			seen[n] = true
+			out = append(out, n)
+		}
+	}
+	for _, d := range declared {
+		if d != AllPublicFields {
+			add(d)
+			continue
+		}
+		for _, f := range fields {
+			if f.Column == pk || f.Column == "tenant_id" || f.Column == "deleted_at" || len(f.Groups) > 0 {
+				continue
+			}
+			add(f.Column)
+		}
+	}
+	return out
 }

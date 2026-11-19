@@ -23,6 +23,13 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    // Heavy MUI renders (e.g. AppearanceSettings) exceed the 5s default under
+    // coverage instrumentation on a loaded machine or CI runner.
+    testTimeout: 15_000,
+    // A file that renders a lazy widget preloads every heavy chunk (data grid, tree,
+    // Tiptap, Graph) in a beforeAll — ~3 s alone, past the 10 s hook default when the
+    // whole suite runs in parallel.
+    hookTimeout: 30_000,
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     server: {
@@ -32,11 +39,13 @@ export default defineConfig({
       deps: { inline: [/@mui\//, 'react-transition-group'] },
     },
     // Coverage mirrors the backend's go-test-coverage step (see the engine vitest
-    // config). Generated artefacts and the BFF test stubs are excluded. Thresholds
-    // stay off so the gate reports without blocking until the team sets targets.
+    // config). Generated artefacts and the BFF test stubs are excluded. The
+    // thresholds fail `pnpm test:coverage` (CI, `make test`) on a regression below
+    // 80% on any metric — the floor CLAUDE.md's "Before pushing" rule names.
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov', 'json-summary'],
+      thresholds: { statements: 80, lines: 80, functions: 80, branches: 80 },
       include: ['app/**/*.{ts,tsx}', 'src/**/*.{ts,tsx}'],
       exclude: [
         '**/*.{test,spec}.{ts,tsx}',

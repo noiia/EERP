@@ -21,6 +21,7 @@ import {
   type PictureMeta,
 } from '../api/pictures-client'
 import { useT } from '../i18n/translate'
+import { ViewBanner } from './banner'
 import { fieldLabel, type FieldDescriptor } from './descriptor'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import type { WidgetProps } from './widgets'
@@ -147,11 +148,10 @@ export function WidgetFrame({
         </Typography>
       )}
       {children}
-      {error ? (
-        <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.5 }}>
-          {error}
-        </Typography>
-      ) : null}
+      {/* In the form's banner slot (banner.tsx), not under the picture. */}
+      <ViewBanner status="error" open={Boolean(error)}>
+        {error}
+      </ViewBanner>
     </Box>
   )
 }

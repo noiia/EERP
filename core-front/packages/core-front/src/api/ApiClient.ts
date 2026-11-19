@@ -3,10 +3,12 @@ import { cookies } from 'next/headers'
 import { revalidateTag } from 'next/cache'
 import { parseError } from './errors'
 import type { EntityListOptions } from './list-options'
+import type { GraphAggregateRequest, GraphAggregateRow } from './graph'
 import type { AttachmentAnchor, AttachmentMeta } from './attachments-client'
 import type { PictureAnchor, PictureMeta } from './pictures-client'
 import type { ViewFieldsConfig } from './view-fields'
 import type { ChatterVisibilityConfig } from './chatter-visibility'
+import type { StatusBarConfig } from './status-bar-config'
 
 export type { EntityListOptions } from './list-options'
 export type { ViewFieldsConfig } from './view-fields'
@@ -90,10 +92,15 @@ function refreshSession(): Promise<boolean> {
       if (!res.ok) return false
 
       const data: unknown = await res.json().catch(() => null)
-      const accessToken = (data as { access_token?: unknown } | null)?.access_token
+      const { access_token: accessToken, expires_in: expiresIn } =
+        (data as { access_token?: unknown; expires_in?: unknown } | null) ?? {}
       if (typeof accessToken !== 'string') return false
 
-      store.set(ACCESS_COOKIE, accessToken, sessionCookieOptions(ACCESS_TTL_SECONDS))
+      store.set(
+        ACCESS_COOKIE,
+        accessToken,
+        sessionCookieOptions(typeof expiresIn === 'number' ? expiresIn : ACCESS_TTL_SECONDS),
+      )
       // Go rotates the refresh token via a Set-Cookie header, not the JSON body.
       const rotated = parseSetCookie(res.headers, GO_REFRESH_COOKIE)
       if (rotated) {
@@ -130,9 +137,10 @@ async function authedFetch(
   tags: string[] | null,
   body?: unknown,
   tokenOverride?: string,
+  extraHeaders?: Record<string, string>,
 ): Promise<Response> {
   const token = tokenOverride ?? (await cookies()).get(ACCESS_COOKIE)?.value
-  const headers: Record<string, string> = {}
+  const headers: Record<string, string> = { ...extraHeaders }
   if (token) headers.Authorization = `Bearer ${token}`
 
   const init: RequestInit & { next?: { tags: string[] } } = { method, headers }
@@ -164,8 +172,9 @@ async function fetchWithRefresh(
   tags: string[] | null,
   body?: unknown,
   tokenOverride?: string,
+  extraHeaders?: Record<string, string>,
 ): Promise<Response> {
-  let res = await authedFetch(method, path, tags, body, tokenOverride)
+  let res = await authedFetch(method, path, tags, body, tokenOverride, extraHeaders)
 
   if (res.status === 401) {
     if (tokenOverride) {
@@ -184,7 +193,7 @@ async function fetchWithRefresh(
       throw await parseError(res)
     }
     const refreshed = await refreshSession()
-    if (refreshed) res = await authedFetch(method, path, tags, body)
+    if (refreshed) res = await authedFetch(method, path, tags, body, undefined, extraHeaders)
     if (res.status === 401) {
       await clearSession()
       throw await parseError(res)
@@ -199,8 +208,9 @@ async function request<T>(
   tags: string[] | null,
   body?: unknown,
   tokenOverride?: string,
+  extraHeaders?: Record<string, string>,
 ): Promise<T> {
-  const res = await fetchWithRefresh(method, path, tags, body, tokenOverride)
+  const res = await fetchWithRefresh(method, path, tags, body, tokenOverride, extraHeaders)
 
   if (!res.ok) throw await parseError(res)
   if (res.status === 204) return undefined as T
@@ -227,11 +237,17 @@ function appendListParams(params: URLSearchParams, options?: EntityListOptions):
     ['gte', options.gte],
     ['lt', options.lt],
     ['lte', options.lte],
+    ['near', options.near],
+    ['within', options.within],
+    ['covers', options.covers],
+    ['inside', options.inside],
   ] as const) {
     for (const [col, value] of Object.entries(m ?? {})) {
       params.set(`${prefix}[${col}]`, value)
     }
   }
+  for (const col of options.empty ?? []) params.set(`empty[${col}]`, '1')
+  if (options.order) params.set('order', options.order)
   if (options.page) params.set('page', String(options.page))
   if (options.pageSize) params.set('page_size', String(options.pageSize))
 }
@@ -241,6 +257,18 @@ function listQuery(options?: EntityListOptions): string {
   appendListParams(params, options)
   const qs = params.toString()
   return qs ? `?${qs}` : ''
+}
+
+function aggregateQuery(req: GraphAggregateRequest, options?: EntityListOptions): string {
+  const params = new URLSearchParams()
+  params.set('aggregate', req.aggregate)
+  if (req.value) params.set('value', req.value)
+  if (req.x) params.set('x', req.x)
+  if (req.bucket) params.set('bucket', req.bucket)
+  if (req.group) params.set('group', req.group)
+  // Paging is meaningless for an aggregate — every matching row counts.
+  appendListParams(params, options ? { ...options, page: undefined, pageSize: undefined } : undefined)
+  return `?${params.toString()}`
 }
 
 function distinctQuery(column: string, options?: EntityListOptions): string {
@@ -257,6 +285,12 @@ export interface ServerApiClient {
   update<T>(entity: string, id: string, body: unknown): Promise<T>
   /** Soft delete by default (ADR-003) — archives the record server-side. */
   remove(entity: string, id: string): Promise<void>
+  /** Undoes a SOFT delete via Go's generic `POST /:id/restore` — returns the
+   * restored record. */
+  restore<T>(entity: string, id: string): Promise<T>
+  /** A record's workflow step — `POST /{entity}/{id}/{action}` — revalidating
+   * the entity's tag plus every `revalidate` one. */
+  action<T>(entity: string, id: string, action: string, body?: unknown, revalidate?: string[]): Promise<T>
   /**
    * entity's Kanban status field / Calendar date field, as configured from
    * Settings -> Views (docs/roadmaps/list-view-modes.md, ADR-006). Never
@@ -269,6 +303,14 @@ export interface ServerApiClient {
    * same posture as getViewFields.
    */
   getChatterVisibility(entity: string): Promise<ChatterVisibilityConfig>
+  /**
+   * entity's form status-breadcrumb override (field + steps), as configured
+   * from Settings -> Apps -> :module. Never cached, same posture as
+   * getChatterVisibility.
+   */
+  getStatusBarConfig(entity: string): Promise<StatusBarConfig>
+  /** A form's context: GET `path` (ViewDescriptor.formContext), never cached. */
+  getFormContext(path: string): Promise<Record<string, unknown>>
   /**
    * A boolean/picture widget's configured box size, either the workspace-wide
    * Base default (module: 'base') or one specific app's own override
@@ -291,12 +333,24 @@ export interface ServerApiClient {
    */
   getMyActiveCompany(): Promise<{ id: string; name: string } | null>
   /**
+   * The caller's language preferences — same `/me/preferences` response as
+   * getMyActiveCompany, just the preferred_locale/default_locale pair
+   * instead. The print route (apps/shell/app/print/report) is the one
+   * caller: it has no session cookie to resolve a locale from (see
+   * createServerApiClient's own doc comment on tokenOverride), so it reads
+   * this off the SAME short-lived report token every other print-route read
+   * already uses, then resolves the effective locale itself (same
+   * resolveEffectiveLocale precedence every other server render uses) before
+   * handing it to ReportRenderer.
+   */
+  getMyLocalePreferences(): Promise<{ preferred_locale: string | null; default_locale: string | null }>
+  /**
    * Like list(), but also returns Go's `total` row count — the tree view's
    * loader uses this (not list()) so Graph mode's aggregate widgets (Phase 5,
    * docs/roadmaps/list-view-modes.md) can tell a full fetch from a
    * page_size-truncated one, without a second request.
    */
-  listWithTotal<T>(entity: string, options?: EntityListOptions): Promise<{ records: T[]; total: number }>
+  listWithTotal<T>(entity: string, options?: EntityListOptions): Promise<{ records: T[]; total: number; totalEstimated?: true }>
   /**
    * The search bar's group-by section (docs/adr/ADR-014-search-filter-bar.md):
    * every distinct value of column (+ row count) among rows matching options'
@@ -310,6 +364,9 @@ export interface ServerApiClient {
     column: string,
     options?: EntityListOptions,
   ): Promise<{ value: string; total: number }[]>
+  /** Graph server-side aggregation over every row matching options' filters
+   * (ADR-023) — same route/permission as the list, like distinctValues. */
+  aggregate(entity: string, req: GraphAggregateRequest, options?: EntityListOptions): Promise<GraphAggregateRow[]>
 }
 
 class ServerApiClientImpl implements ServerApiClient {
@@ -328,7 +385,7 @@ class ServerApiClientImpl implements ServerApiClient {
   async listWithTotal<T>(
     entity: string,
     options?: EntityListOptions,
-  ): Promise<{ records: T[]; total: number }> {
+  ): Promise<{ records: T[]; total: number; totalEstimated?: true }> {
     // Filtered variants cache under their own URL key but share the entity tag,
     // so every mutation of the entity revalidates them too.
     const body = await request<unknown>(
@@ -339,14 +396,14 @@ class ServerApiClientImpl implements ServerApiClient {
       this.tokenOverride,
     )
     if (Array.isArray(body)) return { records: body as T[], total: body.length }
-    const envelope = body as { data?: unknown; total?: unknown } | null
+    const envelope = body as { data?: unknown; total?: unknown; total_estimated?: unknown } | null
     const data = envelope?.data
     const records = Array.isArray(data) ? (data as T[]) : []
     // A bare-array response (no envelope) has no `total` — records.length is
     // the only honest answer, same as the paginated envelope's own total
     // being exactly what Go counted server-side.
     const total = typeof envelope?.total === 'number' ? envelope.total : records.length
-    return { records, total }
+    return envelope?.total_estimated === true ? { records, total, totalEstimated: true } : { records, total }
   }
 
   async distinctValues(
@@ -362,6 +419,21 @@ class ServerApiClientImpl implements ServerApiClient {
       this.tokenOverride,
     )
     return body.values ?? []
+  }
+
+  async aggregate(
+    entity: string,
+    req: GraphAggregateRequest,
+    options?: EntityListOptions,
+  ): Promise<GraphAggregateRow[]> {
+    const body = await request<{ groups?: GraphAggregateRow[] }>(
+      'GET',
+      `/${entity}${aggregateQuery(req, options)}`,
+      [entity],
+      undefined,
+      this.tokenOverride,
+    )
+    return body.groups ?? []
   }
 
   get<T>(entity: string, id: string): Promise<T> {
@@ -385,16 +457,49 @@ class ServerApiClientImpl implements ServerApiClient {
     revalidateTag(entity, REVALIDATE_PROFILE)
   }
 
+  /** Undoes a SOFT delete — Go's generic CRUD mounts `POST /:id/restore` for
+   * every soft-deletable table (`core/orm/server`'s own route, 404 for a
+   * table that isn't). Returns the restored record so a caller (the undo
+   * toast's onRecover) can put it straight back into local state instead of
+   * re-fetching. */
+  async restore<T>(entity: string, id: string): Promise<T> {
+    const restored = await request<T>(
+      'POST',
+      `/${entity}/${id}/restore`,
+      [entity],
+      undefined,
+      this.tokenOverride,
+    )
+    revalidateTag(entity, REVALIDATE_PROFILE)
+    return restored
+  }
+
+  async action<T>(entity: string, id: string, action: string, body?: unknown, revalidate: string[] = []): Promise<T> {
+    const out = await request<T>(
+      'POST',
+      `/${entity}/${id}/${encodeURIComponent(action)}`,
+      [entity],
+      body,
+      this.tokenOverride,
+    )
+    for (const tag of [entity, ...revalidate]) revalidateTag(tag, REVALIDATE_PROFILE)
+    return out
+  }
+
   async getViewFields(entity: string): Promise<ViewFieldsConfig> {
     const raw = await request<{
       kanban_status_field: string | null
       calendar_date_field: string | null
       enable_graphs: boolean | null
+      gantt_start_field?: string | null
+      gantt_end_field?: string | null
     }>('GET', `/settings/views/${entity}/fields`, null, undefined, this.tokenOverride)
     return {
       kanbanStatusField: raw.kanban_status_field ?? null,
       calendarDateField: raw.calendar_date_field ?? null,
       enableGraphs: raw.enable_graphs ?? null,
+      ganttStartField: raw.gantt_start_field ?? null,
+      ganttEndField: raw.gantt_end_field ?? null,
     }
   }
 
@@ -407,6 +512,22 @@ class ServerApiClientImpl implements ServerApiClient {
       this.tokenOverride,
     )
     return { enabled: raw.enabled ?? null }
+  }
+
+  async getFormContext(path: string): Promise<Record<string, unknown>> {
+    const raw = await request<unknown>('GET', path.startsWith('/') ? path : `/${path}`, null, undefined, this.tokenOverride)
+    return raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
+  }
+
+  async getStatusBarConfig(entity: string): Promise<StatusBarConfig> {
+    const raw = await request<{ field: string | null; steps: string[] | null }>(
+      'GET',
+      `/settings/views/${entity}/status_bar`,
+      null,
+      undefined,
+      this.tokenOverride,
+    )
+    return { field: raw.field ?? null, steps: raw.steps ?? null }
   }
 
   async getPictureSize(module: string): Promise<{ width: number; height: number } | null> {
@@ -440,6 +561,17 @@ class ServerApiClientImpl implements ServerApiClient {
     )
     return raw.active_company ?? null
   }
+
+  async getMyLocalePreferences(): Promise<{ preferred_locale: string | null; default_locale: string | null }> {
+    const raw = await request<{ preferred_locale: string | null; default_locale: string | null }>(
+      'GET',
+      '/me/preferences',
+      null,
+      undefined,
+      this.tokenOverride,
+    )
+    return { preferred_locale: raw.preferred_locale ?? null, default_locale: raw.default_locale ?? null }
+  }
 }
 
 /** Construct a request-scoped client bound to the current session cookie. */
@@ -466,8 +598,13 @@ export function createServerApiClient(tokenOverride?: string): ServerApiClient {
  * are per-user or per-tenant, so a shared cache entry would leak state across
  * sessions. `path` is relative to the versioned API base (e.g. "/me/preferences").
  */
-export function apiRequest<T>(method: Method, path: string, body?: unknown): Promise<T> {
-  return request<T>(method, path, null, body)
+export function apiRequest<T>(
+  method: Method,
+  path: string,
+  body?: unknown,
+  extraHeaders?: Record<string, string>,
+): Promise<T> {
+  return request<T>(method, path, null, body, undefined, extraHeaders)
 }
 
 // ── Picture service (Go side of the BFF proxy) ───────────────────────────────
@@ -513,6 +650,13 @@ export async function findPicture(anchor: PictureAnchor, tokenOverride?: string)
  */
 export async function streamPicture(id: string, tokenOverride?: string): Promise<Response> {
   const res = await fetchWithRefresh('GET', `/pictures/${id}`, null, undefined, tokenOverride)
+  if (!res.ok) throw await parseError(res)
+  return res
+}
+
+/** A user's avatar from Go (404 when none); the raw Response, like streamPicture. */
+export async function streamAvatar(userId: string): Promise<Response> {
+  const res = await fetchWithRefresh('GET', `/avatars/${encodeURIComponent(userId)}`, null)
   if (!res.ok) throw await parseError(res)
   return res
 }
@@ -570,6 +714,15 @@ export async function streamAttachment(id: string): Promise<Response> {
   const res = await fetchWithRefresh('GET', `/attachments/${id}`, null)
   if (!res.ok) throw await parseError(res)
   return res
+}
+
+/**
+ * Teams BFF passthrough: forwards one call to /api/v1/teams<path> and returns the
+ * raw Response even when not OK, so the route relays Go's status, error envelope,
+ * streams and Content-Disposition untouched. Only a failed session refresh throws.
+ */
+export async function proxyTeams(method: Method, path: string, body?: unknown): Promise<Response> {
+  return fetchWithRefresh(method, `/teams${path}`, null, body)
 }
 
 export async function deleteAttachment(id: string): Promise<void> {

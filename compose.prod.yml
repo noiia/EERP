@@ -1,0 +1,109 @@
+# Prod override — two things dev doesn't need:
+#
+# 1. db/garage/redis go from ports: to expose: — nothing outside the compose network needs to
+#    reach them directly (unlike dev, where host-native tooling — make run-back-tests, a
+#    bare `go run`/`go test` outside Docker — talks to them via eerp-config.json's
+#    localhost DSN/s3_endpoint). Same posture core-back/core-front/pdf-service already
+#    have in compose.yml: expose only, api-gateway is the sole ingress.
+#
+# 2. core-back/core-front/pdf-service switch from compose.yml's `build:` (local
+#    Dockerfile, this checkout's source) to `image:` — pulling the tagged images CI
+#    already built and pushed to ghcr.io, rather than rebuilding from source on the prod
+#    host. `build: !reset null` is required alongside `image:`: Compose merges the base
+#    file's `build:` key in too (maps merge), and a service with BOTH builds locally and
+#    just tags the result with `image:` — the opposite of "pull, don't build".
+#
+# `EERP_IMAGE_TAG` (env var or .env file next to this compose file) picks the version;
+# defaults to `latest`.
+#
+# core-front's API_BASE is baked into the image at BUILD time (core-front/Dockerfile's
+# `ARG API_BASE` -> `ENV API_BASE=$API_BASE`) — whichever hostname CI used when it built
+# the ghcr image. Since prod pulls that image rather than building it here, this overrides
+# API_BASE at container START instead, pointed at this compose file's own service name
+# (`core-back`) rather than trusting the image's baked-in default to still resolve on
+# THIS deployment's network — a `container_name: backend` alias would work too, but only
+# by coincidence, if it happens to match whatever the image was built with.
+#
+# Usage: docker compose -f compose.yml -f compose.prod.yml up -d
+services:
+  db:
+    # The image is postgis/postgis:18-3.7 (inherited from compose.yml): Postgres 18
+    # plus PostGIS, same data directory format, so the existing volume is reused —
+    # pull and recreate the container; core-back creates the extension at boot.
+    ports: !reset []
+    # compose.yml's named `pgdata` volume is NOT applied here yet: a production
+    # database already lives in the postgres image's anonymous volume, and
+    # switching the mount would boot on an EMPTY named volume. Migrate once,
+    # deliberately (stop db, copy the old volume into <project>_pgdata, e.g.
+    # `docker run --rm -v <old-volume>:/from:ro -v <project>_pgdata:/to alpine cp -a /from/. /to/`),
+    # then delete these two lines.
+    volumes: !reset []
+    expose:
+      - "5432"
+
+  garage:
+    ports: !reset []
+    expose:
+      - "3900"
+
+  redis:
+    ports: !reset []
+    expose:
+      - "6379"
+
+  mailpit:
+    profiles: ["dev-only"]   # never started in production — point smtp_* at a real relay
+    ports: !reset []
+
+  core-back:
+    build: !reset null
+    image: ghcr.io/noiia/eerp-core:${EERP_IMAGE_TAG:-latest}
+    # environment: "production" (docs/security/pentest-2026-09-24.md's follow-up) —
+    # its own config file, not compose.yml's dev eerp-config.docker.json: demo
+    # seeding never runs here regardless of seed_demo_data, and a freshly-seeded
+    # default admin is forced to change its password on first login. Copy
+    # eerp-config.prod.example.json to eerp-config.prod.json and fill in real
+    # secrets before running this overlay for real — it's gitignored, same as
+    # the dev config.
+    volumes: !override
+      - ./eerp-config.prod.json:/app/eerp-config.json:ro
+
+  core-front:
+    build: !reset null
+    image: ghcr.io/noiia/eerp-core-front:${EERP_IMAGE_TAG:-latest}
+    environment:
+      API_BASE: "http://core-back:8080"
+
+  pdf-service:
+    build: !reset null
+    image: ghcr.io/noiia/eerp-pdf-service:${EERP_IMAGE_TAG:-latest}
+
+  # Real HTTPS for the gateway (infra/bootstrap-prod.sh). Never started by `up`
+  # (profile): the bootstrap runs it once to obtain the certificate over the HTTP-01
+  # challenge (webroot = acme-webroot, served by the gateway's port 80), and
+  # `make renew-certs-prod` (cron, twice a day) renews it. install-cert.sh copies
+  # the result into the gateway-certs volume nginx serves.
+  certbot:
+    image: certbot/certbot:v5.10.0
+    profiles: ["certbot"]
+    environment:
+      CERT_NAME: ${ERP_HOST:-}
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - acme-webroot:/var/www/acme
+      - gateway-certs:/gateway-certs
+      - ./infra/certbot/install-cert.sh:/install-cert.sh:ro
+
+  api-gateway:
+    volumes:
+      - acme-webroot:/var/www/acme:ro
+      # Real-IP trust for a reverse proxy in front (CERT_MODE=proxy); empty otherwise.
+      - ./infra/nginx/realip:/etc/nginx/realip:ro
+    # Movable when a reverse proxy on the same host already holds 80/443.
+    ports: !override
+      - "${GATEWAY_HTTP_PORT:-80}:80"
+      - "${GATEWAY_HTTPS_PORT:-443}:443"
+
+volumes:
+  letsencrypt:
+  acme-webroot:

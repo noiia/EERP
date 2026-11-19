@@ -105,6 +105,13 @@ describe('ServerApiClient', () => {
     )
   })
 
+  it('get passes a sub-path id through unencoded (project/<id>/can_manage)', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, { can_manage: true }))
+    vi.stubGlobal('fetch', fetchMock)
+    await createServerApiClient().get('project', 'p%2F1/can_manage')
+    expect(fetchMock).toHaveBeenCalledWith('http://api.test/api/v1/project/p%2F1/can_manage', expect.anything())
+  })
+
   it('listWithTotal surfaces the paginated envelope\'s total row count', async () => {
     vi.stubGlobal(
       'fetch',
@@ -114,6 +121,30 @@ describe('ServerApiClient', () => {
       records: [{ id: '1' }],
       total: 500,
     })
+  })
+
+  it('listWithTotal flags a planner-estimated total', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse(200, { data: [{ id: '1' }], total: 100048, total_estimated: true, page: 1, page_size: 20 }),
+      ),
+    )
+    await expect(createServerApiClient().listWithTotal('crm')).resolves.toEqual({
+      records: [{ id: '1' }],
+      total: 100048,
+      totalEstimated: true,
+    })
+  })
+
+  it('sends the sort column and the page with a paged list', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, { data: [], total: 0, page: 2, page_size: 10 }))
+    vi.stubGlobal('fetch', fetchMock)
+    await createServerApiClient().listWithTotal('receipt', { order: '-created_at', page: 2, pageSize: 10 })
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://api.test/api/v1/receipt?order=-created_at&page=2&page_size=10',
+      expect.anything(),
+    )
   })
 
   it('listWithTotal falls back to records.length when the response is a bare array (no total)', async () => {
@@ -191,6 +222,29 @@ describe('ServerApiClient', () => {
     const query = new URL(url).searchParams
     expect(query.get('distinct')).toBe('status')
     expect(query.get('search[name]')).toBe('ada')
+  })
+
+  it('aggregate() sends the aggregate params plus filters, never paging, and returns the groups', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, { groups: [{ x: '2026-01', value: 5, count: 2 }] }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const rows = await createServerApiClient().aggregate(
+      'invoice',
+      { aggregate: 'sum', value: '(total - subtotal) / 2', x: 'issue_date', bucket: 'month', group: 'status' },
+      { filter: { status: 'paid' }, page: 3, pageSize: 20 },
+    )
+
+    expect(rows).toEqual([{ x: '2026-01', value: 5, count: 2 }])
+    const [url] = fetchMock.mock.calls[0] as unknown as [string]
+    const query = new URL(url).searchParams
+    expect(query.get('aggregate')).toBe('sum')
+    expect(query.get('value')).toBe('(total - subtotal) / 2')
+    expect(query.get('x')).toBe('issue_date')
+    expect(query.get('bucket')).toBe('month')
+    expect(query.get('group')).toBe('status')
+    expect(query.get('filter[status]')).toBe('paid')
+    expect(query.has('page')).toBe(false)
+    expect(query.has('page_size')).toBe(false)
   })
 
   it('distinctValues() returns an empty array when the envelope carries no values', async () => {
@@ -330,9 +384,26 @@ describe('ServerApiClient', () => {
     expect(revalidateTagMock).toHaveBeenCalledWith('crm', 'max')
   })
 
+  it('restore POSTs to the generic /:id/restore route, returns the restored record, and revalidates', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, { id: '1', name: 'A' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(createServerApiClient().restore('crm', '1')).resolves.toEqual({ id: '1', name: 'A' })
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('http://api.test/api/v1/crm/1/restore')
+    expect(init.method).toBe('POST')
+    expect(revalidateTagMock).toHaveBeenCalledWith('crm', 'max')
+  })
+
   it('reads Kanban/Calendar/Graph field config, never caching (tenant-wide settings)', async () => {
     const fetchMock = vi.fn(async () =>
-      jsonResponse(200, { kanban_status_field: 'status', calendar_date_field: null, enable_graphs: true }),
+      jsonResponse(200, {
+        kanban_status_field: 'status',
+        calendar_date_field: null,
+        enable_graphs: true,
+        gantt_start_field: 'date_start',
+        gantt_end_field: null,
+      }),
     )
     vi.stubGlobal('fetch', fetchMock)
 
@@ -340,6 +411,8 @@ describe('ServerApiClient', () => {
       kanbanStatusField: 'status',
       calendarDateField: null,
       enableGraphs: true,
+      ganttStartField: 'date_start',
+      ganttEndField: null,
     })
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit & { next?: unknown }]
     expect(url).toBe('http://api.test/api/v1/settings/views/crm/fields')
@@ -425,6 +498,34 @@ describe('ServerApiClient', () => {
   it('reads null when the active company is absent from the response', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, { active_company: null })))
     await expect(createServerApiClient().getMyActiveCompany()).resolves.toBeNull()
+  })
+
+  it('reads locale preferences off /me/preferences, never caching, including via a tokenOverride', async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(200, { preferred_locale: 'fr', default_locale: null }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(createServerApiClient('scoped-token').getMyLocalePreferences()).resolves.toEqual({
+      preferred_locale: 'fr',
+      default_locale: null,
+    })
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [
+      string,
+      RequestInit & { next?: unknown; headers: Record<string, string> },
+    ]
+    expect(url).toBe('http://api.test/api/v1/me/preferences')
+    expect(init.cache).toBe('no-store')
+    expect(init.next).toBeUndefined()
+    expect(init.headers.Authorization).toBe('Bearer scoped-token')
+  })
+
+  it('reads null/null when locale preferences are absent from the response', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, {})))
+    await expect(createServerApiClient().getMyLocalePreferences()).resolves.toEqual({
+      preferred_locale: null,
+      default_locale: null,
+    })
   })
 
   it('apiRequest GETs stay out of the Data Cache (session-scoped, never shared)', async () => {

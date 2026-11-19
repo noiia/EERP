@@ -5,32 +5,97 @@ name: Test check
 # checks without duplicating them.
 on:
   workflow_call:
+    # Each service's measured coverage (percent, statements), read by test-build.yml's
+    # coverage-badges job to rewrite the README badges once every check has passed.
+    outputs:
+      core-coverage:
+        value: ${{ jobs.core-test-and-coverage.outputs.coverage }}
+      pdf-service-coverage:
+        value: ${{ jobs.pdf-service-test-and-coverage.outputs.coverage }}
+      front-shell-coverage:
+        value: ${{ jobs.core-front-test-and-coverage.outputs.shell }}
+      front-engine-coverage:
+        value: ${{ jobs.core-front-test-and-coverage.outputs.engine }}
 
 jobs:
     core-test-and-coverage:
         runs-on: ubuntu-latest
+        outputs:
+            coverage: ${{ steps.coverage.outputs.total-coverage }}
+        services:
+            postgres:
+                image: postgis/postgis:18-3.7
+                env:
+                    POSTGRES_PASSWORD: ci_test_password
+                    POSTGRES_DB: poc
+                ports:
+                    - 5432:5432
+                # TCP check: a socket pg_isready passes during initdb's temporary server.
+                options: >-
+                    --health-cmd "pg_isready -h 127.0.0.1 -U postgres -d poc"
+                    --health-interval 5s --health-timeout 5s --health-retries 10
+            # The optional read cache (ADR-022) — REDIS_URL below turns its
+            # Redis-backed tests on; without it they skip, like TEST_DSN's.
+            redis:
+                image: redis:8-alpine
+                ports:
+                    - 6379:6379
+                options: >-
+                    --health-cmd "redis-cli ping"
+                    --health-interval 5s --health-timeout 5s --health-retries 10
         steps:
           - uses: actions/checkout@v6
           - uses: actions/setup-go@v6
             with:
-              go-version: '1.26'
+              go-version-file: core/go.mod
               # go.mod lives in core/, not the repo root — point the build cache at it.
               cache-dependency-path: core/go.sum
+          - name: create the test config
+            # eerp-config.json is gitignored (docs/security/pentest-2026-09-24.md), so
+            # a checkout has none: build it from the committed template, as
+            # infra/bootstrap.sh does locally. The backend refuses the template's
+            # placeholders, so the secret fields get a throwaway random value
+            # (TEST_DSN below supplies the real database coordinates).
+            run: |
+              cp eerp-config.example.json eerp-config.json
+              secret=$(openssl rand -hex 32)
+              sed -i -E "s/(\"(master_key|db_password|s3_access_key|s3_secret_key)\"[[:space:]]*:[[:space:]]*\")[^\"]*\"/\1$secret\"/" eerp-config.json
+
           - name: test code and generate coverage report
-            run: docker compose up -d db && cd ./core/ && go test ./... -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
+            # TEST_DSN is what makes the DB-backed tests run (core/internal/testdb) —
+            # without it they skip. The database is the job's `postgres` service
+            # below: compose.yml's db only `expose`s 5432 (no host port), so it isn't
+            # reachable from the runner.
+            env:
+              TEST_DSN: postgres://postgres:ci_test_password@localhost:5432/poc
+              REDIS_URL: redis://localhost:6379/0
+            run: cd ./core/ && go test ./... -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
+
+          - name: dead code gate
+            # Fails on any function unreachable from main that isn't deliberate public
+            # API listed in .github/deadcode-allowlist.txt.
+            run: |
+              go install golang.org/x/tools/cmd/deadcode@v0.50.0
+              cd ./core/
+              deadcode -f '{{range .Funcs}}{{$.Path}}.{{.Name}}{{"\n"}}{{end}}' ./... | sort > /tmp/dead.txt
+              sed '/^#/d' ../.github/deadcode-allowlist.txt | sort | comm -23 /tmp/dead.txt - | tee /tmp/new-dead.txt
+              test ! -s /tmp/new-dead.txt
 
           - name: analyse coverage
+            id: coverage
             uses: vladopajic/go-test-coverage@v2
             with:
                 config: .github/.testcoverage.yml
 
     pdf-service-test-and-coverage:
         runs-on: ubuntu-latest
+        outputs:
+            coverage: ${{ steps.coverage.outputs.total-coverage }}
         steps:
           - uses: actions/checkout@v6
           - uses: actions/setup-go@v6
             with:
-              go-version: '1.26'
+              go-version-file: tools/pdf-service/go.mod
               # go.mod lives in tools/pdf-service/, not the repo root — point the
               # build cache at it (a separate Go module from core/).
               cache-dependency-path: tools/pdf-service/go.sum
@@ -38,12 +103,16 @@ jobs:
             run: cd ./tools/pdf-service/ && go test ./... -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
 
           - name: analyse coverage
+            id: coverage
             uses: vladopajic/go-test-coverage@v2
             with:
                 config: .github/.testcoverage-pdf-service.yml
 
     core-front-test-and-coverage:
         runs-on: ubuntu-latest
+        outputs:
+            shell: ${{ steps.summary.outputs.shell }}
+            engine: ${{ steps.summary.outputs.engine }}
         defaults:
           run:
             working-directory: ./core-front
@@ -51,7 +120,7 @@ jobs:
           - uses: actions/checkout@v6
           - uses: pnpm/action-setup@v4
             with:
-              version: 11.8.0
+              version: 12.4.2
           - uses: actions/setup-node@v6
             with:
               # Node 24+ exposes a built-in Web Storage `localStorage` global that is
@@ -76,6 +145,14 @@ jobs:
             # vitest (v8 provider) runs the analysis itself — the frontend analog of
             # the backend's go-test-coverage step. lcov is emitted for tooling.
             run: pnpm test:coverage
+          - name: coverage figures
+            # Statement coverage of each package, from vitest's json-summary reporter.
+            id: summary
+            run: |
+              for pkg in shell:apps/shell engine:packages/core-front; do
+                pct=$(jq -r '.total.statements.pct' "${pkg#*:}/coverage/coverage-summary.json")
+                echo "${pkg%%:*}=$pct" >> "$GITHUB_OUTPUT"
+              done
           - name: upload coverage report
             if: always()
             uses: actions/upload-artifact@v4

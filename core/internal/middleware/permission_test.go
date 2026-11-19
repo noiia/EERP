@@ -1,6 +1,7 @@
 package middleware_test
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -8,9 +9,10 @@ import (
 
 	"core/internal/auth"
 	authmw "core/internal/middleware"
+	"core/orm/access"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // stubPermRepo is a test double satisfying the middleware's permissionChecker.
@@ -29,7 +31,7 @@ func (s *stubPermRepo) Has(_ context.Context, _ []string, required string) (bool
 
 func injectIdentity(roles []string) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
+		return func(c *echo.Context) error {
 			id := auth.Identity{
 				UserID:   uuid.New(),
 				TenantID: uuid.New(),
@@ -42,6 +44,89 @@ func injectIdentity(roles []string) echo.MiddlewareFunc {
 	}
 }
 
+// injectIdentityMustChange is injectIdentity plus MustChangePassword set, with
+// a caller-supplied fixed UserID so a test can address "self" by id.
+func injectIdentityMustChange(userID uuid.UUID) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			id := auth.Identity{
+				UserID:             userID,
+				TenantID:           uuid.New(),
+				Roles:              []string{"admin"},
+				MustChangePassword: true,
+			}
+			ctx := auth.SetIdentity(c.Request().Context(), id)
+			c.SetRequest(c.Request().WithContext(ctx))
+			return next(c)
+		}
+	}
+}
+
+func TestPermissionMiddleware_MustChangePassword_BlocksOtherRoutes(t *testing.T) {
+	e := testEcho()
+	stub := &stubPermRepo{has: true} // would otherwise be allowed
+	g := e.Group("/api/v1", injectIdentityMustChange(uuid.New()), authmw.PermissionMiddleware(stub))
+	reached := false
+	g.GET("/crm/:id", func(c *echo.Context) error { reached = true; return c.String(http.StatusOK, "ok") })
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/crm/"+uuid.NewString(), nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", rec.Code)
+	}
+	if reached {
+		t.Error("handler must not run while must_change_password is set")
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte("PASSWORD_CHANGE_REQUIRED")) {
+		t.Errorf("body = %s, want PASSWORD_CHANGE_REQUIRED code", rec.Body.String())
+	}
+}
+
+func TestPermissionMiddleware_MustChangePassword_AllowsSelfCredentialRoute(t *testing.T) {
+	e := testEcho()
+	stub := &stubPermRepo{has: true}
+	selfID := uuid.New()
+	g := e.Group("/api/v1", injectIdentityMustChange(selfID), authmw.PermissionMiddleware(stub))
+	reached := false
+	g.PUT("/users/:id", func(c *echo.Context) error { reached = true; return c.String(http.StatusOK, "ok") })
+	g.GET("/users/:id", func(c *echo.Context) error { reached = true; return c.String(http.StatusOK, "ok") })
+
+	for _, method := range []string{http.MethodPut, http.MethodGet} {
+		reached = false
+		req := httptest.NewRequest(method, "/api/v1/users/"+selfID.String(), nil)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s status = %d, want 200 (self credential route stays reachable)", method, rec.Code)
+		}
+		if !reached {
+			t.Errorf("%s: handler must run for the caller's own /users/:id", method)
+		}
+	}
+}
+
+func TestPermissionMiddleware_MustChangePassword_BlocksOtherUsersRecord(t *testing.T) {
+	e := testEcho()
+	stub := &stubPermRepo{has: true}
+	g := e.Group("/api/v1", injectIdentityMustChange(uuid.New()), authmw.PermissionMiddleware(stub))
+	reached := false
+	g.PUT("/users/:id", func(c *echo.Context) error { reached = true; return c.String(http.StatusOK, "ok") })
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/users/"+uuid.NewString(), nil) // NOT self
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403 (editing someone else's record must not be exempt)", rec.Code)
+	}
+	if reached {
+		t.Error("handler must not run for another user's record")
+	}
+}
+
 func TestPermissionMiddleware_NoPermission_Returns403(t *testing.T) {
 	// PermissionRepository.Has needs a DB — test via integration.
 	// This test validates the middleware wires correctly with a stub-like approach:
@@ -51,7 +136,7 @@ func TestPermissionMiddleware_NoPermission_Returns403(t *testing.T) {
 
 	// Verify that MustIdentity panics when identity is missing (wiring guard).
 	e := testEcho()
-	e.GET("/api/v1/crm/contacts", func(c echo.Context) error {
+	e.GET("/api/v1/crm/contacts", func(c *echo.Context) error {
 		return c.String(http.StatusOK, "ok")
 	})
 
@@ -72,7 +157,7 @@ func TestPermissionMiddleware_Allows_WhenGranted(t *testing.T) {
 	e := testEcho()
 	stub := &stubPermRepo{has: true}
 	g := e.Group("/api/v1", injectIdentity([]string{"admin"}), authmw.PermissionMiddleware(stub))
-	g.GET("/crm/:id", func(c echo.Context) error { return c.String(http.StatusOK, "ok") })
+	g.GET("/crm/:id", func(c *echo.Context) error { return c.String(http.StatusOK, "ok") })
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/crm/"+uuid.NewString(), nil)
 	rec := httptest.NewRecorder()
@@ -92,7 +177,7 @@ func TestPermissionMiddleware_Denies_WhenNotGranted(t *testing.T) {
 	stub := &stubPermRepo{has: false}
 	reached := false
 	g := e.Group("/api/v1", injectIdentity([]string{"viewer"}), authmw.PermissionMiddleware(stub))
-	g.DELETE("/crm/:id", func(c echo.Context) error { reached = true; return c.String(http.StatusOK, "ok") })
+	g.DELETE("/crm/:id", func(c *echo.Context) error { reached = true; return c.String(http.StatusOK, "ok") })
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/crm/"+uuid.NewString(), nil)
 	rec := httptest.NewRecorder()
@@ -163,4 +248,31 @@ func TestDerivePermission_FailsClosed(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPermissionMiddleware_StampsReadCheck(t *testing.T) {
+	e := testEcho()
+	var canContact, canSecret bool
+	stub := &stubReadPerms{granted: map[string]bool{"crm:crm:read": true, "contact:contact:read": true}}
+	g := e.Group("/api/v1", injectIdentity([]string{"r"}), authmw.PermissionMiddleware(stub))
+	g.GET("/crm", func(c *echo.Context) error {
+		canContact = access.CanRead(c.Request().Context(), "contact")
+		canSecret = access.CanRead(c.Request().Context(), "secret")
+		return c.String(http.StatusOK, "ok")
+	})
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/crm", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if !canContact || canSecret {
+		t.Errorf("contact=%v secret=%v, want true/false", canContact, canSecret)
+	}
+}
+
+// stubReadPerms grants exactly the listed permissions.
+type stubReadPerms struct{ granted map[string]bool }
+
+func (s *stubReadPerms) Has(_ context.Context, _ []string, required string) (bool, error) {
+	return s.granted[required], nil
 }

@@ -1,37 +1,62 @@
 services:
   db:
-    image: postgres:18
+    image: postgis/postgis:18-3.7
+    restart: always
     container_name: db
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      # From a gitignored .env next to this file (docker compose auto-loads it
+      # automatically — no manual sourcing needed) — never a literal here. The
+      # old committed "postgres"/"postgres" default is exactly
+      # docs/security/pentest-2026-09-24.md's finding 3. core-back's OWN copy
+      # of this same password lives in eerp-config.docker.json/eerp-config.prod.json
+      # (also gitignored) — keep them in sync, they're the same Postgres role.
+      # POSTGRES_PASSWORD only takes effect on a fresh volume; rotating it
+      # against an already-initialized one also needs
+      # `ALTER ROLE postgres WITH PASSWORD ...`.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in a local .env}
       POSTGRES_DB: poc
+    # Loopback only: host-native `make run-back-tests` / `go run` reach it through
+    # eerp-config.json's localhost:5432, but nothing off this machine can.
+    # compose.prod.yml resets these ports to none.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
+    expose:
+      - "5432"
+    volumes:
+      # Named, so data survives `docker compose down` + `up` (the image's anonymous
+      # volume was orphaned by every fresh container).
+      - pgdata:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      # -h forces TCP: on first boot the entrypoint runs a temporary socket-only
+      # server during initdb, which a socket pg_isready reports as ready — core-back
+      # then raced the real server's restart and failed its first ping.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d poc"]
       interval: 5s
       timeout: 5s
       retries: 10
 
   # S3-compatible object storage for the picture service (see infra/garage/README.md).
-  # Starts empty: run `make garage-init` once to create the layout, dev key and bucket.
+  # Starts empty: `make bootstrap` (or `make garage-init`) creates the layout, key and bucket.
   garage:
-    image: dxflrs/garage:v2.3.0
+    image: dxflrs/garage:v2.5.0
+    restart: always
     container_name: garage
     environment:
       RUST_LOG: garage=warn,garage_api_admin=warn
+      # Generated into .env by infra/bootstrap.sh — never committed in garage.toml.
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?run infra/bootstrap.sh (or set GARAGE_RPC_SECRET in .env)}
     volumes:
       - ./infra/garage/garage.toml:/etc/garage.toml:ro
       - garage-meta:/var/lib/garage/meta
       - garage-data:/var/lib/garage/data
+    # Loopback only (host 3910 — 3900 is commonly taken by other garage instances;
+    # in-network clients still use garage:3900): host-native dev tooling reaches it via
+    # eerp-config.json's s3_endpoint. compose.prod.yml resets these ports to none.
     ports:
-      # Host 3910 (3900 is commonly taken by other garage instances); in-network
-      # clients still use garage:3900. Kept host-reachable (unlike core-back/core-front,
-      # which the api-gateway now fronts exclusively) because host-native dev tooling —
-      # `make run-back-tests`, a native `go run`/`go test` — talks to it directly via
-      # eerp-config.json's s3_endpoint, same as db's fixed 5432 mapping above.
-      - "3910:3900"
+      - "127.0.0.1:3910:3900"
+    expose:
+      - "3900"
     healthcheck:
       test: ["CMD", "/garage", "status"]
       interval: 5s
@@ -40,45 +65,65 @@ services:
 
   core-back:
     container_name: backend
+    restart: always
     build:
       context: .
       dockerfile: core/Dockerfile
+    # eerp-config.docker.json is gitignored (docs/security/pentest-2026-09-24.md) —
+    # `make bootstrap` creates it from eerp-config.docker.example.json with generated
+    # secrets; main.go refuses to start on the template's placeholders. (If it is
+    # missing, Docker creates a DIRECTORY at this bind-mount source instead.)
     volumes:
       - ./eerp-config.docker.json:/app/eerp-config.json:ro
     expose:
       - "8080"
+    healthcheck:
+      # 200 once boot is done and the DB pool answers a ping (orm/server's
+      # /health, which the api-gateway also proxies).
+      test: ["CMD", "curl", "-fso", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
     depends_on:
       db:
         condition: service_healthy
       nats:
         condition: service_healthy
+      # Optional read cache (ADR-022): waited on when present, but the stack
+      # (and the backend) runs fine with this service removed — `required: false`.
+      redis:
+        condition: service_healthy
+        required: false
+      mailpit:
+        condition: service_healthy
+        required: false
 
   core-front:
     container_name: frontend
+    restart: always
     build:
       context: .
       dockerfile: core-front/Dockerfile
-      args:
-        API_BASE: "http://core-back:8080"
-        API_VERSION: "1"
     environment:
+      API_BASE: "http://core-back:8080"
+      API_VERSION: "1"
       # The api-gateway now terminates TLS on :443 (infra/nginx/nginx.conf) — Secure
       # cookies work, so no COOKIE_SECURE override is needed; it falls back to its
       # NODE_ENV=production default (true). Set COOKIE_SECURE: "false" here again
       # if the gateway ever goes back to serving the app over plain HTTP only.
-      # The standalone image always runs with NODE_ENV=production (next start requires
-      # it), even for this local/dev compose stack — so the Settings > Developer seed
-      # tool's NODE_ENV-derived guard would stay permanently disabled here otherwise.
-      # This stack is dev-only, so opt back in explicitly. Never set this against a real
-      # tenant deployment.
-      ALLOW_DEMO_SEED: "true"
+      #
+      # No ALLOW_DEMO_SEED here anymore: the Settings -> Developer seed tool now
+      # gates on the SAME backend "environment" switch core-back boots from
+      # (types.Config.Environment, echoed by GET /me/preferences — see
+      # src/lib/dev-seed-allowed.ts) instead of a separate frontend env var, so
+      # dev vs. prod is one config decision, not two to keep in sync.
     expose:
       - "3000"
     depends_on:
       db:
         condition: service_healthy
       core-back:
-        condition: service_started
+        condition: service_healthy
 
   # Standalone PDF renderer (docs/adr/ADR-010, docs/roadmaps/pdf-reports.md). Started by
   # default (no profile) so `docker compose up -d --build` alone is enough for report
@@ -86,11 +131,13 @@ services:
   # regularly-used dev feature (rent receipts) and 502s from a missing pdf-service were
   # a recurring surprise. core-back now reaches it exclusively over NATS (Phase 5,
   # see eerp-config.docker.json's nats_url) rather than direct HTTP — this replica's
-  # own HTTP server still runs too (its healthcheck below uses it), but core no longer
+  # own HTTP server still runs too (its healthcheck below probes it via the binary's own
+  # `-healthcheck` flag — the image ships no curl), but core no longer
   # calls it directly. Scale with `docker compose up -d --build --scale pdf-service=N`;
   # N replicas subscribed to the same NATS queue group are competing consumers with
   # zero code change. No container_name: a static name would collide across replicas.
   pdf-service:
+    restart: always
     build:
       context: .
       dockerfile: tools/pdf-service/Dockerfile
@@ -102,7 +149,7 @@ services:
       nats:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8090/healthz"]
+      test: ["CMD", "/app/pdf-service", "-healthcheck"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -116,12 +163,50 @@ services:
   # nats-server only takes max_payload from a config file, not a CLI flag, so raising it
   # later means mounting one, not just editing this command.
   nats:
-    image: nats:2.10-alpine
+    # Alpine variant on purpose: the default (scratch) image has no nc/shell,
+    # so the healthcheck below could never run and the service stays unhealthy.
+    image: nats:2-alpine
+    restart: always
     container_name: nats
     expose:
       - "4222"
     healthcheck:
       test: ["CMD", "nc", "-z", "127.0.0.1", "4222"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # OPTIONAL read cache between the generic CRUD API and Postgres
+  # (docs/adr/ADR-022-optional-redis-query-cache.md), enabled by
+  # eerp-config.docker.json's redis_url. Delete this service (or clear
+  # redis_url) and everything still works, just uncached. A pure cache: no
+  # persistence, bounded memory with LRU eviction — losing it loses nothing.
+  # Published on 127.0.0.1 only, for host-native tests (REDIS_URL).
+  redis:
+    image: redis:8-alpine
+    restart: always
+    container_name: redis
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Dev mail catcher (internal/mail): every email the outbox sends lands in
+  # the Mailpit inbox at http://127.0.0.1:8025 — nothing reaches a real
+  # address. Optional like redis: core-back waits on it with required: false.
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: always
+    container_name: mailpit
+    ports:
+      - "127.0.0.1:8025:8025"   # web UI
+      - "127.0.0.1:1025:1025"   # SMTP, for host-native runs
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -132,13 +217,18 @@ services:
   # step — idempotent (skips regenerating if the cert already exists in the
   # volume from a previous run), same "no missing-piece surprise" posture
   # pdf-service above takes. Exits after running; api-gateway waits on its
-  # successful completion via depends_on below.
+  # successful completion via depends_on below. The image ships the openssl CLI,
+  # so the step needs no network: installing it at start (apk add) failed
+  # whenever containers couldn't reach the Alpine mirror.
   gateway-certs:
-    image: alpine:3.20
+    image: alpine/openssl:3.5.9
     container_name: gateway-certs
     volumes:
       - ./infra/nginx/gen-certs.sh:/gen-certs.sh:ro
       - gateway-certs:/certs
+    environment:
+      SITE_HOST: ${SITE_HOST:-}
+      ERP_HOST: ${ERP_HOST:-}
     entrypoint: ["sh", "/gen-certs.sh"]
     restart: "no"
 
@@ -177,6 +267,7 @@ services:
       start_period: 10s
 
 volumes:
+  pgdata:
   garage-meta:
   garage-data:
   gateway-certs:

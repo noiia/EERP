@@ -1,71 +1,33 @@
-//go:build integration
-
 package company_test
 
 import (
 	"context"
-	"os"
+	"reflect"
+	"strings"
 	"sync"
 	"testing"
 
 	"core/internal/company"
+	"core/internal/testdb"
+	_ "core/modules/auth"    // registers the auth module (users) for testdb.MigrateModules
+	_ "core/modules/company" // registers the company module
 	"core/orm"
 
 	"github.com/google/uuid"
-	"go.uber.org/zap"
 )
 
-// integrationSetup connects to TEST_DSN and ensures the tables this package
+// integrationSetup connects to the test DB (internal/testdb) and ensures the tables this package
 // needs exist. It NEVER deletes existing rows — this runs against a shared,
 // possibly non-empty database (e.g. a live dev stack), not a disposable one.
 // Every test seeds its OWN throwaway tenant/user and cleans up ONLY the rows
 // it created, scoped by id/tenant_id — never a blanket DELETE FROM <table>.
 func integrationSetup(t *testing.T) *orm.App {
 	t.Helper()
-	dsn := os.Getenv("TEST_DSN")
-	if dsn == "" {
-		t.Skip("TEST_DSN not set")
-	}
-	app, err := orm.New(orm.Config{DSN: dsn}, zap.NewNop())
-	if err != nil {
-		t.Fatalf("orm.New: %v", err)
-	}
+	app := testdb.Open(t)
 
-	ctx := context.Background()
-	tables := []string{
-		`CREATE TABLE IF NOT EXISTS users (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			deleted_at TIMESTAMPTZ,
-			tenant_id UUID NOT NULL,
-			email TEXT NOT NULL,
-			password_hash TEXT NOT NULL,
-			preferred_locale TEXT,
-			active_company_id UUID
-		)`,
-		`CREATE TABLE IF NOT EXISTS company (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			deleted_at TIMESTAMPTZ,
-			tenant_id UUID NOT NULL,
-			name TEXT NOT NULL DEFAULT '',
-			address TEXT NOT NULL DEFAULT '',
-			phone TEXT NOT NULL DEFAULT '',
-			email TEXT NOT NULL DEFAULT '',
-			is_default BOOLEAN NOT NULL DEFAULT FALSE
-		)`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS uq_company_tenant_default
-		 ON company (tenant_id) WHERE is_default`,
-	}
-	for _, sql := range tables {
-		if _, err := app.DB.Exec(ctx, sql); err != nil {
-			t.Fatalf("setup table: %v", err)
-		}
-	}
+	// The real company + users schema, as boot creates it.
+	testdb.MigrateModules(t, app, "auth", "company")
 
-	t.Cleanup(func() { app.Close() }) //nolint:errcheck
 	return app
 }
 
@@ -135,5 +97,104 @@ func TestResolveActive_Bootstrap_ConcurrentFirstTouch(t *testing.T) {
 	}
 	if count != 1 {
 		t.Errorf("default company count = %d, want exactly 1", count)
+	}
+}
+
+func TestBackfillCompanyID(t *testing.T) {
+	app := integrationSetup(t)
+	repo := company.NewRepository(app.DB)
+	ctx := context.Background()
+
+	// A throwaway table shaped like app_settings/report_page_format.
+	table := "backfill_probe_" + strings.ReplaceAll(uuid.NewString()[:8], "-", "")
+	if _, err := app.DB.Exec(ctx, `CREATE TABLE `+table+` (tenant_id UUID NOT NULL, company_id UUID)`); err != nil {
+		t.Fatalf("create probe table: %v", err)
+	}
+	withDefault, withoutDefault := uuid.New(), uuid.New()
+	t.Cleanup(func() {
+		app.DB.Exec(ctx, `DROP TABLE `+table)                                                                       //nolint:errcheck
+		app.DB.Exec(ctx, `DELETE FROM company WHERE tenant_id = ANY($1)`, []uuid.UUID{withDefault, withoutDefault}) //nolint:errcheck
+	})
+	existing, err := repo.EnsureDefaultCompany(ctx, withDefault)
+	if err != nil {
+		t.Fatalf("ensure default: %v", err)
+	}
+	preset := uuid.New()
+	if _, err := app.DB.Exec(ctx, `INSERT INTO `+table+` VALUES ($1, NULL), ($1, NULL), ($2, NULL), ($2, $3)`,
+		withDefault, withoutDefault, preset); err != nil {
+		t.Fatalf("seed probe rows: %v", err)
+	}
+
+	if err := repo.BackfillCompanyID(ctx, table); err != nil {
+		t.Fatalf("BackfillCompanyID: %v", err)
+	}
+	created, err := repo.EnsureDefaultCompany(ctx, withoutDefault)
+	if err != nil {
+		t.Fatalf("read created default: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		tenant uuid.UUID
+		want   []uuid.UUID
+	}{
+		{"tenant with a default reuses it", withDefault, []uuid.UUID{existing.ID, existing.ID}},
+		{"tenant without one gets a new default; preset row untouched", withoutDefault, []uuid.UUID{created.ID, preset}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rows, err := app.DB.Query(ctx, `SELECT company_id FROM `+table+` WHERE tenant_id = $1 ORDER BY company_id = $2 DESC`, tt.tenant, tt.want[0])
+			if err != nil {
+				t.Fatalf("read back: %v", err)
+			}
+			defer rows.Close()
+			var got []uuid.UUID
+			for rows.Next() {
+				var id uuid.UUID
+				if err := rows.Scan(&id); err != nil {
+					t.Fatalf("scan: %v", err)
+				}
+				got = append(got, id)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("company_ids = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// A NULL row whose key the default company already holds stays NULL instead of
+// colliding with a unique (tenant_id, company_id, key) index and failing boot.
+func TestBackfillCompanyID_SkipsTakenKeys(t *testing.T) {
+	app := integrationSetup(t)
+	repo := company.NewRepository(app.DB)
+	ctx := context.Background()
+	table := "backfill_keys_" + strings.ReplaceAll(uuid.NewString()[:8], "-", "")
+	if _, err := app.DB.Exec(ctx, `CREATE TABLE `+table+` (tenant_id UUID NOT NULL, company_id UUID, key TEXT NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.DB.Exec(ctx, `CREATE UNIQUE INDEX ON `+table+` (tenant_id, company_id, key)`); err != nil {
+		t.Fatal(err)
+	}
+	tenant := uuid.New()
+	t.Cleanup(func() {
+		app.DB.Exec(ctx, `DROP TABLE `+table)                                //nolint:errcheck
+		app.DB.Exec(ctx, `DELETE FROM company WHERE tenant_id = $1`, tenant) //nolint:errcheck
+	})
+	def, err := repo.EnsureDefaultCompany(ctx, tenant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.DB.Exec(ctx, `INSERT INTO `+table+` VALUES ($1, $2, 'taken'), ($1, NULL, 'taken'), ($1, NULL, 'free')`, tenant, def.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.BackfillCompanyID(ctx, table, "key"); err != nil {
+		t.Fatalf("BackfillCompanyID: %v", err)
+	}
+	var nullTaken, movedFree int
+	_ = app.DB.QueryRow(ctx, `SELECT count(*) FROM `+table+` WHERE key = 'taken' AND company_id IS NULL`).Scan(&nullTaken)
+	_ = app.DB.QueryRow(ctx, `SELECT count(*) FROM `+table+` WHERE key = 'free' AND company_id = $1`, def.ID).Scan(&movedFree)
+	if nullTaken != 1 || movedFree != 1 {
+		t.Errorf("taken row left NULL = %d (want 1), free row moved = %d (want 1)", nullTaken, movedFree)
 	}
 }

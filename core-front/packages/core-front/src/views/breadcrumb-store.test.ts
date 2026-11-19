@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { nextBreadcrumbTrail, useBreadcrumbStore, type Crumb } from './breadcrumb-store'
+import { nextBreadcrumbTrail, withTeamsRoot, useBreadcrumbStore, type Crumb } from './breadcrumb-store'
 
 const sale: Crumb = { label: 'Sale', href: '/sale' }
 const products: Crumb = { label: 'Products', href: '/sale/products' }
@@ -40,6 +40,14 @@ describe('nextBreadcrumbTrail', () => {
     const trail = nextBreadcrumbTrail([sale, products, stale], productA)
     expect(trail).toEqual([sale, products, productA])
   })
+
+  it('a filtered list keeps its query, and is the same page whatever its filters', () => {
+    const tasks: Crumb = { label: 'Tasks', href: '/project/tasks?filter%5Bproject_id%5D=p1' }
+    const task: Crumb = { label: 'Task', href: '/project/tasks/t1' }
+    expect(nextBreadcrumbTrail([sale, tasks], task)).toEqual([sale, tasks, task])
+    const other: Crumb = { label: 'Tasks', href: '/project/tasks?filter%5Bproject_id%5D=p2' }
+    expect(nextBreadcrumbTrail([sale, tasks, task], other)).toEqual([sale, other])
+  })
 })
 
 describe('useBreadcrumbStore', () => {
@@ -57,5 +65,44 @@ describe('useBreadcrumbStore', () => {
 
     useBreadcrumbStore.getState().visit(sale)
     expect(useBreadcrumbStore.getState().trail).toEqual([sale])
+  })
+
+  it('dropLast removes only the trail\'s own last entry', () => {
+    useBreadcrumbStore.getState().visit(sale)
+    useBreadcrumbStore.getState().visit(products)
+    useBreadcrumbStore.getState().dropLast()
+    expect(useBreadcrumbStore.getState().trail).toEqual([sale])
+  })
+
+  it('dropLast then visiting a new page replaces in place — the chevron-stepper contract', () => {
+    useBreadcrumbStore.getState().visit(sale)
+    useBreadcrumbStore.getState().visit(productA)
+    // FormListNav's goTo: pop the record just left, then visit() the next one.
+    useBreadcrumbStore.getState().dropLast()
+    useBreadcrumbStore.getState().visit(settings)
+    expect(useBreadcrumbStore.getState().trail).toEqual([sale, settings])
+  })
+
+  it('dropLast on an empty trail is a no-op', () => {
+    useBreadcrumbStore.getState().dropLast()
+    expect(useBreadcrumbStore.getState().trail).toEqual([])
+  })
+})
+
+describe('reset and withTeamsRoot', () => {
+  it('reset empties the trail', () => {
+    useBreadcrumbStore.setState({ trail: [{ label: 'A', href: '/a' }] })
+    useBreadcrumbStore.getState().reset()
+    expect(useBreadcrumbStore.getState().trail).toEqual([])
+  })
+
+  it('roots an empty trail under Teams on a Teams sub-page only', () => {
+    expect(withTeamsRoot([], '/teams/t/channels/c')).toEqual([{ label: 'Teams', href: '/teams' }])
+    expect(withTeamsRoot([], '/app/teams/t/files')).toEqual([{ label: 'Teams', href: '/teams' }])
+    expect(withTeamsRoot([], '/teams')).toEqual([])
+    expect(withTeamsRoot([], '/app/teams')).toEqual([])
+    expect(withTeamsRoot([], '/contacts/1')).toEqual([])
+    const trail = [{ label: 'A', href: '/a' }]
+    expect(withTeamsRoot(trail, '/teams/t/files')).toBe(trail)
   })
 })

@@ -1,21 +1,26 @@
 'use client'
-import { useState } from 'react'
-import Link from 'next/link'
+import { useEffect, useState } from 'react'
 import Accordion from '@mui/material/Accordion'
 import AccordionDetails from '@mui/material/AccordionDetails'
 import AccordionSummary from '@mui/material/AccordionSummary'
-import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
+import Checkbox from '@mui/material/Checkbox'
 import CircularProgress from '@mui/material/CircularProgress'
+import LinearProgress from '@mui/material/LinearProgress'
 import Container from '@mui/material/Container'
 import Divider from '@mui/material/Divider'
+import FormControlLabel from '@mui/material/FormControlLabel'
+import FormGroup from '@mui/material/FormGroup'
 import List from '@mui/material/List'
 import ListItem from '@mui/material/ListItem'
 import ListItemText from '@mui/material/ListItemText'
+import Radio from '@mui/material/Radio'
+import RadioGroup from '@mui/material/RadioGroup'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { byPrefixAndName, FontAwesomeIcon, useT } from '@eerp/core-front'
-import { seedDemoData, type SeedEntityResult } from '@/lib/dev-seed'
+import { byPrefixAndName, erpPath, FontAwesomeIcon, useNotificationStore, useT, ViewBanner, IntentLink } from '@eerp/core-front'
+import { getSeedGroups, seedDemoData, type SeedEntityResult, type SeedGroup, type SeedVolume } from '@/lib/dev-seed'
+import { revalidateSeededEntities } from '@/lib/notification-actions'
 
 // Settings → Developer: dev-only tools for testing the software. Two
 // collapsible sections (the same Accordion component Settings -> Global
@@ -27,15 +32,92 @@ import { seedDemoData, type SeedEntityResult } from '@/lib/dev-seed'
 // sends).
 export default function DeveloperSettings({ isDev }: { isDev: boolean }) {
   const t = useT()
+  const [volume, setVolume] = useState<SeedVolume>('light')
   const [seeding, setSeeding] = useState(false)
   const [results, setResults] = useState<SeedEntityResult[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Full volume: its groups (null until loaded) and the ones the user ticked —
+  // every unseeded group by default.
+  const [groups, setGroups] = useState<SeedGroup[] | null>(null)
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+
+  // The full volume runs in the background on Go: runId is its notification,
+  // followed live through the bell's store (the presence socket feeds it).
+  const [runId, setRunId] = useState<string | null>(null)
+  const run = useNotificationStore((s) => (runId ? s.items.find((i) => i.id === runId) : undefined))
+
+  async function loadGroups() {
+    const list = await getSeedGroups()
+    setGroups(list?.groups ?? [])
+    setPicked(new Set((list?.groups ?? []).filter((g) => !g.seeded).map((g) => g.key)))
+    // A seed already running (started before a reload, or by a colleague):
+    // pick its progress back up.
+    if (list?.running) {
+      setVolume('full')
+      setRunId(list.running)
+      setSeeding(true)
+    }
+  }
+  useEffect(() => {
+    if (isDev && groups === null) void loadGroups()
+  }, [isDev, groups])
+
+  // The run finished: show its results (or error) and drop the cached list
+  // pages of everything Go wrote.
+  useEffect(() => {
+    if (!run || run.status === 'running') return
+    if (run.status === 'done') {
+      let rows: { entity: string; created: number }[] = []
+      try {
+        rows = run.data ? (JSON.parse(run.data) as typeof rows) : []
+      } catch {
+        rows = []
+      }
+      // An entity Go reports twice (bookings come in two steps) is one row.
+      const merged = new Map<string, number>()
+      for (const r of rows) merged.set(r.entity, (merged.get(r.entity) ?? 0) + r.created)
+      setResults([...merged].map(([entity, created]) => ({ entity, created, failed: 0, errors: [] })))
+      void revalidateSeededEntities([...merged.keys()])
+      setGroups(null) // reload: the seeded groups are now done
+    } else {
+      setError(run.body || t('The full demo seed failed.'))
+    }
+    setSeeding(false)
+    setRunId(null)
+  }, [run, t])
+
+  // What a run would seed: the ticked groups plus everything they depend on
+  // (transitively), minus groups already seeded. A dependency stays ticked and
+  // locked while a ticked group needs it, as Go would seed it anyway.
+  const byKey = new Map((groups ?? []).map((g) => [g.key, g]))
+  const effective = new Set<string>()
+  const include = (key: string) => {
+    const g = byKey.get(key)
+    if (!g || g.seeded || effective.has(key)) return
+    effective.add(key)
+    g.deps.forEach(include)
+  }
+  picked.forEach(include)
+  const neededBy = (key: string) =>
+    (groups ?? []).filter((g) => effective.has(g.key) && g.deps.includes(key)).map((g) => t(g.label))
+  const toSeed = (groups ?? []).filter((g) => effective.has(g.key)).map((g) => g.key)
+  const toggle = (key: string) =>
+    setPicked((p) => {
+      const next = new Set(p)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
 
   async function onSeed() {
     setSeeding(true)
     setError(null)
     setResults(null)
-    const outcome = await seedDemoData()
+    const outcome = volume === 'full' ? await seedDemoData('full', toSeed) : await seedDemoData(volume)
+    if (outcome.ok && 'started' in outcome) {
+      setRunId(outcome.started) // seeding stays on until the run's notification finishes
+      return
+    }
     setSeeding(false)
     if (!outcome.ok) {
       setError(outcome.message)
@@ -70,8 +152,32 @@ export default function DeveloperSettings({ isDev }: { isDev: boolean }) {
                 )}
               </Typography>
               <Stack direction="row">
-                <Button variant="outlined" component={Link} href="/cron">
+                <Button variant="outlined" component={IntentLink} href={erpPath('/cron')}>
                   {t('Manage crons')}
+                </Button>
+              </Stack>
+            </Stack>
+          </AccordionDetails>
+        </Accordion>
+
+        <Accordion defaultExpanded disableGutters>
+          <AccordionSummary
+            expandIcon={<FontAwesomeIcon icon={byPrefixAndName.fas['chevron-down']} />}
+          >
+            <Typography variant="subtitle1">{t('Databases')}</Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <Stack spacing={2}>
+              <Typography variant="body2" color="text.secondary">
+                {t(
+                  'List, create, switch, delete, extract and restore the databases of this server. The page sits outside the ERP and asks for the master key, not your session.',
+                )}
+              </Typography>
+              <Stack direction="row">
+                {/* A plain link, not IntentLink/erpPath: the manager lives at the
+                    root (/database/management), outside the ERP and its session. */}
+                <Button variant="outlined" component="a" href="/database/management">
+                  {t('Open database management')}
                 </Button>
               </Stack>
             </Stack>
@@ -91,17 +197,91 @@ export default function DeveloperSettings({ isDev }: { isDev: boolean }) {
           <AccordionDetails>
             <Stack spacing={3}>
               <Stack spacing={1}>
-                <Typography variant="body2" color="text.secondary">
-                  {t(
-                    'Creates a batch of fake contacts, CRM opportunities, and tags through the normal entity API, for exercising the UI with realistic-looking data.',
-                  )}
-                </Typography>
+                <RadioGroup
+                  aria-label={t('Volume')}
+                  value={volume}
+                  onChange={(e) => setVolume(e.target.value as SeedVolume)}
+                >
+                  <FormControlLabel
+                    value="light"
+                    control={<Radio />}
+                    label={
+                      <Stack>
+                        <Typography variant="body2">{t('Light')}</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {t(
+                            'Creates a batch of fake contacts, CRM opportunities, and tags through the normal entity API, for exercising the UI with realistic-looking data.',
+                          )}
+                        </Typography>
+                      </Stack>
+                    }
+                  />
+                  <FormControlLabel
+                    value="full"
+                    control={<Radio />}
+                    label={
+                      <Stack>
+                        <Typography variant="body2">{t('Full')}</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {t(
+                            'About 100,000 rows each of contacts, CRM leads, products, variants, quotes, invoices, rent receipts and event bookings, with lines, several taxes and companies, plus graph views with calculated fields on every list over 10,000 rows. Pick the groups below; each is seeded once per workspace, and all of them take about half a minute.',
+                          )}
+                        </Typography>
+                      </Stack>
+                    }
+                  />
+                </RadioGroup>
+                {volume === 'full' && groups && (
+                  <FormGroup sx={{ pl: 4 }} aria-label={t('Groups to seed')}>
+                    {groups.map((g) => {
+                      const needers = g.seeded ? [] : neededBy(g.key)
+                      const locked = g.seeded || needers.length > 0
+                      return (
+                        <FormControlLabel
+                          key={g.key}
+                          control={
+                            <Checkbox
+                              size="small"
+                              checked={g.seeded || effective.has(g.key)}
+                              disabled={locked || seeding}
+                              onChange={() => toggle(g.key)}
+                            />
+                          }
+                          label={
+                            <Typography variant="body2">
+                              {t(g.label)}
+                              {g.seeded ? (
+                                <Typography component="span" variant="caption" color="text.secondary">{` — ${t('already seeded')}`}</Typography>
+                              ) : needers.length > 0 ? (
+                                <Typography component="span" variant="caption" color="text.secondary">{` — ${t('needed by')} ${needers.join(', ')}`}</Typography>
+                              ) : null}
+                            </Typography>
+                          }
+                        />
+                      )
+                    })}
+                  </FormGroup>
+                )}
                 <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
-                  <Button variant="contained" onClick={() => void onSeed()} disabled={!isDev || seeding}>
+                  <Button
+                    variant="contained"
+                    onClick={() => void onSeed()}
+                    disabled={!isDev || seeding || (volume === 'full' && toSeed.length === 0)}
+                  >
                     {seeding ? t('Seeding…') : t('Seed demo data')}
                   </Button>
                   {seeding && <CircularProgress size={20} />}
                 </Stack>
+                {runId ? (
+                  <Stack spacing={0.5} data-testid="seed-progress">
+                    <Typography variant="body2" color="text.secondary">
+                      {run?.progress_label ?? t('Starting…')}
+                    </Typography>
+                    <LinearProgress
+                      {...(run?.progress == null ? {} : { variant: 'determinate' as const, value: run.progress })}
+                    />
+                  </Stack>
+                ) : null}
                 {!isDev && (
                   <Typography variant="body2" color="text.secondary">
                     {t('Seeding demo data is only available outside production.')}
@@ -109,7 +289,7 @@ export default function DeveloperSettings({ isDev }: { isDev: boolean }) {
                 )}
               </Stack>
 
-              {error && <Alert severity="error">{error}</Alert>}
+              {error && <ViewBanner status="error">{error}</ViewBanner>}
 
               {results && (
                 <Stack spacing={1}>

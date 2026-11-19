@@ -77,3 +77,16 @@ func (r *Repository) Delete(ctx context.Context, tenantID, id uuid.UUID) error {
 	}
 	return nil
 }
+
+// SetFlag writes the anchor's flag column (table.field = has) when the table
+// has one of type bool — a no-op for an anchor without a flag column. The
+// identifiers come from the ORM registry (a registered table and its bool
+// column), never raw from the request, so they are safe to interpolate.
+func (r *Repository) SetFlag(ctx context.Context, tenantID uuid.UUID, table string, recordID uuid.UUID, field string, has bool) error {
+	if t, ok := orm.ColumnGoType(table, field); !ok || (t != "bool" && t != "*bool") || !orm.TableHasColumn(table, "tenant_id") {
+		return nil
+	}
+	_, err := r.db.Exec(ctx, fmt.Sprintf(`UPDATE %s SET %s = $1, updated_at = now() WHERE id = $2 AND tenant_id = $3`, table, field),
+		has, recordID, tenantID)
+	return err
+}

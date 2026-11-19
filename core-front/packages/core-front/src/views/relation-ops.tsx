@@ -1,6 +1,7 @@
 'use client'
 import type { EntityListOptions } from '../api/list-options'
 import { createOpsContext } from './ops-context'
+import type { Point } from './diagram/collide'
 
 // How relation widgets reach OTHER entities' data. Kept apart from EntityActions on
 // purpose: those are the view's own entity, pre-bound; these are entity-generic, for
@@ -13,6 +14,21 @@ export interface RelationRecord {
   [key: string]: unknown
 }
 
+/** A free-text box the user drew on their diagram (its position is in `positions`
+ * under its id), linked to the boxes whose ids are in `links`. */
+export interface DiagramNote {
+  id: string
+  text: string
+  links: string[]
+}
+
+/** A user's own saved WBS/PERT arrangement: box positions, folded node ids and notes. */
+export interface ViewLayout {
+  positions: Record<string, Point>
+  folded: string[]
+  notes?: DiagramNote[]
+}
+
 export interface RelationOps {
   list: (entity: string, options?: EntityListOptions) => Promise<RelationRecord[]>
   get: (entity: string, id: string) => Promise<RelationRecord>
@@ -20,6 +36,12 @@ export interface RelationOps {
   create: (entity: string, body: Record<string, unknown>) => Promise<RelationRecord>
   /** Junction-row removal (m2m unlink). */
   remove: (entity: string, id: string) => Promise<void>
+  /**
+   * Edit one related record — a one2many row double-clicked in its embedded
+   * table opens the creation wizard on it. Optional, fail-open: without it,
+   * rows stay read-only.
+   */
+  update?: (entity: string, id: string, body: Record<string, unknown>) => Promise<RelationRecord>
   /**
    * The search bar's group-by section (docs/adr/ADR-014-search-filter-bar.md):
    * every distinct value of column (+ count) among rows matching options'
@@ -32,6 +54,16 @@ export interface RelationOps {
     column: string,
     options?: EntityListOptions,
   ) => Promise<{ value: string; total: number }[]>
+  /**
+   * One page of records plus the total over EVERY row matching options'
+   * filters — what list/kanban/calendar counts and server-side paging read.
+   * Optional, same fail-open posture as distinctValues: without it, views
+   * fall back to the records the page was seeded with.
+   */
+  listPage?: (entity: string, options?: EntityListOptions) => Promise<{ records: RelationRecord[]; total: number; totalEstimated?: true }>
+  getViewLayout?: (entity: string, mode: 'wbs' | 'pert') => Promise<ViewLayout>
+  /** Optional, fail-open: without both layout ops, positions just aren't saved. */
+  saveViewLayout?: (entity: string, mode: 'wbs' | 'pert', layout: ViewLayout) => Promise<void>
 }
 
 const relationOpsContext = createOpsContext<RelationOps>()

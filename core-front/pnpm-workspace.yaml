@@ -6,6 +6,7 @@ packages:
   # the shared @eerp/core-front engine for dev/typecheck.
   - '../core/modules/*'
 allowBuilds:
+  core-js: false
   core-js-pure: false
   esbuild: true
   msw: false
@@ -14,5 +15,6 @@ onlyBuiltDependencies:
   - esbuild
   - sharp
 ignoredBuiltDependencies:
+  - core-js
   - core-js-pure
   - msw

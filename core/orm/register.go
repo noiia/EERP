@@ -11,13 +11,6 @@ func Register[T any](opts ...registry.Option) error {
 	return registry.Register[T](opts...)
 }
 
-// AutoScan is a no-op placeholder.
-// Go compiled binaries cannot discover struct types in a package at runtime.
-// Use Register[T] for explicit registration.
-func AutoScan(pkgPath string) error {
-	return registry.AutoScan(pkgPath)
-}
-
 // SchemaField is re-exported so callers only import core/orm.
 type SchemaField = registry.SchemaField
 
@@ -30,7 +23,14 @@ func RegisterSchema(tableName string, fields []SchemaField) error {
 
 // ExtendSchema appends extra columns to an already-registered table's ORM entry.
 // Call this from an inheriting module's Register() to add fields to another
-// module's entity without modifying that module's code.
+// module's entity without modifying that module's code. Composable (several
+// modules may extend one table) and remembered across a later Register of the
+// table; columns are always nullable, typed by SchemaField.Type (nil = TEXT):
+//
+//	orm.ExtendSchema("crm", []orm.SchemaField{
+//	    {Column: "loyalty_points", Type: reflect.TypeFor[int]()},
+//	    {Column: "loyalty_note"}, // TEXT
+//	})
 func ExtendSchema(tableName string, extra []SchemaField) error {
 	return registry.ExtendSchema(tableName, extra)
 }
@@ -66,4 +66,61 @@ func WithExcluded() Option {
 // Call before Register if you want api.yaml overrides to take effect.
 func LoadAPIConfig(path string) error {
 	return registry.LoadAPIConfig(path)
+}
+
+// RowScopeFunc limits a request to the rows its caller may see (ADR-038):
+// ok=false = no restriction, an error fails closed.
+type RowScopeFunc = registry.RowScopeFunc
+
+// WithRowScope restricts every generic CRUD read and write on the table to the
+// rows fn allows for the request's caller (ADR-038).
+func WithRowScope(fn RowScopeFunc) Option { return registry.WithRowScope(fn) }
+
+// AllPublicFields, as a WithPublicFields name, declares every eligible column
+// public-capable (see registry.AllPublicFields for what is never included).
+const AllPublicFields = registry.AllPublicFields
+
+// WithPublicFields declares the table's public-capable fields (ADR-024).
+func WithPublicFields(fields ...string) Option { return registry.WithPublicFields(fields...) }
+
+// PublicFields returns table's declared public-capable fields; ok is false
+// when the table is unknown, excluded, or declares none.
+func PublicFields(table string) ([]string, bool) {
+	m, ok := registry.Get(table)
+	if !ok || m.Excluded || len(m.PublicFields) == 0 {
+		return nil, false
+	}
+	return m.PublicFields, true
+}
+
+// PublicTables maps every table declaring public fields to those fields.
+func PublicTables() map[string][]string {
+	out := map[string][]string{}
+	for _, m := range registry.All() {
+		if !m.Excluded && len(m.PublicFields) > 0 {
+			out[m.TableName] = m.PublicFields
+		}
+	}
+	return out
+}
+
+// ColumnGoType returns the Go type of table's column col (e.g. "bool",
+// "*bool", "string"); ok is false for an unknown table or column.
+func ColumnGoType(table, col string) (string, bool) {
+	m, ok := registry.Get(table)
+	if !ok {
+		return "", false
+	}
+	for _, f := range m.Fields {
+		if f.Column == col {
+			return f.GoType, true
+		}
+	}
+	return "", false
+}
+
+// TableHasColumn reports whether table is registered and has column col.
+func TableHasColumn(table, col string) bool {
+	m, ok := registry.Get(table)
+	return ok && m.HasField(col)
 }

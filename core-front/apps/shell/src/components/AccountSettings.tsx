@@ -1,6 +1,5 @@
 'use client'
 import { useState } from 'react'
-import Alert from '@mui/material/Alert'
 import Container from '@mui/material/Container'
 import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
@@ -8,7 +7,7 @@ import MenuItem from '@mui/material/MenuItem'
 import Select from '@mui/material/Select'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { localeDisplayName, translationRegistry, useI18nStore, useT } from '@eerp/core-front'
+import { localeDisplayName, translationRegistry, useI18nStore, useT, ViewBanner } from '@eerp/core-front'
 // Catalogs register as an import side effect; the selector needs the pool populated.
 import '@/generated/generated-translations'
 import { resolveEffectiveLocale, SOURCE_PREFERENCE, type LocalePreferences } from '@/lib/locale'
@@ -109,11 +108,11 @@ export default function AccountSettings({
         </Typography>
 
         {preferences === null && (
-          <Alert severity="warning">
+          <ViewBanner status="warning">
             {t('Your preferences could not be loaded — try reloading the page.')}
-          </Alert>
+          </ViewBanner>
         )}
-        {error && <Alert severity="error">{error}</Alert>}
+        {error && <ViewBanner status="error">{error}</ViewBanner>}
       </Stack>
     </Container>
   )

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"core/orm"
 
@@ -15,6 +16,10 @@ import (
 type UserRepository struct {
 	users *orm.Repository[Users]
 	db    *orm.DB
+	// OnWebsiteSignup runs inside the website-signup transaction, after the
+	// user row exists (internal/app wires the contact module's
+	// CreateWebsiteContact): an error rolls the whole signup back. nil = none.
+	OnWebsiteSignup func(ctx context.Context, tx *orm.Tx, user Users) error
 }
 
 // NewUserRepository constructs a UserRepository bound to db.
@@ -53,15 +58,16 @@ func (r *UserRepository) FindByID(ctx context.Context, id uuid.UUID) (Users, err
 // SetPreferredLocale updates the user's display-language preference.
 // nil clears the preference (the user inherits the tenant default).
 func (r *UserRepository) SetPreferredLocale(ctx context.Context, userID uuid.UUID, locale *string) error {
-	tag, err := r.db.Exec(ctx, `
-		UPDATE users
-		SET preferred_locale = $1, updated_at = now()
-		WHERE id = $2 AND deleted_at IS NULL
-	`, locale, userID)
+	n, err := r.users.UpdateQuery().
+		Set("preferred_locale", locale).
+		Set("updated_at", time.Now()).
+		Where(orm.Cond("id = $1", userID)).
+		Where(orm.Cond("deleted_at IS NULL")).
+		Exec(ctx, r.db)
 	if err != nil {
 		return fmt.Errorf("user: set preferred locale: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
+	if n == 0 {
 		return fmt.Errorf("user: set preferred locale: %w", orm.ErrNotFound)
 	}
 	return nil
@@ -71,15 +77,16 @@ func (r *UserRepository) SetPreferredLocale(ctx context.Context, userID uuid.UUI
 // it (the caller falls back through company.Repository.ResolveActive's
 // bootstrap on next touch) — same shape as SetPreferredLocale.
 func (r *UserRepository) SetActiveCompany(ctx context.Context, userID uuid.UUID, companyID *uuid.UUID) error {
-	tag, err := r.db.Exec(ctx, `
-		UPDATE users
-		SET active_company_id = $1, updated_at = now()
-		WHERE id = $2 AND deleted_at IS NULL
-	`, companyID, userID)
+	n, err := r.users.UpdateQuery().
+		Set("active_company_id", companyID).
+		Set("updated_at", time.Now()).
+		Where(orm.Cond("id = $1", userID)).
+		Where(orm.Cond("deleted_at IS NULL")).
+		Exec(ctx, r.db)
 	if err != nil {
 		return fmt.Errorf("user: set active company: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
+	if n == 0 {
 		return fmt.Errorf("user: set active company: %w", orm.ErrNotFound)
 	}
 	return nil

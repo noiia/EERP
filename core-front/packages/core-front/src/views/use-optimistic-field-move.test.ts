@@ -7,6 +7,7 @@ import { useOptimisticFieldMove } from './use-optimistic-field-move'
 interface Item {
   id: string
   status: string | null
+  start?: string | null
 }
 
 function actionsWith(
@@ -34,6 +35,30 @@ describe('useOptimisticFieldMove', () => {
     expect(result.current.records[0]?.status).toBe('won')
     expect(update).toHaveBeenCalledWith('1', { status: 'won' })
     expect(result.current.error).toBeNull()
+  })
+
+  it("a failed write reverts only its own record's fields, keeping another record's concurrent success", async () => {
+    const initial: Item[] = [{ id: '1', status: 'open' }, { id: '2', status: 'open' }]
+    let fail!: (e: unknown) => void
+    const update = vi.fn((id: string, body: Partial<Item>) =>
+      id === '1'
+        ? new Promise<Item>((_, reject) => { fail = reject })
+        : Promise.resolve({ id, ...body } as Item),
+    )
+    const { result } = renderHook(() => useOptimisticFieldMove(initial, actionsWith(update), 'status'))
+    let first!: Promise<void>
+    act(() => {
+      first = result.current.moveField('1', 'won')
+    })
+    await act(async () => {
+      await result.current.moveField('2', 'lost')
+    })
+    await act(async () => {
+      fail(new ApiError({ code: 'BAD', message: 'nope', status: 400 }))
+      await first
+    })
+    expect(result.current.records).toEqual([{ id: '1', status: 'open' }, { id: '2', status: 'lost' }])
+    expect(result.current.error?.message).toBe('nope')
   })
 
   it('is a no-op when the value is unchanged', async () => {
@@ -80,5 +105,30 @@ describe('useOptimisticFieldMove', () => {
     )
     rerender({ initial: [{ id: '1', status: 'won' }] })
     await waitFor(() => expect(result.current.records[0]?.status).toBe('won'))
+  })
+
+  it('moveFields patches several fields in one write, reverting them all on refusal', async () => {
+    const initial: Item[] = [{ id: '1', status: 'open', start: '2026-01-01' }]
+    const update = vi.fn(async () => {
+      throw new ApiError({ code: 'FORBIDDEN', message: 'no', status: 403 })
+    })
+    const { result } = renderHook(() => useOptimisticFieldMove(initial, actionsWith(update), 'status'))
+
+    await act(async () => {
+      await result.current.moveFields('1', { status: 'won', start: '2026-01-03' })
+    })
+    expect(update).toHaveBeenCalledWith('1', { status: 'won', start: '2026-01-03' })
+    expect(result.current.records[0]).toEqual(initial[0])
+    expect(result.current.error?.code).toBe('FORBIDDEN')
+  })
+
+  it('moveFields is a no-op when every field already holds its value', async () => {
+    const initial: Item[] = [{ id: '1', status: 'open', start: null }]
+    const update = vi.fn()
+    const { result } = renderHook(() => useOptimisticFieldMove(initial, actionsWith(update), 'status'))
+    await act(async () => {
+      await result.current.moveFields('1', { status: 'open', start: null })
+    })
+    expect(update).not.toHaveBeenCalled()
   })
 })

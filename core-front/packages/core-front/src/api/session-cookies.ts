@@ -14,8 +14,8 @@ export const REFRESH_COOKIE = 'eerp_refresh'
  */
 export const GO_REFRESH_COOKIE = 'refresh_token'
 
-/** access 1h, refresh 7d (refresh is single-use / rotated). */
-export const ACCESS_TTL_SECONDS = 3600
+/** access 6h (fallback when Go omits expires_in; matches access_ttl_seconds), refresh 7d (single-use / rotated). */
+export const ACCESS_TTL_SECONDS = 21600
 export const REFRESH_TTL_SECONDS = 604800
 
 export interface SessionCookieOptions {

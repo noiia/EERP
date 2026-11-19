@@ -3,6 +3,7 @@ package registry_test
 import (
 	"os"
 	"reflect"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -81,6 +82,10 @@ func TestRegister_WithTableName_OverridesDefault(t *testing.T) {
 	if meta.TableName != "products" {
 		t.Errorf("TableName = %q, want %q", meta.TableName, "products")
 	}
+	// The query builders read StructMeta.Table: it must follow the override.
+	if meta.StructMeta.Table != "products" {
+		t.Errorf("StructMeta.Table = %q, want %q", meta.StructMeta.Table, "products")
+	}
 }
 
 func TestRegister_WithReadOnlyFields(t *testing.T) {
@@ -151,7 +156,7 @@ func TestRegister_TypeRef_IsCorrectType(t *testing.T) {
 		t.Fatalf("Register: %v", err)
 	}
 	meta, _ := registry.Get("product")
-	want := reflect.TypeOf(product{})
+	want := reflect.TypeFor[product]()
 	if meta.TypeRef != want {
 		t.Errorf("TypeRef = %v, want %v", meta.TypeRef, want)
 	}
@@ -341,16 +346,6 @@ tables:
 	}
 }
 
-func TestAutoScan_IsNoOp(t *testing.T) {
-	resetRegistry()
-	if err := registry.AutoScan("some/package/path"); err != nil {
-		t.Errorf("AutoScan should return nil, got %v", err)
-	}
-	if len(registry.All()) != 0 {
-		t.Error("AutoScan should not register anything")
-	}
-}
-
 func TestRegister_NullableFields(t *testing.T) {
 	resetRegistry()
 	if err := registry.Register[product](); err != nil {
@@ -397,3 +392,129 @@ var (
 	_ = uuid.New
 	_ sync.Once
 )
+
+func TestWithPublicFields_PopulatesMeta(t *testing.T) {
+	resetRegistry()
+	if err := registry.Register[product](registry.WithPublicFields("name", "price", "picture")); err != nil {
+		t.Fatal(err)
+	}
+	m, _ := registry.Get("product")
+	want := []string{"name", "price", "picture"} // picture: a pictures-service anchor, not a column — allowed on purpose
+	if !slices.Equal(m.PublicFields, want) {
+		t.Errorf("PublicFields = %v, want %v", m.PublicFields, want)
+	}
+}
+
+func TestWithPublicFields_AllExpandsColumns(t *testing.T) {
+	resetRegistry()
+	if err := registry.Register[product](
+		registry.WithPublicFields(registry.AllPublicFields, "picture", "name"),
+		registry.WithFieldGroups(map[string][]string{"internal_cost": {"finance"}}),
+	); err != nil {
+		t.Fatal(err)
+	}
+	m, _ := registry.Get("product")
+	// Never the PK, tenant_id, deleted_at or a group-gated column; extra names kept, no duplicates.
+	want := []string{"created_at", "updated_at", "name", "price", "picture"}
+	if !slices.Equal(m.PublicFields, want) {
+		t.Errorf("PublicFields = %v, want %v", m.PublicFields, want)
+	}
+}
+
+// productExtended stands for an embedding extender re-registering the table.
+type productExtended struct {
+	product
+	Sku *string `db:"sku"`
+}
+
+func fieldByColumn(m registry.TableMeta, col string) (registry.FieldMeta, bool) {
+	for _, f := range m.Fields {
+		if f.Column == col {
+			return f, true
+		}
+	}
+	return registry.FieldMeta{}, false
+}
+
+func TestExtendSchema(t *testing.T) {
+	t.Run("unregistered table is an error", func(t *testing.T) {
+		resetRegistry()
+		if err := registry.ExtendSchema("nope", []registry.SchemaField{{Column: "x"}}); err == nil {
+			t.Fatal("want error")
+		}
+	})
+	t.Run("pk, softdelete or unnamed columns are refused", func(t *testing.T) {
+		for _, f := range []registry.SchemaField{{Column: ""}, {Column: "x", IsPK: true}, {Column: "x", SoftDel: true}} {
+			resetRegistry()
+			_ = registry.Register[product]()
+			if err := registry.ExtendSchema("product", []registry.SchemaField{f}); err == nil {
+				t.Errorf("%+v: want error", f)
+			}
+		}
+	})
+	t.Run("typed, always nullable, existing columns skipped", func(t *testing.T) {
+		resetRegistry()
+		_ = registry.Register[product]()
+		err := registry.ExtendSchema("product", []registry.SchemaField{
+			{Column: "points", Type: reflect.TypeFor[int]()},
+			{Column: "note"},
+			{Column: "name", Type: reflect.TypeFor[int]()}, // already a column: untouched
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		m, _ := registry.Get("product")
+		points, ok := fieldByColumn(m, "points")
+		if !ok || points.GoType != "*int" || !points.Nullable {
+			t.Errorf("points = %+v", points)
+		}
+		note, ok := fieldByColumn(m, "note")
+		if !ok || note.GoType != "*string" || !note.Nullable {
+			t.Errorf("note = %+v", note)
+		}
+		if name, _ := fieldByColumn(m, "name"); name.GoType != "string" {
+			t.Errorf("name was overwritten: %+v", name)
+		}
+		if i := m.StructMeta.ColumnIndex("points"); i < 0 || m.StructMeta.Fields[i].Type != reflect.TypeFor[*int]() {
+			t.Errorf("points struct meta type missing")
+		}
+	})
+	t.Run("two extenders compose and survive a later Register", func(t *testing.T) {
+		resetRegistry()
+		_ = registry.Register[product]()
+		_ = registry.ExtendSchema("product", []registry.SchemaField{{Column: "a"}})
+		_ = registry.ExtendSchema("product", []registry.SchemaField{{Column: "b"}})
+		// An embedding extender replaces the entry — the extensions must stay.
+		if err := registry.Register[productExtended](registry.WithTableName("product")); err != nil {
+			t.Fatal(err)
+		}
+		m, _ := registry.Get("product")
+		for _, col := range []string{"a", "b", "sku", "name"} {
+			if !m.HasField(col) {
+				t.Errorf("missing %q after re-register", col)
+			}
+		}
+	})
+}
+
+type seatSession struct {
+	model.BaseModel
+	Capacity       int `db:"capacity"`
+	RemainingSeats int `db:"remaining_seats,generated"`
+}
+
+func TestRegister_GeneratedIsReadOnly(t *testing.T) {
+	resetRegistry()
+	if err := registry.Register[seatSession](); err != nil {
+		t.Fatal(err)
+	}
+	meta, _ := registry.Get("seat_session")
+	for _, f := range meta.Fields {
+		if f.Column == "remaining_seats" && !f.ReadOnly {
+			t.Error("generated field must be read-only")
+		}
+		if f.Column == "capacity" && f.ReadOnly {
+			t.Error("capacity must stay writable")
+		}
+	}
+}

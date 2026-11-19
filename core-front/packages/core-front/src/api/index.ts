@@ -4,6 +4,7 @@
 // barrel so importing them into a Client Component is a build error.
 export * from './attachments-client'
 export * from './chatter-visibility'
+export * from './status-bar-config'
 export * from './errors'
 export * from './graph'
 export * from './list-options'

@@ -2,7 +2,7 @@
 import { ApiError, apiRequest } from '@eerp/core-front/server'
 import { EMPTY_VIEW_FIELDS, type ViewFieldsConfig } from '@eerp/core-front'
 
-// Server Actions for the Kanban/Calendar field config an admin sets per entity
+// Server Actions for the Kanban/Calendar/Gantt field config an admin sets per entity
 // from Settings -> Views (docs/roadmaps/list-view-modes.md, ADR-006). Same
 // shape as preferences.ts: GET/PUT /settings/views/:entity/fields is a
 // dedicated (non-CRUD) backend endpoint reached through the BFF request
@@ -21,6 +21,8 @@ interface RawViewFields {
   kanban_status_field: string | null
   calendar_date_field: string | null
   enable_graphs: boolean | null
+  gantt_start_field?: string | null
+  gantt_end_field?: string | null
 }
 
 /**
@@ -35,6 +37,8 @@ export async function getEntityViewFields(entity: string): Promise<ViewFieldsCon
       kanbanStatusField: raw.kanban_status_field,
       calendarDateField: raw.calendar_date_field,
       enableGraphs: raw.enable_graphs,
+      ganttStartField: raw.gantt_start_field ?? null,
+      ganttEndField: raw.gantt_end_field ?? null,
     }
   } catch {
     return EMPTY_VIEW_FIELDS
@@ -55,6 +59,8 @@ export async function setEntityViewFields(
       kanban_status_field: config.kanbanStatusField,
       calendar_date_field: config.calendarDateField,
       enable_graphs: config.enableGraphs ?? null,
+      gantt_start_field: config.ganttStartField ?? null,
+      gantt_end_field: config.ganttEndField ?? null,
     })
     return { ok: true }
   } catch (e) {

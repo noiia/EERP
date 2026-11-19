@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"sync"
@@ -19,9 +20,7 @@ func writeFixtureModule(t *testing.T, root, name string, extra map[string]any) s
 		t.Fatalf("mkdir %s: %v", dir, err)
 	}
 	record := map[string]any{"name": name, "active": true}
-	for k, v := range extra {
-		record[k] = v
-	}
+	maps.Copy(record, extra)
 	data, err := json.MarshalIndent(record, "", "    ")
 	if err != nil {
 		t.Fatalf("marshal fixture: %v", err)
@@ -190,8 +189,7 @@ func TestManagerPatch(t *testing.T) {
 		mgr := NewManager([]string{root})
 
 		_, err = mgr.Patch(context.Background(), "crm", map[string]any{"app_mode": true})
-		var verr *ValidationError
-		if !errors.As(err, &verr) {
+		if _, ok := errors.AsType[*ValidationError](err); !ok {
 			t.Fatalf("err = %v (%T), want *ValidationError", err, err)
 		}
 
@@ -210,8 +208,7 @@ func TestManagerPatch(t *testing.T) {
 		mgr := NewManager([]string{root})
 
 		_, err := mgr.Patch(context.Background(), "crm", map[string]any{"active": "false"})
-		var verr *ValidationError
-		if !errors.As(err, &verr) {
+		if _, ok := errors.AsType[*ValidationError](err); !ok {
 			t.Fatalf("err = %v (%T), want *ValidationError", err, err)
 		}
 	})
@@ -226,8 +223,7 @@ func TestManagerPatch(t *testing.T) {
 		mgr := NewManager([]string{root})
 
 		_, err = mgr.Patch(context.Background(), appstoreModuleName, map[string]any{"active": false})
-		var verr *ValidationError
-		if !errors.As(err, &verr) {
+		if _, ok := errors.AsType[*ValidationError](err); !ok {
 			t.Fatalf("err = %v (%T), want *ValidationError", err, err)
 		}
 
@@ -271,7 +267,7 @@ func TestManagerPatch(t *testing.T) {
 		const n = 20
 		var wg sync.WaitGroup
 		wg.Add(n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			go func(i int) {
 				defer wg.Done()
 				_, _ = mgr.Patch(context.Background(), "crm", map[string]any{"active": i%2 == 0})

@@ -10,6 +10,8 @@
 // two competing sources of truth. Client-safe (no 'server-only' import) so
 // both the engine's renderers and the shell's Settings -> Views page can
 // import it.
+import type { EntityListOptions } from './list-options'
+
 
 /** Server state: app_settings key `views.<entity>.fields`, mirrored camelCase
  * client-side. A null field means "no workspace override" — NOT "disabled";
@@ -21,12 +23,17 @@ export interface ViewFieldsConfig {
   /** null = no override (inherit the module's default, or disabled if it
    * declared none); true/false forces Graph mode on/off either way. */
   enableGraphs?: boolean | null
+  /** Gantt bar start/end date fields; Gantt mode needs both to resolve. */
+  ganttStartField?: string | null
+  ganttEndField?: string | null
 }
 
 export const EMPTY_VIEW_FIELDS: ViewFieldsConfig = {
   kanbanStatusField: null,
   calendarDateField: null,
   enableGraphs: null,
+  ganttStartField: null,
+  ganttEndField: null,
 }
 
 /**
@@ -41,6 +48,8 @@ export interface ViewModeDefaults {
   kanbanStatusField?: string
   calendarDateField?: string
   enableGraphs?: boolean
+  ganttStartField?: string
+  ganttEndField?: string
   /**
    * Names a `type: 'boolean'` field: when a record's value is true, the
    * Calendar renderer highlights its card red (e.g. cron_history's `failed`
@@ -50,6 +59,195 @@ export interface ViewModeDefaults {
    * fixed semantic ("true means highlight"), not a workspace preference.
    */
   calendarColorField?: string
+  /**
+   * Builds the Kanban columns from the RECORDS of a many2one status field's
+   * related entity (Odoo-style editable stages) instead of selection options.
+   * Only used when the effective status field is a many2one relation.
+   * Module-declared only, like calendarColorField.
+   */
+  kanbanColumns?: KanbanColumnsConfig
+  /** Names a `type: 'boolean'` field: a Kanban card whose value is true shows
+   * an error-colored chip labeled with that field's label. Module-declared only. */
+  kanbanBadgeField?: string
+  /** Gantt dependency arrows, read from the rows of another entity.
+   * Module-declared only, like calendarColorField. */
+  ganttDependencies?: GanttDependenciesConfig
+  /** WBS mode: the self-referencing many2one that parents a record. Module-declared only. */
+  wbsParentField?: string
+  /** WBS mode: a many2one whose value groups/colors the boxes. Module-declared only. */
+  wbsGroupField?: string
+  /** WBS/PERT: a text field holding the record's dotted order number ("3.1.2"). WBS draws
+   * siblings in that order and a box dropped among siblings writes its new number; PERT's
+   * auto-layout runs from the 1.x records to the highest. Module-declared only. */
+  wbsOrderField?: string
+  /** WBS mode: each task's deliverable (the `entity` record its `field` names) drawn under
+   * it; a level-1 task's on a footer row below the diagram, an empty placeholder (opening
+   * the creation form, linked back on save) when it has none. Module-declared only. */
+  wbsDeliverables?: WbsDeliverablesConfig
+  /** PERT mode: the dependency rows (same shape as ganttDependencies). Module-declared only. */
+  pertDependencies?: GanttDependenciesConfig
+  /** PERT mode: the planned-hours number field read as a task's duration; dates reuse
+   * ganttStartField/ganttEndField. Module-declared only. */
+  pertHoursField?: string
+  /** OBS mode: the entity's own org-chart boxes, available while the list is pinned to one project. Module-declared only. */
+  obs?: ObsConfig
+  /** Risk mode: the entity's risk analysis, available while the list is pinned to one project. Module-declared only. */
+  risk?: RiskConfig
+  /** Names a many2many field (widget `colortags`) of the descriptor — else of
+   * the entity's form descriptor: its related records' colors paint the Gantt
+   * bars and a ribbon on Kanban/Calendar cards. Module-declared only. */
+  colorTagsField?: string
+  /** Gantt mode: the pinned scope's schedule, read through
+   * `ops.get(scopeEntity, `${id}/${path}`)`. Module-declared only. */
+  ganttSchedule?: GanttScheduleConfig
+  /** Gantt mode: the baseline rows drawn behind the live tasks of the pinned scope. Module-declared only. */
+  ganttBaseline?: GanttBaselineConfig
+  /** Gantt mode: the pinned scope's milestones, drawn as diamonds on their date. Module-declared only. */
+  ganttMilestones?: GanttMilestonesConfig
+  /** Kanban mode: one lane per related record of a many2many junction, plus an
+   * Unassigned lane (ADR-041). Module-declared only. */
+  kanbanSwimlanes?: KanbanSwimlanesConfig
+  /** Insights mode: the entity's project analytics, available while the list is pinned to one project. Module-declared only. */
+  insights?: InsightsConfig
+  /** Matrix mode: the entity's matrices (Eisenhower, RACI, DSM), available while the list is pinned to one project. Module-declared only. */
+  matrix?: MatrixConfig
+  /** PBS mode: the entity's project breakdown structure deliverables, available while the list is pinned to one project. Module-declared only. */
+  pbs?: PbsConfig
+}
+
+/** The pinned scope's Gantt schedule endpoint: `ops.get(scopeEntity, `${id}/${path}`)`. */
+export interface GanttScheduleConfig {
+  /** The scope column on the task entity, e.g. 'project_id'. */
+  scopeField: string
+  /** The scope entity read through, e.g. 'project'. */
+  scopeEntity: string
+  /** The sub-endpoint path, e.g. 'schedule'. */
+  path: string
+}
+
+/** The baseline snapshot rows a Gantt draws behind the live tasks. */
+export interface GanttBaselineConfig {
+  /** The baseline entity (its generic list route prefix). */
+  entity: string
+  /** The baseline's per-task rows (the bar endpoints live there). */
+  taskEntity: string
+  /** The baseline's scope column, e.g. 'project_id'. */
+  scopeField: string
+  /** The baseline task row's FK to the live task, e.g. 'task_id'. */
+  linkField: string
+  /** The baseline task row's bar start column. */
+  startField: string
+  /** The baseline task row's bar end column. */
+  endField: string
+}
+
+/** The milestones a Gantt draws as diamonds on a row of their own, for the pinned scope. */
+export interface GanttMilestonesConfig {
+  /** The milestone entity (its generic list route prefix). */
+  entity: string
+  /** The milestone's scope column, e.g. 'project_id'. */
+  scopeField: string
+  /** The milestone's date column (where the diamond sits). */
+  dateField: string
+  /** The column naming the milestone. */
+  labelField: string
+  /** A boolean column: true draws the diamond in the success color. */
+  reachedField?: string
+  /** The milestone form (':id'), opened on click. */
+  formPath?: string
+}
+
+/** One Kanban swimlane per record of a many2many junction (plus Unassigned). */
+export interface KanbanSwimlanesConfig {
+  /** The lane dimension's human label (a msgid), e.g. 'Assignee'. */
+  label: string
+  /** The junction entity holding one row per link. */
+  via: string
+  /** The junction's FK column to the board's records, e.g. 'task_id'. */
+  ownField: string
+  /** The junction's FK column to the lane records, e.g. 'user_id'. */
+  relatedField: string
+  /** The lane entity (one lane per live record), e.g. 'users'. */
+  entity: string
+  /** The lane record's display field, e.g. 'email'. */
+  labelField: string
+}
+
+/** Insights mode over the pinned project (ADR-041). */
+export interface InsightsConfig {
+  /** The scope column on the task entity, e.g. 'project_id'. */
+  projectField: string
+  /** The scope entity read through, e.g. 'project'. */
+  projectEntity: string
+  /** The project's metrics sub-endpoint, e.g. 'metrics'. */
+  metricsPath: string
+  /** The pinned project's milestone entity. */
+  milestoneEntity: string
+}
+
+/** Matrix mode over the pinned project (ADR-041). */
+export interface MatrixConfig {
+  /** The scope column on the task entity, e.g. 'project_id'. */
+  projectField: string
+  /** The RACI junction entity (one row per task × user role). */
+  raciEntity: string
+  /** The user's display field on the RACI rows, e.g. 'email'. */
+  userLabelField: string
+  /** The DSM's dependency rows (the pert dependencies' shape). */
+  dependencies: GanttDependenciesConfig
+  /** The Eisenhower priority boolean field. */
+  priorityField: string
+  /** The Eisenhower deadline date field (urgent = within urgentDays). */
+  deadlineField: string
+  /** The task's closed boolean field (closed tasks are excluded). */
+  closedField: string
+  /** The Eisenhower urgency horizon in days. */
+  urgentDays: number
+  /** The task entity the matrices read. */
+  taskEntity: string
+  /** The task form route the matrices open (e.g. '/project/tasks/:id'). */
+  taskFormPath: string
+}
+
+/** Rows of `entity` link record `fromField` (the blocker: the arrow leaves
+ * its bar's end) to record `toField` (the dependent: the arrow reaches its
+ * bar's start). */
+export interface GanttDependenciesConfig {
+  entity: string
+  fromField: string
+  toField: string
+}
+
+/** The WBS deliverables footer (ADR-039 § PBS): under each level-2 column, one box lists
+ * the records of `entity` that the column's tasks produce through `field` (a many2one on
+ * the task entity). Module-declared only. */
+export interface WbsDeliverablesConfig {
+  /** The many2one on the task entity pointing at a deliverable, e.g. 'milestone_id'. */
+  field: string
+  /** The deliverable's form, ':id'-templated (':id' → 'new' for the creation form). */
+  formPath: string
+  /** The deliverable entity (its generic list route prefix). */
+  entity: string
+  /** The deliverable's display field, e.g. 'name'. */
+  labelField: string
+  /** The deliverable's done-count column, e.g. 'done_count'; no count shown without both. */
+  doneField?: string
+  /** The deliverable's total-count column, e.g. 'task_count'. */
+  totalField?: string
+}
+
+/** How a many2one status field's related records become Kanban columns. */
+export interface KanbanColumnsConfig {
+  /** Column order, e.g. 'sequence'. */
+  orderField: string
+  /** Column title, e.g. 'name'. */
+  labelField: string
+  /** Truthy ⇒ the column renders collapsed, e.g. 'closed'. */
+  foldField?: string
+  /** Same column name on the card entity AND the column entity, e.g. 'project_id'. */
+  scopeField?: string
+  /** Name registered with registerKanbanColumnsGuard: may the caller edit this scope's columns? */
+  canEdit?: string
 }
 
 /** The fully-resolved (module default, then admin override) view-mode config
@@ -59,6 +257,27 @@ export interface EffectiveViewFields {
   calendarDateField: string | null
   enableGraphs: boolean
   calendarColorField: string | null
+  kanbanColumns: KanbanColumnsConfig | null
+  kanbanBadgeField: string | null
+  ganttStartField: string | null
+  ganttEndField: string | null
+  ganttDependencies: GanttDependenciesConfig | null
+  wbsParentField: string | null
+  wbsGroupField: string | null
+  wbsOrderField: string | null
+  wbsDeliverables: WbsDeliverablesConfig | null
+  pertDependencies: GanttDependenciesConfig | null
+  pertHoursField: string | null
+  obs: ObsConfig | null
+  risk: RiskConfig | null
+  colorTagsField: string | null
+  ganttSchedule: GanttScheduleConfig | null
+  ganttBaseline: GanttBaselineConfig | null
+  ganttMilestones: GanttMilestonesConfig | null
+  kanbanSwimlanes: KanbanSwimlanesConfig | null
+  insights: InsightsConfig | null
+  matrix: MatrixConfig | null
+  pbs: PbsConfig | null
 }
 
 /**
@@ -75,13 +294,77 @@ export function effectiveViewFields(
     calendarDateField: config.calendarDateField ?? defaults?.calendarDateField ?? null,
     enableGraphs: config.enableGraphs ?? defaults?.enableGraphs ?? false,
     calendarColorField: defaults?.calendarColorField ?? null,
+    kanbanColumns: defaults?.kanbanColumns ?? null,
+    kanbanBadgeField: defaults?.kanbanBadgeField ?? null,
+    ganttStartField: config.ganttStartField ?? defaults?.ganttStartField ?? null,
+    ganttEndField: config.ganttEndField ?? defaults?.ganttEndField ?? null,
+    ganttDependencies: defaults?.ganttDependencies ?? null,
+    wbsParentField: defaults?.wbsParentField ?? null,
+    wbsGroupField: defaults?.wbsGroupField ?? null,
+    wbsOrderField: defaults?.wbsOrderField ?? null,
+    wbsDeliverables: defaults?.wbsDeliverables ?? null,
+    pertDependencies: defaults?.pertDependencies ?? null,
+    pertHoursField: defaults?.pertHoursField ?? null,
+    obs: defaults?.obs ?? null,
+    risk: defaults?.risk ?? null,
+    colorTagsField: defaults?.colorTagsField ?? null,
+    // ADR-041: module-declared only, like obs/risk — no runtime admin override.
+    ganttSchedule: defaults?.ganttSchedule ?? null,
+    ganttBaseline: defaults?.ganttBaseline ?? null,
+    ganttMilestones: defaults?.ganttMilestones ?? null,
+    kanbanSwimlanes: defaults?.kanbanSwimlanes ?? null,
+    insights: defaults?.insights ?? null,
+    matrix: defaults?.matrix ?? null,
+    pbs: defaults?.pbs ?? null,
   }
 }
 
-/** The list view's display-mode switcher (top-right of the list). */
-export type DisplayMode = 'list' | 'kanban' | 'calendar' | 'graph'
+/** Module-declared only. */
+export interface RiskConfig {
+  entity: string
+  linkEntity: string
+  categoryEntity: string
+  projectField: string
+  formPath: string
+}
 
-export const DISPLAY_MODES: readonly DisplayMode[] = ['list', 'kanban', 'calendar', 'graph']
+/** Module-declared only. */
+export interface ObsConfig {
+  entity: string
+  projectField: string
+  projectEntity: string
+  companyField: string
+  canEdit?: string
+}
+
+/** PBS mode over the pinned project (ADR-039): the deliverables a project's
+ * tasks produce, drawn as a shared chart of colored boxes (one per project).
+ * Module-declared only. */
+export interface PbsConfig {
+  /** The deliverable entity (its generic list route prefix). */
+  entity: string
+  /** The scope column on the deliverable AND the task entities, e.g. 'project_id'. */
+  projectField: string
+  /** The project entity the canEdit guard reads through, e.g. 'project'. */
+  projectEntity: string
+  /** The many2one on the task entity pointing at a deliverable, e.g. 'pbs_item_id'. */
+  taskField: string
+  /** Name registered with registerKanbanColumnsGuard: may the caller edit this project's chart? */
+  canEdit?: string
+}
+
+/** The one id `options` pins `field` to (filter[field]=id, or in[field] with one id), else null. */
+export function pinnedId(options: EntityListOptions | undefined, field: string): string | null {
+  const f = options?.filter?.[field]
+  if (f) return f
+  const ids = options?.in?.[field]
+  return ids?.length === 1 && ids[0] ? ids[0] : null
+}
+
+/** The list view's display-mode switcher (top-right of the list). */
+export type DisplayMode = 'list' | 'kanban' | 'calendar' | 'graph' | 'gantt' | 'wbs' | 'pert' | 'obs' | 'risk' | 'insights' | 'matrix' | 'pbs'
+
+export const DISPLAY_MODES: readonly DisplayMode[] = ['list', 'kanban', 'calendar', 'graph', 'gantt', 'wbs', 'pert', 'obs', 'risk', 'insights', 'matrix', 'pbs']
 
 /**
  * Which modes are usable right now for a given entity's EFFECTIVE (module
@@ -90,11 +373,21 @@ export const DISPLAY_MODES: readonly DisplayMode[] = ['list', 'kanban', 'calenda
  * entirely, not just disables them — until a field/flag resolves truthy,
  * whether that came from the module's own default or Settings -> Views.
  */
-export function availableDisplayModes(effective: EffectiveViewFields): Record<DisplayMode, boolean> {
+export function availableDisplayModes(effective: EffectiveViewFields, options?: EntityListOptions): Record<DisplayMode, boolean> {
   return {
     list: true,
     kanban: effective.kanbanStatusField != null,
     calendar: effective.calendarDateField != null,
     graph: effective.enableGraphs,
+    gantt: effective.ganttStartField != null && effective.ganttEndField != null,
+    wbs: effective.wbsParentField != null,
+    pert: effective.pertDependencies != null,
+    obs: effective.obs != null && pinnedId(options, effective.obs.projectField) != null,
+    risk: effective.risk != null && pinnedId(options, effective.risk.projectField) != null,
+    // ADR-041: both ride the pinnedId rule, obs/risk style — the pin is the
+    // project id the analytics and matrices are computed over.
+    insights: effective.insights != null && pinnedId(options, effective.insights.projectField) != null,
+    matrix: effective.matrix != null && pinnedId(options, effective.matrix.projectField) != null,
+    pbs: effective.pbs != null && pinnedId(options, effective.pbs.projectField) != null,
   }
 }

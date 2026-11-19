@@ -35,6 +35,17 @@ type ListFilter struct {
 	// is just a GTE condition and an LTE condition on the same column —
 	// they AND together like any other two filters, no separate operator.
 	GT, GTE, LT, LTE map[string]string
+	// Empty keeps rows whose column is NULL or '' — the one condition an
+	// Equals can't express (an empty filter value means "no filter"): a
+	// Kanban "No status" column, a Calendar's unscheduled records.
+	Empty []string
+	// Geo holds the geo params (near/within/covers/inside) — see GeoFilter.
+	Geo GeoFilter
+	// Order sorts the page by one column, "-" prefixed for descending, with the
+	// primary key as tiebreak so consecutive pages never repeat or skip a row.
+	// Empty = no ORDER BY (heap order — fine for one page, unstable to page
+	// through). A near[] ordering, when present, takes precedence.
+	Order string
 }
 
 // DistinctValue is one bucket from DistinctValues: a distinct value of the
@@ -47,13 +58,14 @@ type DistinctValue struct {
 // repoLayer is the interface Service requires from the repository layer.
 // Defined at the call-site (here) per Go convention — not in the repository.
 type repoLayer interface {
-	FindAll(ctx context.Context, f ListFilter) ([]map[string]any, int, error)
+	FindAll(ctx context.Context, f ListFilter) ([]map[string]any, Total, error)
 	FindByID(ctx context.Context, id any) (map[string]any, error)
 	Create(ctx context.Context, data map[string]any) (map[string]any, error)
 	Update(ctx context.Context, id any, data map[string]any) (map[string]any, error)
 	Delete(ctx context.Context, id any) error
 	Restore(ctx context.Context, id any) (map[string]any, error)
 	DistinctValues(ctx context.Context, column string, f ListFilter) ([]DistinctValue, error)
+	Aggregate(ctx context.Context, req AggregateRequest, f ListFilter) ([]AggregateRow, error)
 }
 
 // Service adds business-logic guardrails on top of the raw repository:
@@ -71,7 +83,7 @@ func NewService(repo *Repository, meta registry.TableMeta) *Service {
 }
 
 // List returns a paginated list and total count.
-func (s *Service) List(ctx context.Context, f ListFilter) ([]map[string]any, int, error) {
+func (s *Service) List(ctx context.Context, f ListFilter) ([]map[string]any, Total, error) {
 	return s.repo.FindAll(ctx, f)
 }
 
@@ -79,6 +91,12 @@ func (s *Service) List(ctx context.Context, f ListFilter) ([]map[string]any, int
 // rows matching f's filters — the search bar's group-by section.
 func (s *Service) DistinctValues(ctx context.Context, column string, f ListFilter) ([]DistinctValue, error) {
 	return s.repo.DistinctValues(ctx, column, f)
+}
+
+// Aggregate groups the rows matching f's filters and aggregates a value over
+// each group — the Graph view's server-side aggregation.
+func (s *Service) Aggregate(ctx context.Context, req AggregateRequest, f ListFilter) ([]AggregateRow, error) {
+	return s.repo.Aggregate(ctx, req, f)
 }
 
 // GetByID returns the row with the given id, excluding soft-deleted rows.
@@ -124,4 +142,11 @@ func (s *Service) Restore(ctx context.Context, id any) (map[string]any, error) {
 		return nil, fmt.Errorf("service: restore: table %s does not support soft delete", s.meta.TableName)
 	}
 	return s.repo.Restore(ctx, id)
+}
+
+// Total is a list's row count: exact up to ExactCountLimit, beyond it the
+// planner's estimate (Estimated) — see Repository.FindAll.
+type Total struct {
+	Rows      int
+	Estimated bool
 }

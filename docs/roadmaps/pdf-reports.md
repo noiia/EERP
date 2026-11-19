@@ -40,17 +40,51 @@ lets a developer build a report the way they already build a view.
 ```ts
 interface ReportDescriptor {
   name: string                // e.g. 'crm.statement' — also the print route's :name param
+  extends?: string             // inherit from another report — every report extends 'core.default'
+  abstract?: boolean           // a base only: never printed (the print route 404s)
+  chrome?: { header?: boolean; footer?: boolean } // the letterhead; core.default turns both on
   entity: string               // primary data source, same entity names views already use
   layout: ReportNode[]
   permissions: string[]        // same permission-string convention as ViewDescriptor
 }
 
 type ReportNode =
-  | { kind: 'section'; className?: string; children: ReportNode[] }
-  | { kind: 'field'; name: string; className?: string; format?: string }
-  | { kind: 'table'; source: string; columns: { name: string; label: string }[]; className?: string }
+  | { kind: 'section'; className?: string; children: ReportNode[]; display?: Condition }
+  | { kind: 'field'; name: string; className?: string; format?: string; display?: Condition }
+  | { kind: 'table'; source: string; columns: { name: string; label: string; display?: Condition }[]; className?: string }
   | { kind: 'pageBreak' }
+  | { kind: 'slot' }           // where a child report's layout goes (inheritance)
 ```
+
+**Inheritance** ([ADR-010](../adr/ADR-010-pdf-report-generation.md) §4b): a report names its
+parent in `extends`; `resolveReports` (inside `ModuleRegistry.buildReportRegistry`) flattens the
+chain — the child's layout fills the parent's `slot` (or is appended), `chrome` merges key by
+key, `pageFormat` is inherited unless set. The engine's `defaultReport` (`DEFAULT_REPORT_NAME`,
+`core.default`) is the letterhead header (company logo + configured address) and footer around a
+slot; the print route prints them only when the resolved report's `chrome` asks. Shared
+components are plain helpers: `reportAddressBlock(label, lines)` is the labeled, left-aligned
+party block (rent receipt's tenant/property, sale's Customer).
+
+```ts
+export const quoteReport: ReportDescriptor = {
+  name: 'sale.quote',
+  extends: DEFAULT_REPORT_NAME,   // letterhead header + footer
+  entity: 'quote',
+  permissions: ['quote:quote:read'],
+  layout: [documentMeta, customerBlock, /* lines table, totals, terms… */],
+}
+```
+
+Pitfall: a report without `extends` prints no letterhead at all.
+
+`display` (the form's `FieldDescriptor.states` `Condition` DSL) is evaluated against the fetched
+**record** — for a table column, too, not each row — and hides the node (a column: its header and
+every cell) while it doesn't hold. A workspace setting reaches it as a computed key the entity's
+GET adds: property management's "Display taxes on report" (Settings → Apps → Property management,
+`GET|PUT /api/v1/settings/propertymanagement`, off by default) becomes `display_taxes` on
+`GET /api/v1/property_management_rent_receipt/:id`, which the rent receipt's Tax column tests.
+The PDF is rendered at (re)generation, so it follows the setting at that moment; a receipt's
+stored PDF doesn't change until it is regenerated.
 
 **`pdf-service` HTTP contract:**
 ```
@@ -66,8 +100,8 @@ POST /render
 > `tools/eerp-init-module`). `renderer.NewChromeRenderer` passes `chromedp.NoSandbox` —
 > required for Chromium to launch at all inside a container, which has no setuid sandbox
 > helper available; without it the browser fails to start. The runtime image is
-> `debian:bookworm-slim` + `chromium` (not `golang:1.26` like `core/Dockerfile`, which has no
-> browser) — verified end to end with a real `docker build` + `docker compose --profile pdf
+> `debian:bookworm-slim` + `chromium` (since replaced by `chromedp/headless-shell` to halve the
+> image — ADR-010 decision 2; not `golang:1.27.4` like `core/Dockerfile`, which has no browser) — verified end to end with a real `docker build` + `docker compose --profile pdf
 > up`, hitting `/healthz` and `/render` against the running container. `compose.yml`'s
 > `pdf-service` entry is gated behind `profiles: ["pdf"]` exactly as planned, confirmed absent
 > from `docker compose config --services` without the flag.
@@ -515,6 +549,12 @@ for anyone who doesn't need it yet.
   chromedp `WaitVisible` without the print route setting `data-report-ready` itself produces
   a PDF of a loading state. The readiness marker is the print route's responsibility, not the
   renderer's guess.
+- **A report node that only renders client-side prints blank** — `pdf-service` disables page
+  JavaScript (ADR-010 decision 7), so the print route's server HTML is exactly what gets
+  printed. Keep `ReportRenderer` and every node it renders free of effects/client-only state.
+- **A report element with no `font-family` depends on the image's font fallback** — declare
+  `Helvetica, Arial, sans-serif` on every new `eerp-report-*` rule (and in any header/footer
+  template), or glyph widths and page breaks shift when the base image changes.
 - **Chromium `running()` CSS will silently not work** — don't design a report layout that
   depends on dynamic per-page running headers; static header/footer templates (page number,
   fixed title) are the supported mechanism.

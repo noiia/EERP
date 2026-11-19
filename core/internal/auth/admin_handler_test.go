@@ -9,9 +9,10 @@ import (
 	"testing"
 
 	"core/orm"
+	"core/orm/model"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // ── Stubs ─────────────────────────────────────────────────────────────────────
@@ -101,11 +102,10 @@ func serveAdmin(t *testing.T, h echo.HandlerFunc, method, target, paramID, body 
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 	if paramID != "" {
-		c.SetParamNames("id")
-		c.SetParamValues(paramID)
+		c.SetPathValues(append(c.PathValues(), echo.PathValue{Name: "id", Value: paramID}))
 	}
 	if err := h(c); err != nil {
-		e.HTTPErrorHandler(err, c)
+		e.HTTPErrorHandler(c, err)
 	}
 	return rec
 }
@@ -117,7 +117,7 @@ func TestAdminListUsers(t *testing.T) {
 	users := &stubAdminUsers{users: []Users{
 		{TenantID: identity.TenantID, Email: "a@x.io", PasswordHash: "secret-hash"},
 	}}
-	h := newAdminHandlerWith(users, &stubAdminRoles{})
+	h := NewAdminHandler(users, &stubAdminRoles{})
 
 	rec := serveAdmin(t, h.ListUsers, http.MethodGet, "/users", "", "", identity)
 
@@ -166,7 +166,7 @@ func TestAdminGetUser(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := newAdminHandlerWith(tt.stub, &stubAdminRoles{})
+			h := NewAdminHandler(tt.stub, &stubAdminRoles{})
 			rec := serveAdmin(t, h.GetUser, http.MethodGet, "/users/"+tt.paramID, tt.paramID, "", identity)
 			if rec.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.wantStatus, rec.Body.String())
@@ -197,7 +197,7 @@ func TestAdminUpdateUser(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			users := &stubAdminUsers{user: Users{Email: "old@x.io"}, err: tt.stubErr}
-			h := newAdminHandlerWith(users, &stubAdminRoles{})
+			h := NewAdminHandler(users, &stubAdminRoles{})
 			rec := serveAdmin(t, h.UpdateUser, http.MethodPut, "/users/"+id.String(), id.String(), tt.body, identity)
 
 			if rec.Code != tt.wantStatus {
@@ -235,7 +235,7 @@ func TestAdminCreateUser(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			users := &stubAdminUsers{}
-			h := newAdminHandlerWith(users, &stubAdminRoles{})
+			h := NewAdminHandler(users, &stubAdminRoles{})
 			rec := serveAdmin(t, h.CreateUser, http.MethodPost, "/users", "", tt.body, identity)
 
 			if rec.Code != tt.wantStatus {
@@ -258,7 +258,7 @@ func TestAdminCreateUser(t *testing.T) {
 
 func TestAdminListRoles(t *testing.T) {
 	identity := Identity{UserID: uuid.New(), TenantID: uuid.New()}
-	h := newAdminHandlerWith(&stubAdminUsers{}, &stubAdminRoles{roles: []Roles{{Name: "admin", Description: "all"}}})
+	h := NewAdminHandler(&stubAdminUsers{}, &stubAdminRoles{roles: []Roles{{Name: "admin", Description: "all"}}})
 
 	rec := serveAdmin(t, h.ListRoles, http.MethodGet, "/roles", "", "", identity)
 
@@ -301,7 +301,7 @@ func TestAdminUpdateRole(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			roles := &stubAdminRoles{role: Roles{Name: "old"}, err: tt.stubErr}
-			h := newAdminHandlerWith(&stubAdminUsers{}, roles)
+			h := NewAdminHandler(&stubAdminUsers{}, roles)
 			rec := serveAdmin(t, h.UpdateRole, http.MethodPut, "/roles/"+id.String(), id.String(), tt.body, identity)
 
 			if rec.Code != tt.wantStatus {
@@ -334,7 +334,7 @@ func TestAdminCreateRole(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			roles := &stubAdminRoles{}
-			h := newAdminHandlerWith(&stubAdminUsers{}, roles)
+			h := NewAdminHandler(&stubAdminUsers{}, roles)
 			rec := serveAdmin(t, h.CreateRole, http.MethodPost, "/roles", "", tt.body, identity)
 
 			if rec.Code != tt.wantStatus {
@@ -350,7 +350,7 @@ func TestAdminCreateRole(t *testing.T) {
 func TestAdminCreateRole_TechnicalNameRoundTrips(t *testing.T) {
 	identity := Identity{UserID: uuid.New(), TenantID: uuid.New()}
 	roles := &stubAdminRoles{}
-	h := newAdminHandlerWith(&stubAdminUsers{}, roles)
+	h := NewAdminHandler(&stubAdminUsers{}, roles)
 
 	rec := serveAdmin(t, h.CreateRole, http.MethodPost, "/roles", "", `{"name":"support","technical_name":"support_agent"}`, identity)
 
@@ -372,7 +372,7 @@ func TestAdminCreateRole_TechnicalNameRoundTrips(t *testing.T) {
 func TestAdminCreateRole_DuplicateTechnicalName_Returns409(t *testing.T) {
 	identity := Identity{UserID: uuid.New(), TenantID: uuid.New()}
 	roles := &stubAdminRoles{err: ErrDuplicateTechnicalName}
-	h := newAdminHandlerWith(&stubAdminUsers{}, roles)
+	h := NewAdminHandler(&stubAdminUsers{}, roles)
 
 	rec := serveAdmin(t, h.CreateRole, http.MethodPost, "/roles", "", `{"name":"support","technical_name":"support_agent"}`, identity)
 
@@ -383,9 +383,56 @@ func TestAdminCreateRole_DuplicateTechnicalName_Returns409(t *testing.T) {
 
 func TestAdminGetRole_NotFound(t *testing.T) {
 	identity := Identity{UserID: uuid.New(), TenantID: uuid.New()}
-	h := newAdminHandlerWith(&stubAdminUsers{}, &stubAdminRoles{err: orm.ErrNotFound})
+	h := NewAdminHandler(&stubAdminUsers{}, &stubAdminRoles{err: orm.ErrNotFound})
 	rec := serveAdmin(t, h.GetRole, http.MethodGet, "/roles/"+uuid.NewString(), uuid.NewString(), "", identity)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404; body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAdminListUsers_SearchAndIDs(t *testing.T) {
+	identity := Identity{UserID: uuid.New(), TenantID: uuid.New()}
+	ann, bob := uuid.New(), uuid.New()
+	users := &stubAdminUsers{users: []Users{
+		{BaseModel: model.BaseModel{ID: ann}, Email: "ann@x.io", DisplayName: "Ann Smith"},
+		{BaseModel: model.BaseModel{ID: bob}, Email: "bob@x.io", DisplayName: "Bob"},
+	}}
+	h := NewAdminHandler(users, &stubAdminRoles{})
+
+	emails := func(target string) ([]string, int) {
+		rec := serveAdmin(t, h.ListUsers, http.MethodGet, target, "", "", identity)
+		var resp struct {
+			Data []struct {
+				Email string `json:"email"`
+			} `json:"data"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		out := []string{}
+		for _, d := range resp.Data {
+			out = append(out, d.Email)
+		}
+		return out, rec.Code
+	}
+
+	for _, tc := range []struct {
+		name, target string
+		want         []string
+		code         int
+	}{
+		{"search is case-insensitive contains", "/users?search%5Bemail%5D=ANN", []string{"ann@x.io"}, 200},
+		{"searches other columns", "/users?search%5Bdisplay_name%5D=smith", []string{"ann@x.io"}, 200},
+		{"in[id] keeps the listed ids", "/users?in%5Bid%5D=" + bob.String(), []string{"bob@x.io"}, 200},
+		{"no params lists everyone", "/users", []string{"ann@x.io", "bob@x.io"}, 200},
+		{"unknown column is a 400", "/users?search%5Bnope%5D=a", []string{}, 400},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, code := emails(tc.target)
+			if code != tc.code {
+				t.Fatalf("status = %d, want %d", code, tc.code)
+			}
+			if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+				t.Errorf("emails = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }

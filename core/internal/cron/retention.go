@@ -8,7 +8,6 @@ import (
 	"core/internal/common"
 	"core/orm"
 
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -26,29 +25,28 @@ const retentionDefaultYears = 1
 // Runs, and errors, per row — one bad row (an unreadable log path, say)
 // never blocks the sweep of every other row.
 func SweepHistory(ctx context.Context, db *orm.DB, logDir string) error {
-	crons := orm.MustRepo[Cron](db)
+	return sweepHistory(ctx, db, logDir, time.Now())
+}
+
+// expiredHistory is the retention cutoff, evaluated by the database so the
+// every-minute sweep reads only expired rows (it used to load every cron and
+// every history row into memory each tick). A row expires once it is at
+// least its owning cron's HistoryRetentionYears old — inclusive: a row must
+// survive LESS than the window, not exactly it. An unset (<= 0) retention, or
+// an owning cron since deleted, falls back to retentionDefaultYears.
+const expiredHistory = `cron_history.created_at <= $1::timestamptz - make_interval(years => COALESCE(
+	(SELECT c.history_retention_years FROM cron c
+	 WHERE c.id = cron_history.cron_id AND c.deleted_at IS NULL AND c.history_retention_years > 0),
+	` + "%d" + `))`
+
+func sweepHistory(ctx context.Context, db *orm.DB, logDir string, now time.Time) error {
 	histories := orm.MustRepo[CronHistory](db)
-
-	cronRows, err := crons.FindAll(ctx)
+	expired, err := histories.FindAll(ctx, orm.Cond(fmt.Sprintf(expiredHistory, retentionDefaultYears), now))
 	if err != nil {
-		return fmt.Errorf("cron: sweep: list crons: %w", err)
-	}
-	retentionByID := make(map[uuid.UUID]int, len(cronRows))
-	for _, c := range cronRows {
-		retentionByID[c.ID] = c.HistoryRetentionYears
+		return fmt.Errorf("cron: sweep: list expired history: %w", err)
 	}
 
-	historyRows, err := histories.FindAll(ctx)
-	if err != nil {
-		return fmt.Errorf("cron: sweep: list history: %w", err)
-	}
-
-	now := time.Now()
-	for _, h := range historyRows {
-		if !historyExpired(h, retentionByID, now) {
-			continue
-		}
-
+	for _, h := range expired {
 		path := LogPath(logDir, h.TenantID, h.CronID, h.ID)
 		if err := RemoveLog(path); err != nil {
 			common.Logger.Warn("cron: retention: could not remove log file",
@@ -61,17 +59,4 @@ func SweepHistory(ctx context.Context, db *orm.DB, logDir string) error {
 		}
 	}
 	return nil
-}
-
-// historyExpired is the pure cutoff decision SweepHistory applies per row —
-// pulled out so the date math is unit-testable without a database. years <=
-// 0 (the owning cron unset it, or has since been deleted — retentionByID
-// simply has no entry) falls back to retentionDefaultYears.
-func historyExpired(h CronHistory, retentionByID map[uuid.UUID]int, now time.Time) bool {
-	years := retentionByID[h.CronID]
-	if years <= 0 {
-		years = retentionDefaultYears
-	}
-	cutoff := now.AddDate(-years, 0, 0)
-	return !h.CreatedAt.After(cutoff)
 }

@@ -12,12 +12,19 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/nats-io/nats.go"
 
 	"pdf-service/renderer"
 )
+
+// version is this build's version, stamped by CI through the image build
+// (-ldflags "-X main.version=…", tools/pdf-service/Dockerfile); "dev" otherwise.
+// Core shows it in Settings, asking over GET /version or NATS (versionSubject).
+var version = "dev"
 
 func main() {
 	execPath := os.Getenv("CHROME_PATH")
@@ -29,7 +36,23 @@ func main() {
 		addr = ":8090"
 	}
 
-	r, err := renderer.NewChromeRenderer(execPath)
+	// `pdf-service -healthcheck` is the container healthcheck: probing
+	// ourselves from the same binary means the image needs no curl.
+	if len(os.Args) > 1 && os.Args[1] == "-healthcheck" {
+		if err := healthcheck(addr); err != nil {
+			log.Fatalf("pdf-service: healthcheck: %v", err)
+		}
+		return
+	}
+
+	// Default 4: enough to overlap one render's network wait with another's
+	// print, few enough that a burst can't OOM a small container.
+	maxConcurrent, _ := strconv.Atoi(os.Getenv("MAX_CONCURRENT_RENDERS"))
+	if maxConcurrent <= 0 {
+		maxConcurrent = 4
+	}
+
+	r, err := renderer.NewChromeRenderer(execPath, maxConcurrent)
 	if err != nil {
 		log.Fatalf("pdf-service: %v", err)
 	}
@@ -47,18 +70,40 @@ func main() {
 		if _, err := runNATSWorker(nc, r); err != nil {
 			log.Fatalf("pdf-service: nats subscribe: %v", err)
 		}
+		if _, err := answerVersion(nc); err != nil {
+			log.Fatalf("pdf-service: nats subscribe: %v", err)
+		}
 		log.Printf("pdf-service subscribed to %q (queue %q) at %s", renderSubject, workerQueueGroup, natsURL)
 	}
 
-	log.Printf("pdf-service listening on %s (chrome: %s)", addr, execPath)
+	log.Printf("pdf-service %s listening on %s (chrome: %s)", version, addr, execPath)
 	log.Fatal(http.ListenAndServe(addr, newMux(r)))
 }
 
 func newMux(r renderer.Renderer) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealthz)
+	mux.HandleFunc("GET /version", handleVersion)
 	mux.HandleFunc("POST /render", handleRender(r))
 	return mux
+}
+
+// healthcheck GETs this service's own /healthz on addr (":8090" or
+// "host:port"), failing on anything but a 200.
+func healthcheck(addr string) error {
+	if strings.HasPrefix(addr, ":") {
+		addr = "127.0.0.1" + addr
+	}
+	client := http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get("http://" + addr + "/healthz")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return errors.New(resp.Status)
+	}
+	return nil
 }
 
 func handleHealthz(w http.ResponseWriter, _ *http.Request) {
@@ -107,4 +152,10 @@ func handleRender(r renderer.Renderer) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/pdf")
 		_, _ = w.Write(pdf)
 	}
+}
+
+// handleVersion answers core's version probe (core/internal/version.HTTPProbe).
+func handleVersion(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"version": version})
 }

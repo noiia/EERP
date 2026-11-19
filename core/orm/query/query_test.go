@@ -12,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // ── fixtures ──────────────────────────────────────────────────────────────────
@@ -77,6 +78,7 @@ func (e *emptyRows) FieldDescriptions() []pgconn.FieldDescription { return nil }
 func (e *emptyRows) Values() ([]any, error)                       { return nil, nil }
 func (e *emptyRows) RawValues() [][]byte                          { return nil }
 func (e *emptyRows) Conn() *pgx.Conn                              { return nil }
+func (e *emptyRows) TypeMap() *pgtype.Map                         { return pgtype.NewMap() }
 
 // errRow satisfies pgx.Row returning a fixed error on Scan.
 type errRow struct{ err error }
@@ -346,6 +348,43 @@ func TestInsert_ToSQL_ZeroTimestamps_LeftToDBDefault(t *testing.T) {
 	}
 }
 
+func TestInsert_ToSQL_ZeroPK_LeftToDBDefault(t *testing.T) {
+	t.Parallel()
+
+	// A zero PK (the common case — every Create() caller today) still relies
+	// on the schema's DEFAULT gen_random_uuid()/serial, same reasoning as the
+	// zero-timestamp case above.
+	meta := mustMeta[lineItem](t)
+	row := lineItem{OrderID: 1, Product: "widget", Quantity: 5}
+
+	sql, args := query.Insert[lineItem](meta, row).ToSQL()
+
+	assertNotContains(t, sql, "(id, ")
+	if len(args) != 3 { // order_id, product, quantity — not id
+		t.Errorf("expected 3 args, got %d: %v", len(args), args)
+	}
+}
+
+func TestInsert_ToSQL_ExplicitPK_Kept(t *testing.T) {
+	t.Parallel()
+
+	// A caller-chosen PK must insert rather than being silently dropped —
+	// idempotent, deterministic-id seeding (ON CONFLICT (id) DO NOTHING,
+	// internal/auth/seed.go) has no other way to name its own id.
+	meta := mustMeta[lineItem](t)
+	row := lineItem{ID: 42, OrderID: 1, Product: "widget", Quantity: 5}
+
+	sql, args := query.Insert[lineItem](meta, row).ToSQL()
+
+	assertContains(t, sql, "(id, order_id, product, quantity)")
+	if len(args) != 4 {
+		t.Errorf("expected 4 args, got %d: %v", len(args), args)
+	}
+	if args[0] != 42 {
+		t.Errorf("expected id=42 as the first arg, got %v", args[0])
+	}
+}
+
 func TestInsert_ToSQL_ExplicitTimestamps_Kept(t *testing.T) {
 	t.Parallel()
 
@@ -370,6 +409,102 @@ func TestInsert_ToSQL_Returning(t *testing.T) {
 	sql, _ := query.Insert[lineItem](meta, row).Returning("id", "order_id").ToSQL()
 
 	assertContains(t, sql, "RETURNING id, order_id")
+}
+
+func TestInsert_ToSQL_OnConflictDoUpdate(t *testing.T) {
+	t.Parallel()
+
+	meta := mustMeta[lineItem](t)
+	row := lineItem{OrderID: 1, Product: "widget", Quantity: 5}
+
+	sql, _ := query.Insert[lineItem](meta, row).
+		OnConflict("order_id, product").
+		DoUpdate("quantity = EXCLUDED.quantity").
+		Returning("*").
+		ToSQL()
+
+	assertContains(t, sql, "ON CONFLICT (order_id, product)")
+	assertContains(t, sql, "DO UPDATE SET quantity = EXCLUDED.quantity")
+	assertContains(t, sql, "RETURNING *")
+}
+
+func TestInsert_ToSQL_OnConflictNoDoUpdate_FallsBackToDoNothing(t *testing.T) {
+	t.Parallel()
+
+	meta := mustMeta[lineItem](t)
+	row := lineItem{OrderID: 1, Product: "widget", Quantity: 5}
+
+	sql, _ := query.Insert[lineItem](meta, row).OnConflict("order_id, product").ToSQL()
+
+	assertContains(t, sql, "ON CONFLICT (order_id, product) DO NOTHING")
+}
+
+func TestInsert_ToSQL_OnConflictWhere_RepeatsPartialIndexPredicate(t *testing.T) {
+	t.Parallel()
+
+	meta := mustMeta[lineItem](t)
+	row := lineItem{OrderID: 1, Product: "widget", Quantity: 5}
+
+	sql, _ := query.Insert[lineItem](meta, row).
+		OnConflict("product").
+		OnConflictWhere("deleted_at IS NULL").
+		DoUpdate("quantity = EXCLUDED.quantity").
+		Returning("*").
+		ToSQL()
+
+	// The predicate must land BETWEEN the target columns and DO UPDATE/DO
+	// NOTHING — Postgres only accepts "ON CONFLICT (cols) WHERE pred DO …",
+	// never the reverse order.
+	assertContains(t, sql, "ON CONFLICT (product) WHERE deleted_at IS NULL DO UPDATE SET quantity = EXCLUDED.quantity")
+}
+
+func TestInsert_ToSQL_OnConflict_NoWhereByDefault(t *testing.T) {
+	t.Parallel()
+
+	meta := mustMeta[lineItem](t)
+	row := lineItem{OrderID: 1, Product: "widget", Quantity: 5}
+
+	sql, _ := query.Insert[lineItem](meta, row).
+		OnConflict("product").
+		DoUpdate("quantity = EXCLUDED.quantity").
+		ToSQL()
+
+	// No OnConflictWhere call → no WHERE clause at all, matching every
+	// pre-existing caller's behavior unchanged (a full, non-partial index).
+	if strings.Contains(sql, "WHERE") {
+		t.Errorf("ToSQL() = %q, want no WHERE clause when OnConflictWhere was never called", sql)
+	}
+}
+
+func TestInsert_ToSQL_OnConflict_ResetsWhere(t *testing.T) {
+	t.Parallel()
+
+	meta := mustMeta[lineItem](t)
+	row := lineItem{OrderID: 1, Product: "widget", Quantity: 5}
+
+	// A second OnConflict() call (e.g. via a shared builder base) must not
+	// leak an earlier OnConflictWhere's predicate onto a new conflict target.
+	sql, _ := query.Insert[lineItem](meta, row).
+		OnConflict("product").
+		OnConflictWhere("deleted_at IS NULL").
+		OnConflict("order_id, product").
+		DoUpdate("quantity = EXCLUDED.quantity").
+		ToSQL()
+
+	if strings.Contains(sql, "WHERE") {
+		t.Errorf("ToSQL() = %q, want the predicate cleared by the second OnConflict() call", sql)
+	}
+}
+
+func TestInsert_ToSQL_OnConflictDoNothing(t *testing.T) {
+	t.Parallel()
+
+	meta := mustMeta[lineItem](t)
+	row := lineItem{OrderID: 1, Product: "widget", Quantity: 5}
+
+	sql, _ := query.Insert[lineItem](meta, row).OnConflictDoNothing().ToSQL()
+
+	assertContains(t, sql, "ON CONFLICT DO NOTHING")
 }
 
 func TestInsert_ToSQL_BatchMultipleRows(t *testing.T) {
@@ -424,6 +559,22 @@ func TestInsert_Exec_CallsExec(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	assertContains(t, ex.lastSQL, "INSERT INTO")
+}
+
+func TestInsert_One_ZeroRowsReturned_WrapsPgxErrNoRows(t *testing.T) {
+	t.Parallel()
+
+	// An ON CONFLICT DO NOTHING that skips an existing row produces zero
+	// RETURNING rows — Repository.Upsert's fallback re-read relies on this
+	// wrapping pgx.ErrNoRows (not a bespoke string) to detect that case.
+	meta := mustMeta[lineItem](t)
+	ex := &mockExecutor{} // Query defaults to emptyRows
+	row := lineItem{OrderID: 1, Product: "x", Quantity: 1}
+
+	_, err := query.Insert[lineItem](meta, row).Returning("*").One(context.Background(), ex)
+	if !errors.Is(err, pgx.ErrNoRows) {
+		t.Errorf("expected error wrapping pgx.ErrNoRows, got: %v", err)
+	}
 }
 
 func TestInsert_NoRows_ExecIsNoop(t *testing.T) {
@@ -971,4 +1122,115 @@ func TestInsert_OnConflict_NoDoUpdate_IsDoNothing(t *testing.T) {
 		ToSQL()
 
 	assertContains(t, sql, "ON CONFLICT (id) DO NOTHING")
+}
+
+// ── Row locking (ForUpdate) ───────────────────────────────────────────────────
+
+func TestSelect_ToSQL_ForUpdate(t *testing.T) {
+	t.Parallel()
+	meta := mustMeta[order](t)
+	base := query.Select[order](meta).Where(query.NewCondition("status = $1", "open")).OrderBy("id").Limit(5)
+	tests := []struct {
+		name string
+		b    query.SelectBuilder[order]
+		want string
+	}{
+		{"plain", base.ForUpdate(), "LIMIT 5 FOR UPDATE"},
+		{"skip locked", base.ForUpdate().SkipLocked(), "LIMIT 5 FOR UPDATE SKIP LOCKED"},
+		{"nowait", base.NoWait(), "LIMIT 5 FOR UPDATE NOWAIT"},
+		{"of tables", base.Of("o").SkipLocked(), "LIMIT 5 FOR UPDATE OF o SKIP LOCKED"},
+		{"last wait mode wins", base.SkipLocked().NoWait(), "FOR UPDATE NOWAIT"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sql, _ := tt.b.ToSQL()
+			if !strings.HasSuffix(sql, tt.want) {
+				t.Errorf("sql = %q, want suffix %q", sql, tt.want)
+			}
+		})
+	}
+	if sql, _ := base.ToSQL(); strings.Contains(sql, "FOR UPDATE") {
+		t.Errorf("no lock requested but got %q", sql)
+	}
+}
+
+func TestSelect_ForUpdate_Guards(t *testing.T) {
+	t.Parallel()
+	meta := mustMeta[order](t)
+	ctx := context.Background()
+
+	t.Run("outside a transaction", func(t *testing.T) {
+		ex := &mockExecutor{}
+		if _, err := query.Select[order](meta).ForUpdate().All(ctx, ex); !errors.Is(err, query.ErrLockOutsideTx) {
+			t.Errorf("All err = %v", err)
+		}
+		if _, err := query.Select[order](meta).SkipLocked().One(ctx, ex); !errors.Is(err, query.ErrLockOutsideTx) {
+			t.Errorf("One err = %v", err)
+		}
+		if ex.lastSQL != "" {
+			t.Errorf("query reached the executor: %q", ex.lastSQL)
+		}
+	})
+	t.Run("with group by", func(t *testing.T) {
+		if _, err := query.Select[order](meta).GroupBy("status").ForUpdate().All(ctx, &mockExecutor{}); !errors.Is(err, query.ErrLockWithAggregate) {
+			t.Errorf("err = %v", err)
+		}
+	})
+	t.Run("count drops the lock", func(t *testing.T) {
+		ex := &mockExecutor{row: &countRow{n: 3}}
+		if _, err := query.Select[order](meta).ForUpdate().Count(ctx, ex); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(ex.lastSQL, "FOR UPDATE") {
+			t.Errorf("count sql = %q", ex.lastSQL)
+		}
+	})
+}
+
+type countRow struct{ n int64 }
+
+func (r *countRow) Scan(dest ...any) error {
+	*(dest[0].(*int64)) = r.n
+	return nil
+}
+
+func TestCondition_Rebase_TwoDigitPlaceholders(t *testing.T) {
+	t.Parallel()
+
+	b := query.Select[order](mustMeta[order](t))
+	for range 9 {
+		b = b.Where(query.NewCondition("status = $1", "x"))
+	}
+	sql, args := b.Where(query.NewCondition("a = $1 AND b = $2", 1, 2)).ToSQL()
+
+	assertContains(t, sql, "a = $10 AND b = $11")
+	if len(args) != 11 {
+		t.Errorf("args = %v", args)
+	}
+}
+
+type seatRow struct {
+	ID             int `db:"id,pk"`
+	Capacity       int `db:"capacity"`
+	RemainingSeats int `db:"remaining_seats,generated"`
+}
+
+func TestInsert_SkipsGenerated(t *testing.T) {
+	meta := mustMeta[seatRow](t)
+	sql, args := query.Insert[seatRow](meta, seatRow{Capacity: 4, RemainingSeats: 9}).ToSQL()
+	assertNotContains(t, sql, "remaining_seats")
+	if len(args) != 1 {
+		t.Errorf("want 1 arg, got %v", args)
+	}
+}
+
+func TestUpdateFromStruct_SkipsGenerated(t *testing.T) {
+	meta := mustMeta[seatRow](t)
+	sql, _, err := query.Update[seatRow](meta).
+		FromStruct(seatRow{Capacity: 4, RemainingSeats: 9}).
+		Where(query.NewCondition("id = $1", 1)).ToSQL()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertNotContains(t, sql, "remaining_seats")
 }

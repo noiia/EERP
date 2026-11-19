@@ -1,0 +1,371 @@
+# Teams module — translation template. Copy to <locale>.po per language.
+msgid ""
+msgstr ""
+"Project-Id-Version: teams 0.0.1\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Teams"
+msgstr ""
+
+msgid "All teams"
+msgstr ""
+
+msgid "Create team"
+msgstr ""
+
+msgid "Name"
+msgstr ""
+
+msgid "Description"
+msgstr ""
+
+msgid "Cancel"
+msgstr ""
+
+msgid "Create"
+msgstr ""
+
+msgid "Members"
+msgstr ""
+
+msgid "Channels"
+msgstr ""
+
+msgid "Add channel"
+msgstr ""
+
+msgid "New channel"
+msgstr ""
+
+msgid "Folders"
+msgstr ""
+
+msgid "All files"
+msgstr ""
+
+msgid "Shares"
+msgstr ""
+
+msgid "Direct messages"
+msgstr ""
+
+msgid "New conversation"
+msgstr ""
+
+msgid "Person"
+msgstr ""
+
+msgid "Start"
+msgstr ""
+
+msgid "Open the sidebar"
+msgstr ""
+
+msgid "Collapse"
+msgstr ""
+
+msgid "Expand"
+msgstr ""
+
+msgid "Start a conversation with the + next to Direct messages."
+msgstr ""
+
+msgid "This team has no channel yet."
+msgstr ""
+
+msgid "Guests have read only access to this channel."
+msgstr ""
+
+msgid "The message could not be sent."
+msgstr ""
+
+msgid "Mention someone"
+msgstr ""
+
+msgid "Attach files"
+msgstr ""
+
+msgid "Write a message"
+msgstr ""
+
+msgid "Message"
+msgstr ""
+
+msgid "Send"
+msgstr ""
+
+msgid "Add reaction"
+msgstr ""
+
+msgid "Message actions"
+msgstr ""
+
+msgid "React with"
+msgstr ""
+
+msgid "No messages yet."
+msgstr ""
+
+msgid "Role"
+msgstr ""
+
+msgid "Owner"
+msgstr ""
+
+msgid "Member"
+msgstr ""
+
+msgid "Guest"
+msgstr ""
+
+msgid "Add a person"
+msgstr ""
+
+msgid "Manage members"
+msgstr ""
+
+msgid "Add"
+msgstr ""
+
+msgid "Remove"
+msgstr ""
+
+msgid "Close"
+msgstr ""
+
+msgid "The change could not be saved."
+msgstr ""
+
+msgid "Share file"
+msgstr ""
+
+msgid "Share with"
+msgstr ""
+
+msgid "Move to"
+msgstr ""
+
+msgid "Move here"
+msgstr ""
+
+msgid "Shared with me"
+msgstr ""
+
+msgid "Nothing has been shared with you yet."
+msgstr ""
+
+msgid "Team"
+msgstr ""
+
+msgid "Shared by"
+msgstr ""
+
+msgid "Size"
+msgstr ""
+
+msgid "Uploaded by"
+msgstr ""
+
+msgid "Path"
+msgstr ""
+
+msgid "New folder"
+msgstr ""
+
+msgid "Upload"
+msgstr ""
+
+msgid "Share"
+msgstr ""
+
+msgid "Move"
+msgstr ""
+
+msgid "Rename"
+msgstr ""
+
+msgid "Delete"
+msgstr ""
+
+msgid "Save"
+msgstr ""
+
+msgid "This cannot be undone."
+msgstr ""
+
+msgid "File storage is not configured."
+msgstr ""
+
+msgid "Team options"
+msgstr ""
+
+msgid "Channel options"
+msgstr ""
+
+msgid "Rename team"
+msgstr ""
+
+msgid "Delete team"
+msgstr ""
+
+msgid "Leave team"
+msgstr ""
+
+msgid "Rename channel"
+msgstr ""
+
+msgid "Delete channel"
+msgstr ""
+
+msgid "Are you sure?"
+msgstr ""
+
+msgid "Confirm"
+msgstr ""
+
+msgid "Disabled user"
+msgstr ""
+
+msgid "This folder no longer exists."
+msgstr ""
+
+msgid "Files"
+msgstr ""
+
+msgid "Folder"
+msgstr ""
+
+msgid "Link a folder"
+msgstr ""
+
+msgid "Link this folder"
+msgstr ""
+
+msgid "No folder yet. Files sent here will create one."
+msgstr ""
+
+msgid "File deleted"
+msgstr ""
+
+msgid "Download"
+msgstr ""
+
+msgid "Back"
+msgstr ""
+
+msgid "Manage access"
+msgstr ""
+
+msgid "Groups"
+msgstr ""
+
+msgid "Private"
+msgstr ""
+
+msgid "Open to the whole team"
+msgstr ""
+
+msgid "Only owners can see this conversation."
+msgstr ""
+
+msgid "People"
+msgstr ""
+
+msgid "Group name"
+msgstr ""
+
+msgid "New group"
+msgstr ""
+
+msgid "Delete group"
+msgstr ""
+
+msgid "Saving an empty list opens this conversation to the whole team."
+msgstr ""
+
+msgid "Conversations that only this group could see will be visible to owners only."
+msgstr ""
+
+msgid "Format text"
+msgstr ""
+
+msgid "Formatting"
+msgstr ""
+
+msgid "Title"
+msgstr ""
+
+msgid "Bold"
+msgstr ""
+
+msgid "Italic"
+msgstr ""
+
+msgid "Strikethrough"
+msgstr ""
+
+msgid "Code"
+msgstr ""
+
+msgid "Code block"
+msgstr ""
+
+msgid "Quote"
+msgstr ""
+
+msgid "Bulleted list"
+msgstr ""
+
+msgid "Numbered list"
+msgstr ""
+
+msgid "Link"
+msgstr ""
+
+msgid "Write a message (Ctrl+Enter to send)"
+msgstr ""
+
+msgid "Message options"
+msgstr ""
+
+msgid "Delete message"
+msgstr ""
+
+msgid "Modify message"
+msgstr ""
+
+msgid "Message to modify"
+msgstr ""
+
+msgid "(edited)"
+msgstr ""
+
+msgid "The message could not be modified."
+msgstr ""
+
+msgid "The message could not be deleted."
+msgstr ""
+
+msgid "Mute notifications"
+msgstr ""
+
+msgid "Unmute notifications"
+msgstr ""
+
+msgid "Muted"
+msgstr ""
+
+msgid "Delete conversation"
+msgstr ""
+
+msgid "Conversation options"
+msgstr ""
+
+msgid "The history is cleared for you only."
+msgstr ""
+
+msgid "Folder options"
+msgstr ""
+
+msgid "New subfolder"
+msgstr ""

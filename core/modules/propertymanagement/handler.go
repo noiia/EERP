@@ -2,7 +2,7 @@ package propertymanagement
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"net/http"
 	"reflect"
 	"time"
@@ -11,11 +11,11 @@ import (
 	"core/internal/company"
 	"core/internal/settings"
 	"core/modules/sale"
+	"core/modules/warehouse"
 	"core/orm"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // monthLayout is the "2026-08"-shaped format LastReceiptMonth/Period use
@@ -59,6 +59,7 @@ type Handler struct {
 	taxes            *orm.Repository[sale.SaleTax]
 	rentReceipts     *orm.Repository[PropertyManagementRentReceipt]
 	rentReceiptLines *orm.Repository[PropertyManagementRentReceiptLine]
+	uoms             *orm.Repository[warehouse.ProductUoms]
 	settingsStore    *settings.Repository
 	companies        *company.Repository
 }
@@ -72,6 +73,7 @@ func NewHandler(
 	taxes *orm.Repository[sale.SaleTax],
 	rentReceipts *orm.Repository[PropertyManagementRentReceipt],
 	rentReceiptLines *orm.Repository[PropertyManagementRentReceiptLine],
+	uoms *orm.Repository[warehouse.ProductUoms],
 	settingsStore *settings.Repository,
 	companies *company.Repository,
 ) *Handler {
@@ -84,6 +86,7 @@ func NewHandler(
 		taxes:            taxes,
 		rentReceipts:     rentReceipts,
 		rentReceiptLines: rentReceiptLines,
+		uoms:             uoms,
 		settingsStore:    settingsStore,
 		companies:        companies,
 	}
@@ -96,15 +99,16 @@ func (h *Handler) taxIncluded(ctx context.Context, identity auth.Identity) (bool
 }
 
 // GetProperty handles GET /api/v1/property_management/:id.
-func (h *Handler) GetProperty(c echo.Context) error {
+func (h *Handler) GetProperty(c *echo.Context) error {
 	ctx := c.Request().Context()
+	identity := auth.MustIdentity(ctx)
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "invalid id format")
 	}
 
-	property, err := h.properties.FindByID(ctx, id)
+	property, err := findOwned(ctx, h.properties, id, identity.TenantID)
 	if err != nil {
 		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "Property not found.")
 	}
@@ -112,6 +116,74 @@ func (h *Handler) GetProperty(c echo.Context) error {
 	out := toColumnMap(h.properties, property)
 	out["receipt_generated_this_month"] = receiptGeneratedThisMonth(property.LastReceiptMonth, time.Now())
 	return c.JSON(http.StatusOK, out)
+}
+
+// CreateProperty handles POST /api/v1/property_management. Defaults UomID to
+// the workspace's default surface unit (square meter for metric, square foot
+// for imperial — Settings -> Global settings -> Units,
+// internal/settings.ResolveUnitSystem) whenever the client didn't pick one,
+// so a new property's floor_area starts in a sensible unit instead of blank
+// — never overwrites an explicitly chosen uom_id, and this is a CREATE-time
+// convenience only: uom_id stays freely re-pickable afterward, scoped to
+// surface UOMs only by property_management_views.ts's own `uom_id.relation.
+// filter`.
+func (h *Handler) CreateProperty(c *echo.Context) error {
+	ctx := c.Request().Context()
+	identity := auth.MustIdentity(ctx)
+
+	var body PropertyManagement
+	if err := c.Bind(&body); err != nil {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
+	}
+	body.TenantID = identity.TenantID
+
+	if body.UomID == nil {
+		uomID, err := h.defaultFloorAreaUom(ctx, identity)
+		if err != nil {
+			return fmt.Errorf("propertymanagement: default floor area uom: %w", err)
+		}
+		body.UomID = uomID
+	}
+
+	created, err := h.properties.Create(ctx, body)
+	if err != nil {
+		return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not create the property.")
+	}
+	return c.JSON(http.StatusCreated, toColumnMap(h.properties, created))
+}
+
+// defaultFloorAreaUomName is the pure branch (no DB) behind
+// defaultFloorAreaUom below — which defaultUoms row name to look up for a
+// given units.system value. Split out so it's testable on its own without a
+// database, mirroring receiptGeneratedThisMonth/latestStatus above.
+func defaultFloorAreaUomName(system string) string {
+	if system == settings.UnitSystemImperial {
+		return warehouse.DefaultSurfaceUomNameImperial
+	}
+	return warehouse.DefaultSurfaceUomNameMetric
+}
+
+// defaultFloorAreaUom resolves the workspace's default surface uom
+// (defaultFloorAreaUomName, picked by settings.ResolveUnitSystem) as a
+// *uuid.UUID ready to assign to PropertyManagement.UomID — nil (not an
+// error) when no matching row exists (a fresh tenant whose warehouse module
+// hasn't seeded defaultUoms yet, or the row was renamed/deleted): a property
+// stays creatable with no default, same as before this feature existed.
+func (h *Handler) defaultFloorAreaUom(ctx context.Context, identity auth.Identity) (*uuid.UUID, error) {
+	system, err := settings.ResolveUnitSystem(ctx, h.settingsStore, h.companies, identity.TenantID, identity.UserID)
+	if err != nil {
+		return nil, err
+	}
+	name := defaultFloorAreaUomName(system)
+	rows, err := h.uoms.FindAll(ctx, orm.Cond("tenant_id = $1 AND type = 'surface' AND name = $2", identity.TenantID, name))
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	id := rows[0].ID
+	return &id, nil
 }
 
 // receiptGeneratedThisMonth is a pure function (no DB/HTTP) so the nil case
@@ -123,7 +195,7 @@ func receiptGeneratedThisMonth(lastReceiptMonth *string, now time.Time) bool {
 }
 
 // CreateEquipmentStatus handles POST /api/v1/property_management_equipment_status.
-func (h *Handler) CreateEquipmentStatus(c echo.Context) error {
+func (h *Handler) CreateEquipmentStatus(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 	ctx := c.Request().Context()
 
@@ -132,13 +204,16 @@ func (h *Handler) CreateEquipmentStatus(c echo.Context) error {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
 	}
 	body.TenantID = identity.TenantID
+	if _, err := findOwned(ctx, h.equipment, body.PropertyManagementEquipmentID, identity.TenantID); err != nil {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "Equipment not found.")
+	}
 
 	created, err := h.statuses.Create(ctx, body)
 	if err != nil {
 		return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not create the status entry.")
 	}
 
-	if err := h.rollupCurrentState(ctx, created.PropertyManagementEquipmentID); err != nil {
+	if err := h.rollupCurrentState(ctx, identity.TenantID, created.PropertyManagementEquipmentID); err != nil {
 		return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not update the equipment's current state.")
 	}
 
@@ -149,8 +224,8 @@ func (h *Handler) CreateEquipmentStatus(c echo.Context) error {
 // entry's State (by Date) — recomputed from every entry rather than just
 // trusting the one just created, so a backdated Date entered out of order
 // still leaves CurrentState correct.
-func (h *Handler) rollupCurrentState(ctx context.Context, equipmentID uuid.UUID) error {
-	entries, err := h.statuses.FindAll(ctx, orm.Cond("property_management_equipment_id = $1", equipmentID))
+func (h *Handler) rollupCurrentState(ctx context.Context, tenant, equipmentID uuid.UUID) error {
+	entries, err := h.statuses.FindAll(ctx, orm.Cond("property_management_equipment_id = $1 AND tenant_id = $2", equipmentID, tenant))
 	if err != nil {
 		return err
 	}
@@ -158,7 +233,7 @@ func (h *Handler) rollupCurrentState(ctx context.Context, equipmentID uuid.UUID)
 		return nil
 	}
 
-	equipment, err := h.equipment.FindByID(ctx, equipmentID)
+	equipment, err := findOwned(ctx, h.equipment, equipmentID, tenant)
 	if err != nil {
 		return err
 	}
@@ -181,10 +256,15 @@ func latestStatus(entries []PropertyManagementEquipmentStatus) PropertyManagemen
 	return latest
 }
 
-// RejectReceiptMutation handles PUT and DELETE /api/v1/property_management_rent_receipt/:id
-// — a receipt is append-only, so both always reject.
-func (h *Handler) RejectReceiptMutation(c echo.Context) error {
-	return errorJSON(c, http.StatusForbidden, "FORBIDDEN", "Rent receipts are append-only; they cannot be edited or deleted.")
+// RejectReceiptDelete handles DELETE /api/v1/property_management_rent_receipt/:id
+// — a receipt row is never removed, only ever added to (a "Regenerate
+// report" click on a child creates a new sibling row, property_management_
+// rent_receipt_views.ts's propertymanagement.regenerateReceipt, rather than
+// mutating an existing one) — so DELETE always rejects. PUT no longer does:
+// it rides the generic CRUD surface again, since every field on a generated
+// receipt is meant to stay editable after the fact.
+func (h *Handler) RejectReceiptDelete(c *echo.Context) error {
+	return errorJSON(c, http.StatusForbidden, "FORBIDDEN", "Rent receipts are append-only; they cannot be deleted.")
 }
 
 // CreateBillingLine handles POST /api/v1/property_management_billing_line.
@@ -192,7 +272,7 @@ func (h *Handler) RejectReceiptMutation(c echo.Context) error {
 // reference this line's own id, which doesn't exist until Create below) —
 // Total is just UnitPrice plus TaxRate, same "nothing to look up yet" shape
 // as sale/handler.go's Handler.Create.
-func (h *Handler) CreateBillingLine(c echo.Context) error {
+func (h *Handler) CreateBillingLine(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 	ctx := c.Request().Context()
 
@@ -218,16 +298,16 @@ func (h *Handler) CreateBillingLine(c echo.Context) error {
 // Partial-update semantics, same "zero in the body means unchanged"
 // contract sale/handler.go's Handler.Update documents — Name/UnitPrice/
 // TaxRate are the only client-editable fields.
-func (h *Handler) UpdateBillingLine(c echo.Context) error {
+func (h *Handler) UpdateBillingLine(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 	ctx := c.Request().Context()
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "invalid id format")
 	}
 
-	existing, err := h.billingLines.FindByID(ctx, id)
+	existing, err := findOwned(ctx, h.billingLines, id, identity.TenantID)
 	if err != nil {
 		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "Billing line not found.")
 	}
@@ -249,7 +329,7 @@ func (h *Handler) UpdateBillingLine(c echo.Context) error {
 		merged.TaxRate = body.TaxRate
 	}
 
-	taxes, err := h.linkedBillingLineTaxes(ctx, id)
+	taxes, err := h.linkedBillingLineTaxes(ctx, identity.TenantID, id)
 	if err != nil {
 		return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not read the line's taxes.")
 	}
@@ -268,7 +348,7 @@ func (h *Handler) UpdateBillingLine(c echo.Context) error {
 
 // CreateBillingLineTax handles POST /api/v1/property_management_billing_line_tax
 // — tags a tax onto a billing line, then recomputes that line's own Total.
-func (h *Handler) CreateBillingLineTax(c echo.Context) error {
+func (h *Handler) CreateBillingLineTax(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 	ctx := c.Request().Context()
 
@@ -277,6 +357,12 @@ func (h *Handler) CreateBillingLineTax(c echo.Context) error {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
 	}
 	body.TenantID = identity.TenantID
+	if _, err := findOwned(ctx, h.billingLines, body.PropertyManagementBillingLineID, identity.TenantID); err != nil {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "Billing line not found.")
+	}
+	if _, err := findOwned(ctx, h.taxes, body.SaleTaxID, identity.TenantID); err != nil {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "Tax not found.")
+	}
 
 	created, err := h.billingLineTaxes.Create(ctx, body)
 	if err != nil {
@@ -290,16 +376,16 @@ func (h *Handler) CreateBillingLineTax(c echo.Context) error {
 
 // DeleteBillingLineTax handles DELETE /api/v1/property_management_billing_line_tax/:id
 // — untags a tax, same recompute as CreateBillingLineTax above.
-func (h *Handler) DeleteBillingLineTax(c echo.Context) error {
+func (h *Handler) DeleteBillingLineTax(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 	ctx := c.Request().Context()
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "invalid id format")
 	}
 
-	existing, err := h.billingLineTaxes.FindByID(ctx, id)
+	existing, err := findOwned(ctx, h.billingLineTaxes, id, identity.TenantID)
 	if err != nil {
 		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "Tax link not found.")
 	}
@@ -319,11 +405,11 @@ func (h *Handler) DeleteBillingLineTax(c echo.Context) error {
 // PropertyManagement has no stored aggregate of its own (billing_totals is a
 // live, store:false frontend compute — property_management_views.ts).
 func (h *Handler) recomputeBillingLineTotal(ctx context.Context, identity auth.Identity, lineID uuid.UUID) error {
-	line, err := h.billingLines.FindByID(ctx, lineID)
+	line, err := findOwned(ctx, h.billingLines, lineID, identity.TenantID)
 	if err != nil {
 		return err
 	}
-	taxes, err := h.linkedBillingLineTaxes(ctx, lineID)
+	taxes, err := h.linkedBillingLineTaxes(ctx, identity.TenantID, lineID)
 	if err != nil {
 		return err
 	}
@@ -338,26 +424,17 @@ func (h *Handler) recomputeBillingLineTotal(ctx context.Context, identity auth.I
 
 // linkedBillingLineTaxes resolves a billing line's own
 // property_management_billing_line_tax rows into the sale.SaleTax records
-// they point at. A dangling link (the tax was deleted) is silently skipped
-// rather than failing the whole computation — mirrors sale/handler.go's own
-// linkedTaxes.
-func (h *Handler) linkedBillingLineTaxes(ctx context.Context, lineID uuid.UUID) ([]sale.SaleTax, error) {
-	links, err := h.billingLineTaxes.FindAll(ctx, orm.Cond("property_management_billing_line_id = $1", lineID))
+// they point at (see sale.ResolveTaxes).
+func (h *Handler) linkedBillingLineTaxes(ctx context.Context, tenant, lineID uuid.UUID) ([]sale.SaleTax, error) {
+	links, err := h.billingLineTaxes.FindAll(ctx, orm.Cond("property_management_billing_line_id = $1 AND tenant_id = $2", lineID, tenant))
 	if err != nil {
 		return nil, err
 	}
-	taxes := make([]sale.SaleTax, 0, len(links))
-	for _, link := range links {
-		tax, err := h.taxes.FindByID(ctx, link.SaleTaxID)
-		if errors.Is(err, pgx.ErrNoRows) {
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		taxes = append(taxes, tax)
+	ids := make([]uuid.UUID, len(links))
+	for i, link := range links {
+		ids[i] = link.SaleTaxID
 	}
-	return taxes, nil
+	return sale.ResolveTaxes(ctx, h.taxes, tenant, ids)
 }
 
 // computeBillingLineTotal is the pure money math behind a billing line's own
@@ -392,7 +469,7 @@ func computeBillingLineTotal(base, legacyRate float64, taxes []sale.SaleTax, inc
 // the time fetchReportPDF runs (after the loop), these columns are the
 // real, backend-verified numbers — not whatever the frontend's own upfront
 // estimate guessed when it created the receipt row.
-func (h *Handler) CreateRentReceiptLine(c echo.Context) error {
+func (h *Handler) CreateRentReceiptLine(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 	ctx := c.Request().Context()
 
@@ -401,12 +478,15 @@ func (h *Handler) CreateRentReceiptLine(c echo.Context) error {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
 	}
 	body.TenantID = identity.TenantID
+	if _, err := findOwned(ctx, h.rentReceipts, body.RentReceiptID, identity.TenantID); err != nil {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "Rent receipt not found.")
+	}
 
 	created, err := h.rentReceiptLines.Create(ctx, body)
 	if err != nil {
 		return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not create the receipt line.")
 	}
-	if err := h.recomputeReceiptTotals(ctx, created.RentReceiptID); err != nil {
+	if err := h.recomputeReceiptTotals(ctx, identity.TenantID, created.RentReceiptID); err != nil {
 		return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not update the receipt's totals.")
 	}
 	return c.JSON(http.StatusCreated, toColumnMap(h.rentReceiptLines, created))
@@ -420,12 +500,12 @@ func (h *Handler) CreateRentReceiptLine(c echo.Context) error {
 // to resolve here beyond summing). Sums each line's own Subtotal rather than
 // UnitPrice: once tax.price_mode is tax_included, UnitPrice alone no longer
 // tells you the tax-excluded figure.
-func (h *Handler) recomputeReceiptTotals(ctx context.Context, receiptID uuid.UUID) error {
-	lines, err := h.rentReceiptLines.FindAll(ctx, orm.Cond("rent_receipt_id = $1", receiptID))
+func (h *Handler) recomputeReceiptTotals(ctx context.Context, tenant, receiptID uuid.UUID) error {
+	lines, err := h.rentReceiptLines.FindAll(ctx, orm.Cond("rent_receipt_id = $1 AND tenant_id = $2", receiptID, tenant))
 	if err != nil {
 		return err
 	}
-	receipt, err := h.rentReceipts.FindByID(ctx, receiptID)
+	receipt, err := findOwned(ctx, h.rentReceipts, receiptID, tenant)
 	if err != nil {
 		return err
 	}
@@ -443,6 +523,16 @@ func (h *Handler) recomputeReceiptTotals(ctx context.Context, receiptID uuid.UUI
 	return err
 }
 
+// findOwned reads one row by id within the caller's tenant. Every lookup in
+// this file goes through it (and every FindAll carries a tenant_id
+// condition): the typed repositories don't scope by tenant the way the
+// generic CRUD layer does, so an id alone — from the path or a request
+// body — would reach, and for the writes modify, another workspace's row.
+// A row of another tenant reads as not found.
+func findOwned[T any](ctx context.Context, repo *orm.Repository[T], id, tenant uuid.UUID) (T, error) {
+	return repo.FindOne(ctx, orm.Cond("id = $1 AND tenant_id = $2", id, tenant))
+}
+
 // toColumnMap mirrors the generic CRUD handler's JSON shape — snake_case db
 // column names, not Go field names — using the same public metadata the
 // query builders already reflect over (Repository.Meta()). See
@@ -457,7 +547,7 @@ func toColumnMap[T any](repo *orm.Repository[T], entity T) map[string]any {
 	return out
 }
 
-func errorJSON(c echo.Context, status int, code, msg string) error {
+func errorJSON(c *echo.Context, status int, code, msg string) error {
 	return c.JSON(status, map[string]any{
 		"error": map[string]any{
 			"code":       code,

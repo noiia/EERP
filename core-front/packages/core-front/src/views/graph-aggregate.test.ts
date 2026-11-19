@@ -1,9 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import {
+  calcKeysIn,
+  expandCalcFormula,
+  seriesFromCells,
+  slicesFromCells,
+  expandByChildren,
+  evalFormula,
+  withCalculatedFields,
   aggregate,
   bucketKey,
   MAX_PIE_SLICES,
+  niceRange,
   niceTicks,
+  outlierFences,
   OTHER_LABEL,
   pieSlices,
   statValue,
@@ -200,6 +209,46 @@ describe('niceTicks', () => {
   })
 })
 
+describe('niceRange', () => {
+  it('never ends below the max (4.4 used to stop at 4, drawing the top point off the chart)', () => {
+    const ticks = niceRange(0, 4.4)
+    expect(ticks[ticks.length - 1]).toBeGreaterThanOrEqual(4.4)
+    expect(niceTicks(4.4)[niceTicks(4.4).length - 1]).toBeGreaterThanOrEqual(4.4)
+  })
+
+  it('covers negative values and always includes zero', () => {
+    const ticks = niceRange(-35, 120)
+    expect(ticks[0]).toBeLessThanOrEqual(-35)
+    expect(ticks[ticks.length - 1]).toBeGreaterThanOrEqual(120)
+    expect(ticks).toContain(0)
+    expect(niceRange(50, 80)[0]).toBe(0)
+  })
+
+  it('returns [0] for an all-zero range', () => {
+    expect(niceRange(0, 0)).toEqual([0])
+  })
+})
+
+describe('outlierFences', () => {
+  it('flags only values far from the rest', () => {
+    const { low, high } = outlierFences([100, 120, 90, 110, 105, 95, 100000])
+    expect(high).toBeLessThan(100000)
+    expect(high).toBeGreaterThan(120)
+    expect(low).toBeLessThan(90)
+  })
+
+  it('flags nothing under 4 values, or when every value is equal', () => {
+    expect(outlierFences([1, 2, 1000])).toEqual({ low: -Infinity, high: Infinity })
+    expect(outlierFences([0, 0, 0, 0, 1000])).toEqual({ low: -Infinity, high: Infinity })
+  })
+
+  it('keeps a small wobble around a flat line inside the fences', () => {
+    const { low, high } = outlierFences([50, 50, 50, 50, 51, 49])
+    expect(low).toBeLessThan(49)
+    expect(high).toBeGreaterThan(51)
+  })
+})
+
 describe('pieSlices', () => {
   const records: Deal[] = [
     { id: '1', status: 'open', amount: 100 },
@@ -280,5 +329,107 @@ describe('statValue', () => {
     expect(statValue(records, { field: 'amount', aggregate: 'sum' })).toBe(60)
     expect(statValue(records, { field: 'amount', aggregate: 'mean' })).toBe(20)
     expect(statValue(records, { field: 'amount', aggregate: 'median' })).toBe(20)
+  })
+})
+
+describe('calculated fields', () => {
+  it('evaluates precedence, parentheses, unary minus and literals', () => {
+    expect(evalFormula('rent - loan * 2', { rent: 10, loan: 3 })).toBe(4)
+    expect(evalFormula('(rent - loan) * 2 + 0.5', { rent: 10, loan: 3 })).toBe(14.5)
+    expect(evalFormula('-rent', { rent: 4 })).toBe(-4)
+  })
+  it('reads unknown identifiers, division by zero and junk as 0', () => {
+    expect(evalFormula('gone + 1', {})).toBe(1)
+    expect(evalFormula('5 / zero', { zero: 0 })).toBe(0)
+    expect(evalFormula('', {})).toBe(0)
+  })
+  it('adds live fields and zero-fills referenced-but-deleted ones', () => {
+    const fields = [{ id: '1', key: 'calc_profit', label: 'Profit', formula: 'rent - loan', roles: [] }]
+    const out = withCalculatedFields([{ rent: 10, loan: 4 }], fields, ['calc_profit', 'calc_gone'])
+    expect(out).toEqual([{ rent: 10, loan: 4, calc_profit: 6, calc_gone: 0 }])
+    expect(calcKeysIn([{ yField: 'calc_gone', yFields: ['calc_a1'] }]).sort()).toEqual(['calc_a1', 'calc_gone'])
+  })
+  it('draws one line per yField', () => {
+    const recs = [{ d: '2026-01-05', a: 1, b: 2 }]
+    const s = xySeries(recs, { xField: 'd', yField: 'a', yFields: ['a', 'b'], aggregate: 'sum', bucket: 'month' })
+    expect(s.map((x) => x.points[0]!.value)).toEqual([1, 2])
+  })
+})
+
+describe('expandByChildren', () => {
+  const props = [{ id: 'p1', loan: 100 }, { id: 'p2', loan: 5 }]
+  const rows = [
+    { id: 'r1', pid: 'p1', at: '2026-01-05T08:00:00Z', rent: 10 },
+    { id: 'r2', pid: 'p1', at: '2026-01-05T17:00:00Z', rent: 12 },
+    { id: 'r3', pid: 'p1', at: '2026-02-05T08:00:00Z', rent: 11 },
+  ]
+  it('emits one row per child, child values win, parent id kept, childless parents drop', () => {
+    const out = expandByChildren(props, rows, 'pid', { dateField: 'at', lastPerDay: false })
+    expect(out.map((r) => [r.id, (r as Record<string, unknown>).rent, r.loan])).toEqual([
+      ['p1', 10, 100], ['p1', 12, 100], ['p1', 11, 100],
+    ])
+  })
+  it('keeps only the latest child per day when lastPerDay', () => {
+    const out = expandByChildren(props, rows, 'pid', { dateField: 'at', lastPerDay: true })
+    expect(out.map((r) => (r as Record<string, unknown>).rent)).toEqual([12, 11])
+  })
+})
+
+describe('expandCalcFormula', () => {
+  const fields = [
+    { id: '1', key: 'calc_tax', label: 'Tax', formula: 'total - subtotal', roles: [] },
+    { id: '2', key: 'calc_rate', label: 'Rate', formula: 'calc_tax / subtotal * 100', roles: [] },
+    { id: '3', key: 'calc_loop', label: 'Loop', formula: 'calc_later + 1', roles: [] },
+    { id: '4', key: 'calc_later', label: 'Later', formula: 'calc_loop * 2', roles: [] },
+  ]
+
+  it('leaves a plain column untouched', () => {
+    expect(expandCalcFormula('total', fields)).toBe('total')
+  })
+
+  it('inlines earlier calc fields recursively, parenthesized', () => {
+    expect(expandCalcFormula('calc_rate', fields)).toBe('(total - subtotal) / subtotal * 100')
+  })
+
+  it('reads a later or missing calc field as 0, like withCalculatedFields (no cycles)', () => {
+    expect(expandCalcFormula('calc_loop', fields)).toBe('0 + 1')
+    expect(expandCalcFormula('calc_later', fields)).toBe('(0 + 1) * 2')
+    expect(expandCalcFormula('calc_gone', fields)).toBe('0')
+  })
+
+  it('evaluates to the same number client-side as the expanded server formula would', () => {
+    const record = { total: 120, subtotal: 100 }
+    const [withCalc] = withCalculatedFields([record], fields, [])
+    expect(evalFormula(expandCalcFormula('calc_rate', fields), record)).toBe((withCalc as Record<string, number>).calc_rate)
+  })
+})
+
+describe('seriesFromCells / slicesFromCells', () => {
+  it('builds one sorted series per group, points in bucket order', () => {
+    expect(
+      seriesFromCells([
+        { x: '2026-02', group: 'paid', value: 2, count: 1 },
+        { x: '2026-01', group: 'paid', value: 1, count: 1 },
+        { x: '2026-01', group: 'draft', value: 5, count: 1 },
+      ]),
+    ).toEqual([
+      { label: 'draft', points: [{ bucket: '2026-01', value: 5 }] },
+      { label: 'paid', points: [{ bucket: '2026-01', value: 1 }, { bucket: '2026-02', value: 2 }] },
+    ])
+  })
+
+  it('uses one unnamed series when the request had no group', () => {
+    expect(seriesFromCells([{ x: '2026-01', value: 3, count: 2 }])).toEqual([
+      { label: '', points: [{ bucket: '2026-01', value: 3 }] },
+    ])
+  })
+
+  it('sizes slices by row count, shows the summed value, folds past the palette', () => {
+    const cells = Array.from({ length: 10 }, (_, i) => ({ group: `g${i}`, value: i * 10, count: 10 - i }))
+    const slices = slicesFromCells(cells, true)
+    expect(slices).toHaveLength(MAX_PIE_SLICES)
+    expect(slices[0]).toEqual({ label: 'g0', count: 10, displayValue: 0 })
+    expect(slices.at(-1)).toEqual({ label: OTHER_LABEL, count: 3 + 2 + 1, displayValue: 70 + 80 + 90 })
+    expect(slicesFromCells([{ group: 'a', value: 9, count: 4 }], false)).toEqual([{ label: 'a', count: 4, displayValue: 4 }])
   })
 })

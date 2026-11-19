@@ -36,6 +36,18 @@ func RegisterGoModule(m GoModule) {
 	goMu.Unlock()
 }
 
+// IsGoModule reports whether a Go module of that name is compiled in.
+func IsGoModule(name string) bool {
+	goMu.Lock()
+	defer goMu.Unlock()
+	for _, m := range goModules {
+		if m.Name() == name {
+			return true
+		}
+	}
+	return false
+}
+
 // loadGoModule runs one Go module's Register() plus column-level
 // auto-migration, returning the names of tables it NEWLY CREATED (as opposed
 // to tables it merely extended with ExtendSchema, e.g. crminheritdemo adding
@@ -43,7 +55,7 @@ func RegisterGoModule(m GoModule) {
 // for the runtime active-gate (runtime.go) — a table's owner is whichever
 // module's Register() call is what created it, not every module that ever
 // added a column to it.
-func loadGoModule(ctx context.Context, db *orm.DB, m GoModule) ([]string, error) {
+func loadGoModule(ctx context.Context, db *orm.DB, m GoModule, ensuredThisBoot map[string]int) ([]string, error) {
 	// Column-level snapshot before Register() so we detect both new tables
 	// AND new columns added to existing tables by ExtendSchema.
 	before := columnSnapshot()
@@ -56,30 +68,51 @@ func loadGoModule(ctx context.Context, db *orm.DB, m GoModule) ([]string, error)
 	for tableName, afterCols := range columnSnapshot() {
 		prevCols := before[tableName]
 
-		// Collect only the columns that are new since before Register().
-		var newFields []orm.MigrationField
-		allFields, _ := orm.MigrationFieldsForTable(tableName)
-		for _, f := range allFields {
-			if !prevCols[f.Column] {
-				newFields = append(newFields, f)
-			}
-		}
-		if len(newFields) == 0 {
-			continue
-		}
-
-		// New table: create it with BaseModel columns first, and record this
-		// module as its owner.
+		// isNewTable is Go-side bookkeeping ONLY (table-ownership attribution,
+		// below) — it must NOT gate whether the DDL below runs. columnSnapshot
+		// diffs a process-global, in-memory registry, not real database state:
+		// on a second Boot() in the same process (module.Registry re-Boot after
+		// core/internal/dbmanage swaps the live pgxpool to a different — possibly
+		// completely empty — database), every table this process has ever seen
+		// already shows up in "before", so a diff-gated ensureTable/ensureColumns
+		// would silently skip creating anything on the new database.
 		isNewTable := afterCols != nil && prevCols == nil
 		if isNewTable {
-			if err := ensureTable(ctx, db, tableName); err != nil {
-				return newTables, fmt.Errorf("module %s: ensure table %s: %w", m.Name(), tableName, err)
-			}
 			newTables = append(newTables, tableName)
 		}
 
-		// Add the new columns (idempotent, IF NOT EXISTS).
-		if err := ensureColumns(ctx, db, tableName, newFields); err != nil {
+		// ensuredThisBoot is scoped to ONE Boot() call (Registry.Boot creates it
+		// fresh and threads it through every module) — it is what keeps this
+		// unconditional-by-design pass from being O(n²). Without it, this loop
+		// walks the ENTIRE global table registry on every one of n modules'
+		// turns (columnSnapshot() returns every table registered so far, not
+		// just this module's own), so module k redundantly re-issues
+		// ensureTable/ensureColumns for all k-1 tables earlier modules in this
+		// same Boot() already ensured — a real, measured cost: on an otherwise
+		// empty target database (core/internal/dbmanage's SwitchTo), that's
+		// purely redundant round trips, not a no-op skipped by IF NOT EXISTS
+		// (the statement still has to be sent and answered).
+		//
+		// It records how many columns were ensured, not just "seen": a later
+		// module in the same Boot() may EXTEND an already-ensured table
+		// (crminheritdemo re-registering crm with date/comment, or
+		// orm.ExtendSchema), and those added columns must still reach the
+		// database — skipping the table outright left them missing, so every
+		// generic INSERT naming them failed with SQLSTATE 42703. Registrations
+		// only ever add columns, so a grown count is exactly "something new".
+		allFields, _ := orm.MigrationFieldsForTable(tableName)
+		ensured, seen := ensuredThisBoot[tableName]
+		if seen && len(allFields) <= ensured {
+			continue
+		}
+		ensuredThisBoot[tableName] = len(allFields)
+
+		if !seen {
+			if err := ensureTable(ctx, db, tableName); err != nil {
+				return newTables, fmt.Errorf("module %s: ensure table %s: %w", m.Name(), tableName, err)
+			}
+		}
+		if err := ensureColumns(ctx, db, tableName, allFields); err != nil {
 			return newTables, fmt.Errorf("module %s: ensure columns %s: %w", m.Name(), tableName, err)
 		}
 	}

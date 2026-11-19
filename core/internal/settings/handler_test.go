@@ -3,9 +3,11 @@ package settings
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -15,7 +17,7 @@ import (
 	"core/orm/model"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // ── Stubs ─────────────────────────────────────────────────────────────────────
@@ -68,8 +70,8 @@ func (s *stubCompanies) ResolveActive(_ context.Context, _, _ uuid.UUID) (compan
 		return company.Company{}, s.resolveErr
 	}
 	if s.active.ID == uuid.Nil {
-		c := company.Company{}
-		c.ID = defaultStubCompanyID
+		c := company.Company{
+			ID: defaultStubCompanyID}
 		return c, nil
 	}
 	return s.active, nil
@@ -135,12 +137,10 @@ func serve(t *testing.T, h echo.HandlerFunc, method, target, body string, identi
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 	if err := h(c); err != nil {
-		e.HTTPErrorHandler(err, c)
+		e.HTTPErrorHandler(c, err)
 	}
 	return rec
 }
-
-func strPtr(s string) *string { return &s }
 
 // serveWithParam is serve plus a single Echo path param, for routes like
 // /settings/views/:entity/fields that serve() (no router match) can't set on
@@ -153,10 +153,9 @@ func serveWithParam(t *testing.T, h echo.HandlerFunc, method, target, body strin
 	req = req.WithContext(auth.SetIdentity(req.Context(), identity))
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
-	c.SetParamNames(paramName)
-	c.SetParamValues(paramValue)
+	c.SetPathValues(append(c.PathValues(), echo.PathValue{Name: paramName, Value: paramValue}))
 	if err := h(c); err != nil {
-		e.HTTPErrorHandler(err, c)
+		e.HTTPErrorHandler(c, err)
 	}
 	return rec
 }
@@ -186,7 +185,7 @@ func TestGetMyPreferences(t *testing.T) {
 		},
 		{
 			name:          "preference and default set",
-			users:         &stubUsers{user: auth.Users{PreferredLocale: strPtr("fr")}},
+			users:         &stubUsers{user: auth.Users{PreferredLocale: new("fr")}},
 			store:         &stubStore{values: map[string]string{DefaultLocaleKey: "de"}},
 			wantStatus:    http.StatusOK,
 			wantPreferred: "fr",
@@ -232,7 +231,7 @@ func TestGetMyPreferences(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := newHandlerWith(tt.users, tt.store, &stubCompanies{})
+			h := NewHandler(tt.users, tt.store, &stubCompanies{}, "development")
 			rec := serve(t, h.GetMyPreferences, http.MethodGet, "/me/preferences", "", identity)
 
 			if rec.Code != tt.wantStatus {
@@ -272,9 +271,9 @@ func TestPutMyPreferences(t *testing.T) {
 		wantSet    bool
 		wantLocale *string
 	}{
-		{name: "set a locale", body: `{"preferred_locale":"fr"}`, wantStatus: http.StatusNoContent, wantSet: true, wantLocale: strPtr("fr")},
-		{name: "regioned tag accepted", body: `{"preferred_locale":"pt-BR"}`, wantStatus: http.StatusNoContent, wantSet: true, wantLocale: strPtr("pt-BR")},
-		{name: "source sentinel accepted", body: `{"preferred_locale":"source"}`, wantStatus: http.StatusNoContent, wantSet: true, wantLocale: strPtr("source")},
+		{name: "set a locale", body: `{"preferred_locale":"fr"}`, wantStatus: http.StatusNoContent, wantSet: true, wantLocale: new("fr")},
+		{name: "regioned tag accepted", body: `{"preferred_locale":"pt-BR"}`, wantStatus: http.StatusNoContent, wantSet: true, wantLocale: new("pt-BR")},
+		{name: "source sentinel accepted", body: `{"preferred_locale":"source"}`, wantStatus: http.StatusNoContent, wantSet: true, wantLocale: new("source")},
 		{name: "null clears (inherit default)", body: `{"preferred_locale":null}`, wantStatus: http.StatusNoContent, wantSet: true, wantLocale: nil},
 		{name: "junk rejected", body: `{"preferred_locale":"fr; DROP TABLE users"}`, wantStatus: http.StatusBadRequest},
 		{name: "overlong rejected", body: `{"preferred_locale":"abcdefghijklmnopqrstuvwxyz"}`, wantStatus: http.StatusBadRequest},
@@ -284,7 +283,7 @@ func TestPutMyPreferences(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			users := &stubUsers{setErr: tt.setErr}
-			h := newHandlerWith(users, &stubStore{}, &stubCompanies{})
+			h := NewHandler(users, &stubStore{}, &stubCompanies{}, "development")
 			rec := serve(t, h.PutMyPreferences, http.MethodPut, "/me/preferences", tt.body, identity)
 
 			if rec.Code != tt.wantStatus {
@@ -312,10 +311,10 @@ func TestPutMyPreferences(t *testing.T) {
 func TestGetMyPreferences_ActiveCompany(t *testing.T) {
 	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
 	companyID := uuid.New()
-	active := company.Company{Name: "Acme", Currency: "USD"}
-	active.ID = companyID
+	active := company.Company{Name: "Acme", Currency: "USD",
+		ID: companyID}
 
-	h := newHandlerWith(&stubUsers{}, &stubStore{}, &stubCompanies{active: active})
+	h := NewHandler(&stubUsers{}, &stubStore{}, &stubCompanies{active: active}, "development")
 	rec := serve(t, h.GetMyPreferences, http.MethodGet, "/me/preferences", "", identity)
 
 	if rec.Code != http.StatusOK {
@@ -344,7 +343,7 @@ func TestGetMyPreferences_Email(t *testing.T) {
 	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
 	users := &stubUsers{user: auth.Users{Email: "ada@example.test"}}
 
-	h := newHandlerWith(users, &stubStore{}, &stubCompanies{})
+	h := NewHandler(users, &stubStore{}, &stubCompanies{}, "development")
 	rec := serve(t, h.GetMyPreferences, http.MethodGet, "/me/preferences", "", identity)
 
 	if rec.Code != http.StatusOK {
@@ -396,7 +395,7 @@ func TestPutMyPreferences_ActiveCompany(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			users := &stubUsers{}
-			h := newHandlerWith(users, &stubStore{}, tt.companies)
+			h := NewHandler(users, &stubStore{}, tt.companies, "development")
 			rec := serve(t, h.PutMyPreferences, http.MethodPut, "/me/preferences", tt.body, identity)
 
 			if rec.Code != tt.wantStatus {
@@ -464,7 +463,7 @@ func TestCloneCompanySettings(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := newHandlerWith(&stubUsers{}, tt.store, tt.companies)
+			h := NewHandler(&stubUsers{}, tt.store, tt.companies, "development")
 			rec := serveWithParam(t, h.CloneCompanySettings, http.MethodPost,
 				"/company/"+tt.id+"/clone-settings", tt.body, identity, "id", tt.id)
 
@@ -511,7 +510,7 @@ func TestPutI18nSettings(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &stubStore{}
-			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{})
+			h := NewHandler(&stubUsers{}, store, &stubCompanies{}, "development")
 			rec := serve(t, h.PutI18nSettings, http.MethodPut, "/settings/i18n", tt.body, identity)
 
 			if rec.Code != tt.wantStatus {
@@ -578,7 +577,7 @@ func TestPutFormatSettings(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &stubStore{}
-			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{})
+			h := NewHandler(&stubUsers{}, store, &stubCompanies{}, "development")
 			rec := serve(t, h.PutFormatSettings, http.MethodPut, "/settings/format", tt.body, identity)
 
 			if rec.Code != tt.wantStatus {
@@ -616,6 +615,7 @@ func TestGetViewFieldsSettings(t *testing.T) {
 		wantKanban   any
 		wantCalendar any
 		wantGraphs   any
+		wantGantt    any
 	}{
 		{
 			name:         "unconfigured entity reads as nulls, not a 404",
@@ -630,12 +630,13 @@ func TestGetViewFieldsSettings(t *testing.T) {
 			name:   "configured entity",
 			entity: "crm",
 			store: &stubStore{values: map[string]string{
-				ViewFieldsKey("crm"): `{"kanban_status_field":"status","calendar_date_field":"due_date","enable_graphs":true}`,
+				ViewFieldsKey("crm"): `{"kanban_status_field":"status","calendar_date_field":"due_date","enable_graphs":true,"gantt_start_field":"date_start"}`,
 			}},
 			wantStatus:   http.StatusOK,
 			wantKanban:   "status",
 			wantCalendar: "due_date",
 			wantGraphs:   true,
+			wantGantt:    "date_start",
 		},
 		{
 			name:         "unparsable stored value degrades to nulls",
@@ -656,7 +657,7 @@ func TestGetViewFieldsSettings(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := newHandlerWith(&stubUsers{}, tt.store, &stubCompanies{})
+			h := NewHandler(&stubUsers{}, tt.store, &stubCompanies{}, "development")
 			rec := serveWithParam(t, h.GetViewFieldsSettings, http.MethodGet,
 				"/settings/views/"+tt.entity+"/fields", "", identity, "entity", tt.entity)
 
@@ -679,6 +680,9 @@ func TestGetViewFieldsSettings(t *testing.T) {
 			}
 			if resp["enable_graphs"] != tt.wantGraphs {
 				t.Errorf("enable_graphs = %v, want %v", resp["enable_graphs"], tt.wantGraphs)
+			}
+			if resp["gantt_start_field"] != tt.wantGantt {
+				t.Errorf("gantt_start_field = %v, want %v", resp["gantt_start_field"], tt.wantGantt)
 			}
 		})
 	}
@@ -705,7 +709,7 @@ func TestPutViewFieldsSettings(t *testing.T) {
 			wantStatus: http.StatusNoContent,
 			wantSet:    true,
 			wantKey:    "views.crm.fields",
-			wantValue:  `{"kanban_status_field":"status","calendar_date_field":"due_date","enable_graphs":null}`,
+			wantValue:  `{"kanban_status_field":"status","calendar_date_field":"due_date","enable_graphs":null,"gantt_start_field":null,"gantt_end_field":null}`,
 		},
 		{
 			name:       "clear both fields",
@@ -714,7 +718,7 @@ func TestPutViewFieldsSettings(t *testing.T) {
 			wantStatus: http.StatusNoContent,
 			wantSet:    true,
 			wantKey:    "views.crm.fields",
-			wantValue:  `{"kanban_status_field":null,"calendar_date_field":null,"enable_graphs":null}`,
+			wantValue:  `{"kanban_status_field":null,"calendar_date_field":null,"enable_graphs":null,"gantt_start_field":null,"gantt_end_field":null}`,
 		},
 		{
 			name:       "enable graphs override",
@@ -723,7 +727,28 @@ func TestPutViewFieldsSettings(t *testing.T) {
 			wantStatus: http.StatusNoContent,
 			wantSet:    true,
 			wantKey:    "views.crm.fields",
-			wantValue:  `{"kanban_status_field":null,"calendar_date_field":null,"enable_graphs":true}`,
+			wantValue:  `{"kanban_status_field":null,"calendar_date_field":null,"enable_graphs":true,"gantt_start_field":null,"gantt_end_field":null}`,
+		},
+		{
+			name:       "set gantt fields",
+			entity:     "project_task",
+			body:       `{"gantt_start_field":"date_start","gantt_end_field":"deadline"}`,
+			wantStatus: http.StatusNoContent,
+			wantSet:    true,
+			wantKey:    "views.project_task.fields",
+			wantValue:  `{"kanban_status_field":null,"calendar_date_field":null,"enable_graphs":null,"gantt_start_field":"date_start","gantt_end_field":"deadline"}`,
+		},
+		{
+			name:       "junk gantt start field rejected",
+			entity:     "crm",
+			body:       `{"gantt_start_field":"a b"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "junk gantt end field rejected",
+			entity:     "crm",
+			body:       `{"gantt_end_field":"../etc"}`,
+			wantStatus: http.StatusBadRequest,
 		},
 		{
 			name:       "junk entity rejected",
@@ -748,7 +773,7 @@ func TestPutViewFieldsSettings(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &stubStore{}
-			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{})
+			h := NewHandler(&stubUsers{}, store, &stubCompanies{}, "development")
 			rec := serveWithParam(t, h.PutViewFieldsSettings, http.MethodPut,
 				"/settings/views/"+tt.entity+"/fields", tt.body, identity, "entity", tt.entity)
 
@@ -817,7 +842,7 @@ func TestGetChatterSettings(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := newHandlerWith(&stubUsers{}, tt.store, &stubCompanies{})
+			h := NewHandler(&stubUsers{}, tt.store, &stubCompanies{}, "development")
 			rec := serveWithParam(t, h.GetChatterSettings, http.MethodGet,
 				"/settings/views/"+tt.entity+"/chatter", "", identity, "entity", tt.entity)
 
@@ -882,7 +907,7 @@ func TestPutChatterSettings(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &stubStore{}
-			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{})
+			h := NewHandler(&stubUsers{}, store, &stubCompanies{}, "development")
 			rec := serveWithParam(t, h.PutChatterSettings, http.MethodPut,
 				"/settings/views/"+tt.entity+"/chatter", tt.body, identity, "entity", tt.entity)
 
@@ -966,7 +991,7 @@ func TestGetGraphLayoutSettings(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := newHandlerWith(&stubUsers{}, tt.store, &stubCompanies{})
+			h := NewHandler(&stubUsers{}, tt.store, &stubCompanies{}, "development")
 			rec := serveWithParam(t, h.GetGraphLayoutSettings, http.MethodGet,
 				"/settings/views/"+tt.entity+"/graph", "", identity, "entity", tt.entity)
 
@@ -1074,7 +1099,7 @@ func TestPutGraphLayoutSettings(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &stubStore{}
-			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{})
+			h := NewHandler(&stubUsers{}, store, &stubCompanies{}, "development")
 			rec := serveWithParam(t, h.PutGraphLayoutSettings, http.MethodPut,
 				"/settings/views/"+tt.entity+"/graph", tt.body, identity, "entity", tt.entity)
 
@@ -1162,7 +1187,7 @@ func TestGetPictureSizeSettings(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := newHandlerWith(&stubUsers{}, tt.store, &stubCompanies{})
+			h := NewHandler(&stubUsers{}, tt.store, &stubCompanies{}, "development")
 			rec := serveWithParam(t, h.GetPictureSizeSettings, http.MethodGet,
 				"/settings/apps/"+tt.module+"/picture-size", "", identity, "module", tt.module)
 
@@ -1250,7 +1275,7 @@ func TestPutPictureSizeSettings(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &stubStore{}
-			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{})
+			h := NewHandler(&stubUsers{}, store, &stubCompanies{}, "development")
 			rec := serveWithParam(t, h.PutPictureSizeSettings, http.MethodPut,
 				"/settings/apps/"+tt.module+"/picture-size", tt.body, identity, "module", tt.module)
 
@@ -1311,7 +1336,7 @@ func TestGetReportsLayoutSettings(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := newHandlerWith(&stubUsers{}, tt.store, &stubCompanies{})
+			h := NewHandler(&stubUsers{}, tt.store, &stubCompanies{}, "development")
 			rec := serve(t, h.GetReportsLayoutSettings, http.MethodGet, "/settings/reports/layout", "", identity)
 
 			if rec.Code != tt.wantStatus {
@@ -1375,7 +1400,7 @@ func TestPutReportsLayoutSettings(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &stubStore{}
-			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{})
+			h := NewHandler(&stubUsers{}, store, &stubCompanies{}, "development")
 			rec := serve(t, h.PutReportsLayoutSettings, http.MethodPut, "/settings/reports/layout", tt.body, identity)
 
 			if rec.Code != tt.wantStatus {
@@ -1431,7 +1456,7 @@ func TestGetOSMSettings(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := newHandlerWith(&stubUsers{}, tt.store, &stubCompanies{})
+			h := NewHandler(&stubUsers{}, tt.store, &stubCompanies{}, "development")
 			rec := serve(t, h.GetOSMSettings, http.MethodGet, "/settings/integrations/osm", "", identity)
 
 			if rec.Code != http.StatusOK {
@@ -1499,7 +1524,7 @@ func TestPutOSMSettings(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &stubStore{}
-			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{})
+			h := NewHandler(&stubUsers{}, store, &stubCompanies{}, "development")
 			rec := serve(t, h.PutOSMSettings, http.MethodPut, "/settings/integrations/osm", tt.body, identity)
 
 			if rec.Code != tt.wantStatus {
@@ -1546,7 +1571,7 @@ func TestGetTaxSettings(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := newHandlerWith(&stubUsers{}, tt.store, &stubCompanies{})
+			h := NewHandler(&stubUsers{}, tt.store, &stubCompanies{}, "development")
 			rec := serve(t, h.GetTaxSettings, http.MethodGet, "/settings/tax", "", identity)
 
 			if rec.Code != http.StatusOK {
@@ -1602,7 +1627,7 @@ func TestPutTaxSettings(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &stubStore{}
-			h := newHandlerWith(&stubUsers{}, store, &stubCompanies{})
+			h := NewHandler(&stubUsers{}, store, &stubCompanies{}, "development")
 			rec := serve(t, h.PutTaxSettings, http.MethodPut, "/settings/tax", tt.body, identity)
 
 			if rec.Code != tt.wantStatus {
@@ -1624,6 +1649,109 @@ func TestPutTaxSettings(t *testing.T) {
 	}
 }
 
+// ── GET/PUT /settings/units ─────────────────────────────────────────────────
+
+func TestGetUnitSettings(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+
+	tests := []struct {
+		name  string
+		store *stubStore
+		want  unitSettings
+	}{
+		{"unset defaults to metric", &stubStore{}, unitSettings{System: UnitSystemMetric}},
+		{
+			"configured imperial",
+			&stubStore{values: map[string]string{UnitSystemKey: UnitSystemImperial}},
+			unitSettings{System: UnitSystemImperial},
+		},
+		{
+			"unrecognized stored value degrades to metric",
+			&stubStore{values: map[string]string{UnitSystemKey: "garbage"}},
+			unitSettings{System: UnitSystemMetric},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := NewHandler(&stubUsers{}, tt.store, &stubCompanies{}, "development")
+			rec := serve(t, h.GetUnitSettings, http.MethodGet, "/settings/units", "", identity)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body.String())
+			}
+			var resp unitSettings
+			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if resp != tt.want {
+				t.Errorf("got %+v, want %+v", resp, tt.want)
+			}
+		})
+	}
+}
+
+func TestPutUnitSettings(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+
+	tests := []struct {
+		name       string
+		body       string
+		wantStatus int
+		wantSet    bool
+		wantValue  string
+	}{
+		{
+			name:       "saves imperial",
+			body:       `{"system":"imperial"}`,
+			wantStatus: http.StatusNoContent,
+			wantSet:    true,
+			wantValue:  UnitSystemImperial,
+		},
+		{
+			name:       "saves metric",
+			body:       `{"system":"metric"}`,
+			wantStatus: http.StatusNoContent,
+			wantSet:    true,
+			wantValue:  UnitSystemMetric,
+		},
+		{
+			name:       "unrecognized system rejected",
+			body:       `{"system":"garbage"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "malformed body rejected",
+			body:       `not json`,
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &stubStore{}
+			h := NewHandler(&stubUsers{}, store, &stubCompanies{}, "development")
+			rec := serve(t, h.PutUnitSettings, http.MethodPut, "/settings/units", tt.body, identity)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+			if store.setCalled != tt.wantSet {
+				t.Fatalf("setCalled = %v, want %v", store.setCalled, tt.wantSet)
+			}
+			if !tt.wantSet {
+				return
+			}
+			if store.gotKey != UnitSystemKey {
+				t.Errorf("key = %q, want %q", store.gotKey, UnitSystemKey)
+			}
+			if store.gotValue != tt.wantValue {
+				t.Errorf("value = %q, want %q", store.gotValue, tt.wantValue)
+			}
+		})
+	}
+}
+
 // viewCatalogFixture is a throwaway table registered only so TestGetViewCatalog
 // has at least one deterministic entry to assert against, alongside whatever
 // this test binary's own package imports happened to register.
@@ -1637,7 +1765,7 @@ func TestGetViewCatalog(t *testing.T) {
 		t.Fatalf("register fixture: %v", err)
 	}
 
-	h := newHandlerWith(&stubUsers{}, &stubStore{}, &stubCompanies{})
+	h := NewHandler(&stubUsers{}, &stubStore{}, &stubCompanies{}, "development")
 	rec := serve(t, h.GetViewCatalog, http.MethodGet, "/views", "", auth.Identity{UserID: uuid.New(), TenantID: uuid.New()})
 
 	if rec.Code != http.StatusOK {
@@ -1668,5 +1796,249 @@ func TestGetViewCatalog(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("data = %+v, want an entry for %q", resp.Data, fixturePrefix)
+	}
+}
+
+// TestGetViewCatalog_SearchAndPageSize covers the bug the frontend's
+// RelationSearchWidget hit: it always sends search[name]=<typed text> +
+// page_size (core-front's ApiClient.appendListParams, the SAME two params
+// every generic-CRUD-backed many2one honors) — before this, GetViewCatalog
+// ignored both and always returned the full, unfiltered catalog.
+func TestGetViewCatalog_SearchAndPageSize(t *testing.T) {
+	const fixturePrefix = "zzz_view_catalog_search_fixture"
+	if err := orm.Register[viewCatalogFixture](orm.WithTableName(fixturePrefix)); err != nil {
+		t.Fatalf("register fixture: %v", err)
+	}
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+	h := NewHandler(&stubUsers{}, &stubStore{}, &stubCompanies{}, "development")
+
+	unmarshal := func(rec *httptest.ResponseRecorder) []viewCatalogEntry {
+		t.Helper()
+		var resp struct {
+			Data []viewCatalogEntry `json:"data"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		return resp.Data
+	}
+
+	t.Run("search[name] filters by substring, case-insensitively", func(t *testing.T) {
+		rec := serve(t, h.GetViewCatalog, http.MethodGet, "/views?search[name]=SEARCH_FIXTURE", "", identity)
+		data := unmarshal(rec)
+		if len(data) != 1 || data[0].ID != fixturePrefix {
+			t.Errorf("data = %+v, want exactly [%q]", data, fixturePrefix)
+		}
+	})
+
+	t.Run("search[name] with no match returns an empty list, not the full catalog", func(t *testing.T) {
+		rec := serve(t, h.GetViewCatalog, http.MethodGet, "/views?search[name]=no_such_entity_xyz", "", identity)
+		if data := unmarshal(rec); len(data) != 0 {
+			t.Errorf("data = %+v, want empty", data)
+		}
+	})
+
+	t.Run("page_size caps the number of rows returned", func(t *testing.T) {
+		rec := serve(t, h.GetViewCatalog, http.MethodGet, "/views?page_size=1", "", identity)
+		data := unmarshal(rec)
+		if len(data) != 1 {
+			t.Errorf("len(data) = %d, want 1", len(data))
+		}
+	})
+}
+
+func TestGetMyPreferences_UnitSystem(t *testing.T) {
+	for _, tc := range []struct{ stored, want string }{
+		{"", UnitSystemMetric},
+		{UnitSystemImperial, UnitSystemImperial},
+	} {
+		t.Run("stored="+tc.stored, func(t *testing.T) {
+			identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+			h := NewHandler(&stubUsers{}, &stubStore{values: map[string]string{UnitSystemKey: tc.stored}}, &stubCompanies{}, "development")
+			rec := serve(t, h.GetMyPreferences, http.MethodGet, "/me/preferences", "", identity)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body.String())
+			}
+			var body struct {
+				UnitSystem string `json:"unit_system"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.UnitSystem != tc.want {
+				t.Errorf("unit_system = %q, want %q", body.UnitSystem, tc.want)
+			}
+		})
+	}
+}
+
+// ── GET|PUT /settings/views/:entity/status_bar ───────────────────────────────
+
+func TestGetStatusBarSettings(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+
+	tests := []struct {
+		name       string
+		entity     string
+		stored     string
+		wantStatus int
+		wantBody   string
+	}{
+		{"unconfigured entity reads as no override, not a 404", "crm", "", http.StatusOK, `{"field":null,"steps":null}`},
+		{"configured entity", "crm", `{"field":"status","steps":["won","lost"]}`, http.StatusOK, `{"field":"status","steps":["won","lost"]}`},
+		{"unparsable stored value degrades to no override", "crm", "{not json", http.StatusOK, `{"field":null,"steps":null}`},
+		{"invalid stored value degrades to no override", "crm", `{"field":"Bad Field","steps":null}`, http.StatusOK, `{"field":null,"steps":null}`},
+		{"junk entity rejected", "../../etc", "", http.StatusBadRequest, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &stubStore{}
+			if tt.stored != "" {
+				store.values = map[string]string{ViewStatusBarKey(tt.entity): tt.stored}
+			}
+			h := NewHandler(&stubUsers{}, store, &stubCompanies{}, "development")
+			rec := serveWithParam(t, h.GetStatusBarSettings, http.MethodGet,
+				"/settings/views/"+tt.entity+"/status_bar", "", identity, "entity", tt.entity)
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+			if tt.wantStatus == http.StatusOK && strings.TrimSpace(rec.Body.String()) != tt.wantBody {
+				t.Errorf("body = %s, want %s", rec.Body.String(), tt.wantBody)
+			}
+		})
+	}
+}
+
+func TestPutStatusBarSettings(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+	steps := make([]string, maxStatusBarSteps+1)
+	for i := range steps {
+		steps[i] = `"s` + strconv.Itoa(i) + `"`
+	}
+	many := "[" + strings.Join(steps, ",") + "]"
+
+	tests := []struct {
+		name       string
+		entity     string
+		body       string
+		wantStatus int
+		wantValue  string
+	}{
+		{"field and steps", "crm", `{"field":"status","steps":["incoming","won"]}`, http.StatusNoContent, `{"field":"status","steps":["incoming","won"]}`},
+		{"clear override", "crm", `{"field":null,"steps":null}`, http.StatusNoContent, `{"field":null,"steps":null}`},
+		{"empty field and steps mean no override", "crm", `{"field":"","steps":[]}`, http.StatusNoContent, `{"field":null,"steps":null}`},
+		{"field not a column name", "crm", `{"field":"Status; DROP","steps":null}`, http.StatusBadRequest, ""},
+		{"duplicate step", "crm", `{"field":"status","steps":["won","won"]}`, http.StatusBadRequest, ""},
+		{"empty step", "crm", `{"field":"status","steps":[""]}`, http.StatusBadRequest, ""},
+		{"too many steps", "crm", `{"field":"status","steps":` + many + `}`, http.StatusBadRequest, ""},
+		{"junk entity rejected", "../../etc", `{}`, http.StatusBadRequest, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &stubStore{}
+			h := NewHandler(&stubUsers{}, store, &stubCompanies{}, "development")
+			rec := serveWithParam(t, h.PutStatusBarSettings, http.MethodPut,
+				"/settings/views/"+tt.entity+"/status_bar", tt.body, identity, "entity", tt.entity)
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+			if store.setCalled != (tt.wantValue != "") {
+				t.Fatalf("setCalled = %v", store.setCalled)
+			}
+			if tt.wantValue == "" {
+				return
+			}
+			if store.gotTenant != identity.TenantID || store.gotKey != ViewStatusBarKey(tt.entity) {
+				t.Errorf("stored under tenant %s key %q", store.gotTenant, store.gotKey)
+			}
+			if store.gotValue != tt.wantValue {
+				t.Errorf("value = %s, want %s", store.gotValue, tt.wantValue)
+			}
+		})
+	}
+}
+
+// ── GET|PUT /settings/accounts, GET /me/preferences failure paths ────────────
+
+func TestAccountsSettings(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+
+	t.Run("unset reads false, a saved value reads back", func(t *testing.T) {
+		store := &stubStore{}
+		h := NewHandler(&stubUsers{}, store, &stubCompanies{}, "development")
+		rec := serve(t, h.GetAccountsSettings, http.MethodGet, "/settings/accounts", "", identity)
+		if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != `{"username_at_format":false}` {
+			t.Fatalf("unset = %d %s", rec.Code, rec.Body.String())
+		}
+		rec = serve(t, h.PutAccountsSettings, http.MethodPut, "/settings/accounts", `{"username_at_format":true}`, identity)
+		if rec.Code != http.StatusNoContent || store.gotKey != AccountsUsernameAtFormatKey || store.gotValue != `{"username_at_format":true}` {
+			t.Fatalf("put = %d, stored %q=%q", rec.Code, store.gotKey, store.gotValue)
+		}
+		store.values = map[string]string{AccountsUsernameAtFormatKey: store.gotValue}
+		rec = serve(t, h.GetAccountsSettings, http.MethodGet, "/settings/accounts", "", identity)
+		if strings.TrimSpace(rec.Body.String()) != `{"username_at_format":true}` {
+			t.Errorf("after put = %s", rec.Body.String())
+		}
+		// The preferences carry it too.
+		rec = serve(t, h.GetMyPreferences, http.MethodGet, "/me/preferences", "", identity)
+		if !strings.Contains(rec.Body.String(), `"username_at_format":true`) {
+			t.Errorf("preferences = %s", rec.Body.String())
+		}
+	})
+
+	t.Run("an unreadable stored value reads false", func(t *testing.T) {
+		h := NewHandler(&stubUsers{}, &stubStore{values: map[string]string{AccountsUsernameAtFormatKey: "{nope"}}, &stubCompanies{}, "development")
+		rec := serve(t, h.GetAccountsSettings, http.MethodGet, "/settings/accounts", "", identity)
+		if strings.TrimSpace(rec.Body.String()) != `{"username_at_format":false}` {
+			t.Errorf("unreadable = %s", rec.Body.String())
+		}
+	})
+
+	failures := []struct {
+		name      string
+		handler   func(h *Handler) echo.HandlerFunc
+		method    string
+		body      string
+		users     *stubUsers
+		store     *stubStore
+		companies *stubCompanies
+		want      int
+	}{
+		{"put: malformed body", func(h *Handler) echo.HandlerFunc { return h.PutAccountsSettings }, http.MethodPut, "{", &stubUsers{}, &stubStore{}, &stubCompanies{}, http.StatusBadRequest},
+		{"put: no active company", func(h *Handler) echo.HandlerFunc { return h.PutAccountsSettings }, http.MethodPut, `{}`, &stubUsers{}, &stubStore{}, &stubCompanies{resolveErr: errors.New("db down")}, http.StatusInternalServerError},
+		{"put: store refuses", func(h *Handler) echo.HandlerFunc { return h.PutAccountsSettings }, http.MethodPut, `{}`, &stubUsers{}, &stubStore{setErr: errors.New("db down")}, &stubCompanies{}, http.StatusInternalServerError},
+		{"get: no active company", func(h *Handler) echo.HandlerFunc { return h.GetAccountsSettings }, http.MethodGet, "", &stubUsers{}, &stubStore{}, &stubCompanies{resolveErr: errors.New("db down")}, http.StatusInternalServerError},
+		{"get: store fails", func(h *Handler) echo.HandlerFunc { return h.GetAccountsSettings }, http.MethodGet, "", &stubUsers{}, &stubStore{getErr: errors.New("db down")}, &stubCompanies{}, http.StatusInternalServerError},
+		{"preferences: account gone", func(h *Handler) echo.HandlerFunc { return h.GetMyPreferences }, http.MethodGet, "", &stubUsers{findErr: orm.ErrNotFound}, &stubStore{}, &stubCompanies{}, http.StatusUnauthorized},
+		{"preferences: user lookup fails", func(h *Handler) echo.HandlerFunc { return h.GetMyPreferences }, http.MethodGet, "", &stubUsers{findErr: errors.New("db down")}, &stubStore{}, &stubCompanies{}, http.StatusInternalServerError},
+		{"preferences: no active company", func(h *Handler) echo.HandlerFunc { return h.GetMyPreferences }, http.MethodGet, "", &stubUsers{}, &stubStore{}, &stubCompanies{resolveErr: errors.New("db down")}, http.StatusInternalServerError},
+		{"preferences: store fails", func(h *Handler) echo.HandlerFunc { return h.GetMyPreferences }, http.MethodGet, "", &stubUsers{}, &stubStore{getErr: errors.New("db down")}, &stubCompanies{}, http.StatusInternalServerError},
+	}
+	for _, tt := range failures {
+		t.Run(tt.name, func(t *testing.T) {
+			h := NewHandler(tt.users, tt.store, tt.companies, "development")
+			if rec := serve(t, tt.handler(h), tt.method, "/", tt.body, identity); rec.Code != tt.want {
+				t.Errorf("status = %d, want %d (%s)", rec.Code, tt.want, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestGetMyPreferences_HasAvatar(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+	yes := true
+	for _, tc := range []struct {
+		avatar *bool
+		want   bool
+	}{{nil, false}, {&yes, true}} {
+		h := NewHandler(&stubUsers{user: auth.Users{Avatar: tc.avatar}}, &stubStore{}, &stubCompanies{}, "development")
+		rec := serve(t, h.GetMyPreferences, http.MethodGet, "/me/preferences", "", identity)
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatal(err)
+		}
+		if resp["has_avatar"] != tc.want {
+			t.Errorf("has_avatar = %v, want %v", resp["has_avatar"], tc.want)
+		}
 	}
 }

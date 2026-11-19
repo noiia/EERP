@@ -1,0 +1,104 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import Menu from './Menu'
+import type { IconDefinition, MenuModule } from '@eerp/core-front'
+
+const handshake = {
+  prefix: 'fas',
+  iconName: 'handshake',
+  icon: [512, 512, [], '', 'M0 0h512v512H0z'],
+} as IconDefinition
+
+const descriptor = { entity: 'x', viewType: 'tree', fields: [] }
+const menu = [
+  { name: 'crm', routes: [{ path: '/crm', descriptor }] },
+  { name: 'stock_manager', routes: [{ path: '/stock', descriptor }] },
+] as unknown as MenuModule[]
+
+describe('Menu', () => {
+  let errorSpy: ReturnType<typeof vi.spyOn>
+
+  beforeEach(() => {
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+  afterEach(() => {
+    errorSpy.mockRestore()
+  })
+
+  it('renders one tile per module plus the built-in Settings tile, each linking to its first route', () => {
+    render(<Menu menu={menu} />)
+    expect(screen.getByRole('link', { name: /crm/i })).toHaveAttribute('href', '/app/crm')
+    expect(screen.getByRole('link', { name: /stock manager/i })).toHaveAttribute(
+      'href',
+      '/app/stock',
+    )
+    expect(screen.getByRole('link', { name: /settings/i })).toHaveAttribute('href', '/app/settings')
+  })
+
+  it('appends the first route\'s navQuery to the tile link', () => {
+    const withQuery = [{ name: 'crm', routes: [{ path: '/crm', descriptor: { ...descriptor, navQuery: '?filter[active]=true' } }] }] as unknown as MenuModule[]
+    render(<Menu menu={withQuery} />)
+    expect(screen.getByRole('link', { name: /crm/i })).toHaveAttribute('href', '/app/crm?filter[active]=true')
+  })
+
+  it('renders with stable keys — no React key warning (the key sits on the mapped tile, not an inner child)', () => {
+    render(<Menu menu={menu} />)
+    const keyWarnings = errorSpy.mock.calls.filter((args: unknown[]) =>
+      args.some((a: unknown) => typeof a === 'string' && a.includes('unique "key" prop')),
+    )
+    expect(keyWarnings).toHaveLength(0)
+  })
+
+  it('gives every tile exactly one label, always inside the tile', () => {
+    render(<Menu menu={menu} />)
+    // 2 modules + Settings = 3 tiles; each contributes exactly one label —
+    // no below-tile duplicate: even the compact 75px phone tier holds
+    // icon/monogram + label together, just sized down to fit.
+    expect(screen.getAllByText('Stock Manager')).toHaveLength(1)
+  })
+
+  it('module tiles with no icon get a monogram so the compact tile is never blank', () => {
+    render(<Menu menu={menu} />)
+    const crmLink = screen.getByRole('link', { name: /crm/i })
+    expect(crmLink).toHaveTextContent(/^C/)
+  })
+
+  it('a module whose menu_icon the server resolved renders it instead of the monogram', () => {
+    const menuWithIcon = [
+      { name: 'crm', routes: [{ path: '/crm', descriptor }], icon: 'handshake' },
+    ] as unknown as MenuModule[]
+    render(<Menu menu={menuWithIcon} icons={{ crm: handshake }} />)
+    const crmLink = screen.getByRole('link', { name: /crm/i })
+    expect(crmLink.querySelector('svg')).toBeInTheDocument()
+    expect(crmLink).not.toHaveTextContent(/^C\s/)
+  })
+
+  it('a menu_icon the server could not resolve falls back to the monogram instead of rendering nothing', () => {
+    const menuWithBadIcon = [
+      { name: 'crm', routes: [{ path: '/crm', descriptor }], icon: 'not-a-real-icon' },
+    ] as unknown as MenuModule[]
+    render(<Menu menu={menuWithBadIcon} />)
+    const crmLink = screen.getByRole('link', { name: /crm/i })
+    expect(crmLink.querySelector('svg')).not.toBeInTheDocument()
+    expect(crmLink).toHaveTextContent(/^C/)
+  })
+
+  it('prefers displayName over the titleized name when set', () => {
+    const menuWithDisplayName = [
+      {
+        name: 'propertymanagement',
+        routes: [{ path: '/pm', descriptor }],
+        displayName: 'Real Estate',
+      },
+    ] as unknown as MenuModule[]
+    render(<Menu menu={menuWithDisplayName} />)
+    expect(screen.getByRole('link', { name: /real estate/i })).toBeInTheDocument()
+    expect(screen.queryByText('Propertymanagement')).not.toBeInTheDocument()
+  })
+
+  it('shows the empty-state message when no applications are installed (Settings still listed)', () => {
+    render(<Menu menu={[]} />)
+    expect(screen.getByText('No applications are available for your account.')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /settings/i })).toHaveAttribute('href', '/app/settings')
+  })
+})

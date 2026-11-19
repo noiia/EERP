@@ -11,8 +11,7 @@ import (
 // for candidates and shows Name on each tag chip.
 type Tag struct {
 	model.BaseModel
-	TenantID uuid.UUID `db:"tenant_id"`
-	Name     string    `db:"name"`
+	Name string `db:"name"`
 }
 
 // CrmTag is one crm<->tag link. It lives ON the generic CRUD surface on
@@ -22,7 +21,6 @@ type Tag struct {
 // convention the widget derives: <own entity>_id / <related entity>_id.
 type CrmTag struct {
 	model.BaseModel
-	TenantID uuid.UUID `db:"tenant_id"`
-	CrmID    uuid.UUID `db:"crm_id,index"`
-	TagID    uuid.UUID `db:"tag_id"`
+	CrmID uuid.UUID `db:"crm_id,index"`
+	TagID uuid.UUID `db:"tag_id"`
 }

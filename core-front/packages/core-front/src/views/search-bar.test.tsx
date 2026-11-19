@@ -1,17 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ViewDescriptor } from './descriptor'
 import { RelationOpsProvider, type RelationOps } from './relation-ops'
 import { SavedFilterOpsProvider, type SavedFilterOps, type SavedFilterRecord } from './saved-filter-ops'
-import { SearchBar } from './search-bar'
+import { SearchBar, toListOptions } from './search-bar'
 import { useSessionStore, type Identity } from './session-store'
 import { useUndoToastStore } from './undo-toast'
+import { setViewportWidth } from '../test/viewport'
+
+// The page URL's query, as Next's useSearchParams serves it (null outside a router).
+const urlParams = vi.hoisted(() => ({ current: null as URLSearchParams | null }))
+vi.mock('next/navigation', async (orig) => ({
+  ...(await orig<typeof import('next/navigation')>()),
+  useSearchParams: () => urlParams.current,
+}))
 
 function identityWith(groups: string[]): Identity {
   return { userId: 'u1', tenantId: 't1', roles: ['tester'], permissions: [], groups }
 }
 
 beforeEach(() => {
+  urlParams.current = null
+  window.history.replaceState(null, '', '/')
   useSessionStore.setState({ identity: null })
   useUndoToastStore.setState({ pending: null })
   vi.useRealTimers()
@@ -41,6 +51,7 @@ function renderBar(
   savedOpsOverrides: Partial<SavedFilterOps> | null = {},
 ) {
   const onResults = vi.fn()
+  const onFiltersChange = vi.fn()
   const ops: RelationOps = {
     list: vi.fn(async () => []),
     get: vi.fn(),
@@ -63,7 +74,7 @@ function renderBar(
   const tree = savedOps ? (
     <RelationOpsProvider ops={ops}>
       <SavedFilterOpsProvider ops={savedOps}>
-        <SearchBar descriptor={descriptor} onResults={onResults} fallback={fallback} />
+        <SearchBar descriptor={descriptor} onResults={onResults} fallback={fallback} onFiltersChange={onFiltersChange} />
       </SavedFilterOpsProvider>
     </RelationOpsProvider>
   ) : (
@@ -72,10 +83,37 @@ function renderBar(
     </RelationOpsProvider>
   )
   render(tree)
-  return { onResults, ops, savedOps }
+  return { onResults, onFiltersChange, ops, savedOps }
 }
 
 describe('SearchBar', () => {
+  it('shows a relation filter by its record\'s label, never its id', async () => {
+    urlParams.current = new URLSearchParams('filter[project_id]=p-1')
+    const list = vi.fn(async (entity: string) => (entity === 'project' ? [{ id: 'p-1', name: 'Apollo' }] : []))
+    const ops: RelationOps = { list, get: vi.fn(), create: vi.fn(), remove: vi.fn() }
+    const withProject: ViewDescriptor<Contact> = {
+      ...descriptor,
+      fields: [
+        ...descriptor.fields,
+        { name: 'project_id', label: 'Project', type: 'relation', relation: { entity: 'project', kind: 'many2one', labelField: 'name' } },
+      ],
+    }
+    render(
+      <RelationOpsProvider ops={ops}>
+        <SearchBar descriptor={withProject} onResults={vi.fn()} fallback={fallback} />
+      </RelationOpsProvider>,
+    )
+    expect(await screen.findByText(/Project = Apollo/)).toBeInTheDocument()
+    expect(list).toHaveBeenCalledWith('project', { in: { id: ['p-1'] }, pageSize: 1 })
+    expect(screen.queryByText(/p-1/)).toBeNull()
+  })
+
+  it('starts from the URL\'s filter[<field>]= values on filterable fields (a form\'s link to a filtered list)', async () => {
+    urlParams.current = new URLSearchParams('filter[status]=won&filter[secret]=x&filter[nope]=y')
+    const { onFiltersChange } = renderBar()
+    await waitFor(() => expect(onFiltersChange).toHaveBeenLastCalledWith({ filter: { status: 'won' } }))
+  })
+
   it('opens the dropdown with Filters/Group by/Saved filters sections on click', () => {
     renderBar()
     fireEvent.click(screen.getByPlaceholderText('Search…'))
@@ -189,7 +227,18 @@ describe('SearchBar', () => {
 
     // applyGroupValue closes the dropdown (setAnchorEl(null)) — the chip
     // must still be visible with it shut, proving it lives in the bar.
-    await waitFor(() => expect(screen.getByText('Status eq open')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Status = open')).toBeInTheDocument())
+  })
+
+  it('reports the structured filters (no paging) for Graph mode, then undefined once cleared', async () => {
+    const { onFiltersChange } = renderBar({ distinctValues: vi.fn(async () => [{ value: 'open', total: 3 }]) })
+    fireEvent.click(screen.getByPlaceholderText('Search…'))
+    fireEvent.click(screen.getByText('Status'))
+    fireEvent.click(await screen.findByText('open (3)'))
+    await waitFor(() => expect(onFiltersChange).toHaveBeenLastCalledWith({ filter: { status: 'open' } }))
+
+    fireEvent.click(within(barChip(/Status = open/)).getByTestId('CancelIcon'))
+    await waitFor(() => expect(onFiltersChange).toHaveBeenLastCalledWith(undefined))
   })
 
   // The dropdown's own MenuItem (portaled by MUI to the end of document.body)
@@ -214,9 +263,9 @@ describe('SearchBar', () => {
     fireEvent.click(await screen.findByText(/Open deals/))
 
     // The consolidated chip (in the bar) shows the saved filter's NAME —
-    // the underlying "Status eq open" condition text never renders.
+    // the underlying "Status = open" condition text never renders.
     await waitFor(() => expect(barChip(/^Open deals$/)).toBeTruthy())
-    expect(screen.queryByText('Status eq open')).not.toBeInTheDocument()
+    expect(screen.queryByText('Status = open')).not.toBeInTheDocument()
   })
 
   it('an applied filter NOT owned by the caller gets a plain unapply close, no pencil', async () => {
@@ -314,6 +363,123 @@ describe('SearchBar', () => {
     await waitFor(() => expect(remove).toHaveBeenCalledWith('sf1'))
   })
 
+  it('offers filter-only fields and proposes related records as the value of a relation filter', async () => {
+    const list = vi.fn(async (entity: string, opts?: { search?: Record<string, string> }) =>
+      entity === 'users'
+        ? [{ id: 'u-1', email: 'ada@x.io' }, { id: 'u-2', email: 'bob@x.io' }].filter((u) => !opts?.search || u.email.includes(opts.search.email))
+        : [],
+    )
+    const onFiltersChange = vi.fn()
+    const withAssignees: ViewDescriptor<Contact> = {
+      ...descriptor,
+      search: {
+        filterOnlyFields: [
+          { name: 'assignees', label: 'Assignees', type: 'relation', relation: { entity: 'users', kind: 'many2many', via: 'task_user', labelField: 'email' } },
+        ],
+      },
+    }
+    render(
+      <RelationOpsProvider ops={{ list, get: vi.fn(), create: vi.fn(), remove: vi.fn() } as RelationOps}>
+        <SearchBar descriptor={withAssignees} onResults={vi.fn()} fallback={fallback} onFiltersChange={onFiltersChange} pagedByParent />
+      </RelationOpsProvider>,
+    )
+    fireEvent.click(screen.getByPlaceholderText('Search…'))
+    const [fieldSelect, opSelect] = screen.getAllByRole('combobox')
+    fireEvent.mouseDown(fieldSelect)
+    fireEvent.click(await screen.findByRole('option', { name: 'Assignees' }))
+    fireEvent.mouseDown(opSelect)
+    // A many2many filter takes one id: "=" only.
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['Op', '='])
+    fireEvent.click(screen.getByRole('option', { name: '=' }))
+    const value = screen.getByPlaceholderText('Value')
+    fireEvent.mouseDown(value)
+    expect(await screen.findByRole('option', { name: 'ada@x.io' })).toBeInTheDocument()
+    fireEvent.change(value, { target: { value: 'bob' } })
+    await waitFor(() => expect(list).toHaveBeenLastCalledWith('users', { search: { email: 'bob' }, pageSize: 20 }))
+    fireEvent.click(await screen.findByRole('option', { name: 'bob@x.io' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add filter' }))
+    await waitFor(() => expect(onFiltersChange).toHaveBeenLastCalledWith({ filter: { assignees: 'u-2' } }))
+    expect(await screen.findByText(/Assignees = bob@x.io/)).toBeInTheDocument()
+  })
+
+  it('picks several related records for an "in" filter on a many2one', async () => {
+    const list = vi.fn(async (entity: string) => (entity === 'project' ? [{ id: 'p-1', name: 'Apollo' }, { id: 'p-2', name: 'Gemini' }] : []))
+    const onFiltersChange = vi.fn()
+    const withProject: ViewDescriptor<Contact> = {
+      ...descriptor,
+      fields: [...descriptor.fields, { name: 'project_id', label: 'Project', type: 'relation', relation: { entity: 'project', kind: 'many2one', labelField: 'name' } }],
+    }
+    render(
+      <RelationOpsProvider ops={{ list, get: vi.fn(), create: vi.fn(), remove: vi.fn() } as RelationOps}>
+        <SearchBar descriptor={withProject} onResults={vi.fn()} fallback={fallback} onFiltersChange={onFiltersChange} pagedByParent />
+      </RelationOpsProvider>,
+    )
+    fireEvent.click(screen.getByPlaceholderText('Search…'))
+    const [fieldSelect, opSelect] = screen.getAllByRole('combobox')
+    fireEvent.mouseDown(fieldSelect)
+    fireEvent.click(await screen.findByRole('option', { name: 'Project' }))
+    fireEvent.mouseDown(opSelect)
+    fireEvent.click(await screen.findByRole('option', { name: 'in' }))
+    const value = screen.getByPlaceholderText('Value')
+    fireEvent.mouseDown(value)
+    fireEvent.click(await screen.findByRole('option', { name: 'Apollo' }))
+    fireEvent.mouseDown(value)
+    fireEvent.click(await screen.findByRole('option', { name: 'Gemini' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add filter' }))
+    await waitFor(() => expect(onFiltersChange).toHaveBeenLastCalledWith({ in: { project_id: ['p-1', 'p-2'] } }))
+  })
+
+  it('keeps its exact-match filters in the URL, so coming back to the list restores them', async () => {
+    window.history.replaceState(null, '', '/project/tasks?view=x')
+    const list = vi.fn(async (entity: string) => (entity === 'project' ? [{ id: 'p-1', name: 'Apollo' }] : []))
+    const onFiltersChange = vi.fn()
+    const withProject: ViewDescriptor<Contact> = {
+      ...descriptor,
+      fields: [...descriptor.fields, { name: 'project_id', label: 'Project', type: 'relation', relation: { entity: 'project', kind: 'many2one', labelField: 'name' } }],
+    }
+    const bar = () => (
+      <RelationOpsProvider ops={{ list, get: vi.fn(), create: vi.fn(), remove: vi.fn() } as RelationOps}>
+        <SearchBar descriptor={withProject} onResults={vi.fn()} fallback={fallback} onFiltersChange={onFiltersChange} pagedByParent />
+      </RelationOpsProvider>
+    )
+    const { rerender } = render(bar())
+    const add = async (field: string, op: string, pick: () => Promise<void>) => {
+      fireEvent.click(screen.getByPlaceholderText('Search…'))
+      const [fieldSelect, opSelect] = screen.getAllByRole('combobox')
+      fireEvent.mouseDown(fieldSelect)
+      fireEvent.click(await screen.findByRole('option', { name: field }))
+      fireEvent.mouseDown(opSelect)
+      fireEvent.click(await screen.findByRole('option', { name: op }))
+      await pick()
+      fireEvent.click(screen.getByRole('button', { name: 'Add filter' }))
+    }
+    await add('Project', '=', async () => {
+      fireEvent.mouseDown(screen.getByPlaceholderText('Value'))
+      fireEvent.click(await screen.findByRole('option', { name: 'Apollo' }))
+    })
+    await add('Name', 'contains', async () => {
+      fireEvent.change(screen.getByPlaceholderText('Value'), { target: { value: 'ada' } })
+    })
+    await waitFor(() => expect(onFiltersChange).toHaveBeenLastCalledWith({ filter: { project_id: 'p-1' }, search: { name: 'ada' } }))
+    // The pin is in the URL (other params kept); a contains filter isn't (the URL can't seed it).
+    const query = new URLSearchParams(window.location.search)
+    expect(query.get('filter[project_id]')).toBe('p-1')
+    expect(query.get('view')).toBe('x')
+    expect([...query.keys()]).toEqual(['view', 'filter[project_id]'])
+    expect(window.location.pathname).toBe('/project/tasks')
+    // Next then serves that query through useSearchParams: the bar doesn't re-seed from
+    // its own write (which would drop the contains filter).
+    const calls = onFiltersChange.mock.calls.length
+    urlParams.current = new URLSearchParams(window.location.search)
+    rerender(bar())
+    await new Promise((r) => setTimeout(r, 0))
+    expect(onFiltersChange.mock.calls.length).toBe(calls)
+    // Removing the pin takes it out of the URL.
+    fireEvent.click(within(screen.getByText(/Project = Apollo/).closest('.MuiChip-root') as HTMLElement).getByTestId('CancelIcon'))
+    await waitFor(() => expect(new URLSearchParams(window.location.search).get('filter[project_id]')).toBeNull())
+    expect(new URLSearchParams(window.location.search).get('view')).toBe('x')
+  })
+
   it('typing into the Add-filter value field never lets the Menu steal focus (the MUI Menu typeahead bug)', async () => {
     // The "Status" field option starts with 's' — exactly the letter MUI's
     // MenuList typeahead would jump focus to if the keydown ever reached it.
@@ -346,5 +512,76 @@ describe('SearchBar', () => {
     expect(screen.getByText('Saved filters')).toBeInTheDocument()
     // "Save current as…" stays present but disabled with no filters/no ops.
     expect(screen.getByText('Save current as…')).toBeDisabled()
+  })
+})
+
+describe('geo filters → list options', () => {
+  it('near with a radius adds within; inside and covers pass through', () => {
+    expect(
+      toListOptions(
+        [
+          { field: 'geo_location', op: 'near', value: '2.35,48.85,10000' },
+          { field: 'geo_location', op: 'inside', value: 'company:co1:service_zone' },
+          { field: 'service_zone', op: 'covers', value: '2.35,48.85' },
+        ],
+        200,
+      ),
+    ).toEqual({
+      pageSize: 200,
+      near: { geo_location: '2.35,48.85' },
+      within: { geo_location: '2.35,48.85,10000' },
+      inside: { geo_location: 'company:co1:service_zone' },
+      covers: { service_zone: '2.35,48.85' },
+    })
+  })
+  it('near without a radius only orders', () => {
+    expect(toListOptions([{ field: 'geo_location', op: 'near', value: '2.35,48.85' }], 200)).toEqual({
+      pageSize: 200,
+      near: { geo_location: '2.35,48.85' },
+    })
+  })
+})
+
+describe('geo filter value validation', () => {
+  const run = (op: 'near' | 'covers' | 'inside', value: string) =>
+    toListOptions([{ field: 'g', op, value }], 1)
+  it('drops malformed values', () => {
+    expect(run('near', ',,5000')).toEqual({ pageSize: 1 })
+    expect(run('near', 'a,b')).toEqual({ pageSize: 1 })
+    expect(run('covers', '')).toEqual({ pageSize: 1 })
+    expect(run('inside', '')).toEqual({ pageSize: 1 })
+  })
+  it('near with a bad radius only orders', () => {
+    expect(run('near', '2.35,48.85,abc')).toEqual({ pageSize: 1, near: { g: '2.35,48.85' } })
+  })
+  it('covers drops a radius', () => {
+    expect(run('covers', '2.35,48.85,1000')).toEqual({ pageSize: 1, covers: { g: '2.35,48.85' } })
+  })
+})
+
+describe('SearchBar on phone (390px)', () => {
+  // Defect: the dropdown took the search field's width minus 20px (~170px),
+  // cutting off the Filters row's Field/Op/Value/Add controls.
+  it('opens the filter menu at full screen width', () => {
+    setViewportWidth(390)
+    renderBar()
+    fireEvent.click(screen.getByPlaceholderText('Search…'))
+    // calc(100vw - 32px): jsdom resolves 100vw against its fixed 1024px layout width.
+    expect(getComputedStyle(document.querySelector('.MuiMenu-paper')!).width).toBe(`${1024 - 32}px`)
+  })
+
+  // Defect: the field kept its 450px desktop width, capped by an auto-width parent.
+  it('lets the search field fill its line', () => {
+    setViewportWidth(390)
+    renderBar()
+    expect(screen.getByPlaceholderText('Search…').closest('.MuiTextField-root')).toHaveStyle({ width: '100%' })
+  })
+
+  // Defect: the filter row's Add button was a 30×37px target.
+  it('gives the Add filter button a 40px touch target', () => {
+    setViewportWidth(390)
+    renderBar()
+    fireEvent.click(screen.getByPlaceholderText('Search…'))
+    expect(screen.getByRole('button', { name: 'Add filter' })).toHaveStyle({ minWidth: '40px', minHeight: '40px' })
   })
 })

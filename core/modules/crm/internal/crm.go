@@ -10,16 +10,14 @@ import (
 // The table name is derived automatically from the struct name: "crm".
 type CRM struct {
 	model.BaseModel
-	TenantID uuid.UUID `db:"tenant_id"` // owning tenant; set server-side, enforces row isolation
-	Name     string    `db:"name"`
-	Email    string    `db:"email"`
-	Company  string    `db:"company"`
-	Status   string    `db:"status"` // "lead", "prospect", "customer", "churned"
+	Name    string `db:"name"`
+	Company string `db:"company"`
+	Status  string `db:"status"` // "lead", "prospect", "customer", "churned"
 	// Contacts is the optional many2one FK behind the form's contact search
 	// widget. Pointer = nullable ON PURPOSE: "no contact" is a legal state and
 	// the widget's unlink affordance writes null — a NOT NULL column would 500
 	// every create/unlink that leaves the contact unset.
-	Contacts *uuid.UUID `db:"contact_id"`
+	Contacts *uuid.UUID `db:"contact_id" json:"contact_id"`
 	// Phone/Notes/Satisfaction/Deals back the Phase-1 widget samples on the CRM
 	// form (views/crm_views.ts): text/phone (E.164 — a TEXT column on purpose,
 	// numeric columns lose the leading + and zeros), text/long, number/percent

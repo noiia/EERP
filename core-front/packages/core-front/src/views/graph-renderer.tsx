@@ -9,12 +9,17 @@ import IconButton from '@mui/material/IconButton'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import ReactGridLayout, { useContainerWidth, verticalCompactor, type Layout } from 'react-grid-layout'
-import { GRID_UNIT, type Tile, type TileType } from '../api/graph'
+import { GRID_UNIT, type GraphField, type GraphFieldDraft, type Tile, type TileType } from '../api/graph'
 import type { SerializedError } from '../api/errors'
 import { usePermission } from '../auth/Can'
 import { useT } from '../i18n/translate'
-import type { ViewDescriptor } from './descriptor'
+import { fieldLabel, type ViewDescriptor } from './descriptor'
+import type { EntityListOptions } from '../api/list-options'
+import { planTile, useServerTileData } from './graph-server'
 import { ErrorAlert } from './error-alert'
+import { calcKeysIn, expandByChildren, withCalculatedFields } from './graph-aggregate'
+import { useRelationOps, type RelationRecord } from './relation-ops'
+import { CalcFieldDialog, CalcFieldsPanel } from './graph-calc-fields'
 import { useGraphOps } from './graph-ops'
 import { GraphWidgetBody } from './graph-widgets'
 import { WidgetConfigDialog, type WidgetDraft } from './graph-widget-config'
@@ -83,6 +88,8 @@ function GraphTileCard<T extends HasId>({
   descriptor,
   records,
   recordTotal,
+  calcFields,
+  listOptions,
   onConfigure,
   onHide,
 }: {
@@ -91,10 +98,25 @@ function GraphTileCard<T extends HasId>({
   descriptor: ViewDescriptor<T>
   records: T[]
   recordTotal: number | undefined
+  calcFields: GraphField[]
+  /** Active list filters, forwarded to server-side aggregation (ADR-023). */
+  listOptions: EntityListOptions | undefined
   onConfigure?: () => void
   onHide?: () => void
 }) {
   const t = useT()
+  const graphOps = useGraphOps()
+  const fieldOf = (name: string) => descriptor.fields.find((f) => f.name === name)
+  const plan = planTile(
+    tile,
+    calcFields,
+    (name) => fieldOf(name)?.type === 'number',
+    (name) => {
+      const f = fieldOf(name)
+      return f ? fieldLabel(f) : name
+    },
+  )
+  const server = useServerTileData(descriptor.entity, plan, graphOps, listOptions)
   return (
     <Card
       variant="outlined"
@@ -151,7 +173,13 @@ function GraphTileCard<T extends HasId>({
           '&:last-child': { pb: 1 },
         }}
       >
-        <GraphWidgetBody tile={tile} descriptor={descriptor} records={records} recordTotal={recordTotal} />
+        <GraphWidgetBody
+          tile={tile}
+          descriptor={descriptor}
+          records={records}
+          recordTotal={recordTotal}
+          server={server}
+        />
       </CardContent>
     </Card>
   )
@@ -166,11 +194,16 @@ export interface GraphRendererProps<T extends HasId> {
   /** Go's total row count, when known — undefined is treated as "unknown",
    * not "complete", so the partial-data badge stays conservative. */
   recordTotal?: number
+  /** The search bar's active structured filters. With a host GraphOps.aggregate,
+   * xy/bar/pie/stat tiles aggregate server-side over every row matching them
+   * (plus descriptor.listFilter) — ADR-023. */
+  listOptions?: EntityListOptions
 }
 
-export function GraphRenderer<T extends HasId>({ descriptor, records, recordTotal }: GraphRendererProps<T>) {
+export function GraphRenderer<T extends HasId>({ descriptor, records, recordTotal, listOptions }: GraphRendererProps<T>) {
   const t = useT()
   const graphOps = useGraphOps()
+  const relationOps = useRelationOps()
   const canEdit = usePermission('settings:views:write')
   const { width: containerWidth, containerRef, mounted } = useContainerWidth({ measureBeforeMount: true })
 
@@ -182,6 +215,34 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
   const [saving, setSaving] = useState(false)
   // Which tile the config dialog is editing, or 'new' to add one, or null (closed).
   const [dialogTarget, setDialogTarget] = useState<Tile | 'new' | null>(null)
+  // Calculated fields visible to this user (Go filters by role); [] when the host has none.
+  const [calcFields, setCalcFields] = useState<GraphField[]>([])
+  const [fieldDialogOpen, setFieldDialogOpen] = useState(false)
+  // The variable being edited (null = the dialog creates a new one).
+  const [editingField, setEditingField] = useState<GraphField | null>(null)
+  // Dated variables are computed once per row of this child entity (descriptor.graphDatedRows).
+  const datedEntity = descriptor.graphDatedRows?.entity
+  const datedLink = descriptor.graphDatedRows?.link
+  const [datedRows, setDatedRows] = useState<RelationRecord[]>([])
+  const recordIds = records.map((r) => r.id).join(',')
+  const wantsDatedRows = calcFields.some((f) => f.dated)
+  useEffect(() => {
+    if (!wantsDatedRows || !relationOps || !datedEntity || !datedLink || recordIds === '') {
+      setDatedRows([])
+      return
+    }
+    let cancelled = false
+    relationOps
+      .list(datedEntity, { in: { [datedLink]: recordIds.split(',') }, pageSize: 1000 })
+      .then((rows) => !cancelled && setDatedRows(rows), () => !cancelled && setDatedRows([]))
+    return () => {
+      cancelled = true
+    }
+  }, [wantsDatedRows, relationOps, datedEntity, datedLink, recordIds])
+
+  useEffect(() => {
+    graphOps?.listFields?.(descriptor.entity).then(setCalcFields, () => setCalcFields([]))
+  }, [graphOps, descriptor.entity])
 
   useEffect(() => {
     let cancelled = false
@@ -205,7 +266,35 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
   const editing = draft != null
   const tiles = editing ? draft : (saved ?? [])
   const visibleTiles = tiles.filter((tl) => !tl.hidden)
+  // Calculated fields ride the descriptor + records as plain number columns, so
+  // every tile type (and the config dialog's pickers) treats them like real
+  // ones. A key a tile still references but no longer exists reads 0.
+  const calcDescriptor: ViewDescriptor<T> = {
+    ...descriptor,
+    fields: [
+      ...descriptor.fields,
+      ...calcFields.map((f) => ({ name: f.key, label: f.label, type: 'number' as const })),
+    ],
+  }
+  const calcRecords = withCalculatedFields(records, calcFields, calcKeysIn(tiles.map((tl) => tl.config)))
+  const datedKeys = new Set(calcFields.filter((f) => f.dated).map((f) => f.key))
+  /** A tile using a dated variable computes over one row per dated child (each
+   * line, or only the last per day — tile config `datedMode`), not per record. */
+  const recordsFor = (tile: Tile): T[] => {
+    const cfg = tile.config as Record<string, unknown>
+    if (!datedLink || !calcKeysIn([cfg]).some((k) => datedKeys.has(k))) return calcRecords
+    const expanded = expandByChildren(records, datedRows, datedLink, {
+      dateField: typeof cfg.xField === 'string' ? cfg.xField : 'generated_at',
+      lastPerDay: cfg.datedMode === 'lastPerDay',
+    })
+    return withCalculatedFields(expanded, calcFields, calcKeysIn([cfg]))
+  }
   const hiddenTiles = editing ? (draft ?? []).filter((tl) => tl.hidden) : []
+  // The route's fixed refinement always applies, like loadView's merge.
+  const aggregateOptions: EntityListOptions | undefined =
+    descriptor.listFilter || listOptions
+      ? { ...descriptor.listFilter, ...listOptions, filter: { ...descriptor.listFilter?.filter, ...listOptions?.filter } }
+      : undefined
 
   function startEdit() {
     setError(null)
@@ -252,6 +341,28 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
     setDialogTarget(null)
   }
 
+  /** Create, or update when a variable is being edited. Returns an error message, or null. */
+  async function saveField(draft: GraphFieldDraft) {
+    const res = editingField
+      ? await graphOps?.updateField?.(editingField.id, {
+          label: draft.label,
+          formula: draft.formula,
+          roles: draft.roles,
+          dated: draft.dated,
+        })
+      : await graphOps?.createField?.(descriptor.entity, draft)
+    if (!res || !res.ok) return res?.message ?? 'Calculated fields are not available.'
+    setCalcFields((await graphOps?.listFields?.(descriptor.entity)) ?? [])
+    setFieldDialogOpen(false)
+    return null
+  }
+
+  async function deleteField(field: GraphField) {
+    const res = await graphOps?.deleteField?.(field.id)
+    if (res?.ok) setCalcFields((prev) => prev.filter((f) => f.id !== field.id))
+    else setError({ code: 'VALIDATION_ERROR', message: res?.message ?? 'Could not delete the field.' })
+  }
+
   function hideTile(id: string) {
     setDraft((prev) => prev?.map((tl) => (tl.id === id ? { ...tl, hidden: true } : tl)) ?? null)
   }
@@ -266,6 +377,12 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
   }
 
   const canvasCols = Math.max(4, Math.round(containerWidth / GRID_UNIT))
+  // Read mode centers the tiles: the grid shrinks to the columns they actually
+  // use instead of spanning the page from its left edge. Edit mode keeps the
+  // full canvas, so there's room to drag a tile into the empty space.
+  const usedCols = Math.max(1, ...visibleTiles.map((tl) => tl.x + tl.w))
+  const gridCols = editing ? canvasCols : Math.min(canvasCols, usedCols)
+  const gridWidth = editing ? containerWidth : Math.min(containerWidth, gridCols * GRID_UNIT)
   const rglLayout: Layout = visibleTiles.map((tl) => ({
     i: tl.id,
     x: tl.x,
@@ -312,7 +429,7 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
       ) : null}
       {ready ? (
         <>
-          {error ? <ErrorAlert error={error} /> : null}
+          <ErrorAlert error={error} />
           {/* No toolbar in the phone projection: it is read-only by contract. */}
           {!phone ? (
             <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mb: 1 }}>
@@ -334,7 +451,27 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
           ) : null}
         </>
       ) : null}
-      <Box ref={containerRef} sx={{ position: 'relative', width: '100%' }}>
+      <Box sx={{ display: 'flex', alignItems: 'flex-start' }}>
+      {ready && editing && !phone ? (
+        <CalcFieldsPanel
+          fields={calcFields}
+          onAddWidget={() => setDialogTarget('new')}
+          onAdd={
+            graphOps?.createField
+              ? () => {
+                  setEditingField(null)
+                  setFieldDialogOpen(true)
+                }
+              : undefined
+          }
+          onEdit={(f) => {
+            setEditingField(f)
+            setFieldDialogOpen(true)
+          }}
+          onDelete={(f) => void deleteField(f)}
+        />
+      ) : null}
+      <Box ref={containerRef} sx={{ position: 'relative', flex: 1, minWidth: 0 }}>
         {ready && editing && !phone ? (
           <Box
             sx={{
@@ -370,58 +507,59 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
                 <GraphTileCard
                   tile={tile}
                   editing={false}
-                  descriptor={descriptor}
-                  records={records}
+                  descriptor={calcDescriptor}
+                  records={recordsFor(tile)}
                   recordTotal={recordTotal}
+                  calcFields={calcFields}
+                  listOptions={aggregateOptions}
                 />
               </Box>
             ))}
           </Stack>
         ) : null}
         {ready && mounted && !phone ? (
-          <ReactGridLayout
-            layout={rglLayout}
-            width={containerWidth}
-            gridConfig={{ cols: canvasCols, rowHeight: GRID_UNIT, margin: [0, 0], containerPadding: [0, 0] }}
-            // No dragConfig.handle: the whole tile is the drag surface (there's no
-            // dedicated header bar anymore) — dragConfig.cancel still excludes the
-            // floating configure/hide buttons, and RGL itself always excludes its
-            // own resize handles regardless.
-            dragConfig={{ enabled: editing, cancel: '.graph-tile-no-drag' }}
-            resizeConfig={{ enabled: editing, handles: ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'] }}
-            compactor={verticalCompactor}
-            onLayoutChange={handleLayoutChange}
-          >
-            {visibleTiles.map((tile) => (
-              // This OUTER element is the one RGL clones its computed position/size
-              // onto (the full occupied grid cell, positioned absolute by RGL itself
-              // — that alone already makes it a valid containing block, nothing extra
-              // needed here) — kept bare (no border/radius/background) so the VISIBLE
-              // Card inside GraphTileCard can be inset 5px from it on every side,
-              // leaving a real empty gap between adjacent tiles that the grid math
-              // itself never sees (drag/resize/compaction still operate on the full,
-              // un-inset cell).
-              <Box key={tile.id} data-testid={`graph-tile-${tile.id}`}>
-                <GraphTileCard
-                  tile={tile}
-                  editing={editing}
-                  descriptor={descriptor}
-                  records={records}
-                  recordTotal={recordTotal}
-                  onConfigure={() => setDialogTarget(tile)}
-                  onHide={() => hideTile(tile.id)}
-                />
-              </Box>
-            ))}
-          </ReactGridLayout>
+          <Box data-testid="graph-grid" sx={{ width: gridWidth, mx: 'auto' }}>
+            <ReactGridLayout
+              layout={rglLayout}
+              width={gridWidth}
+              gridConfig={{ cols: gridCols, rowHeight: GRID_UNIT, margin: [0, 0], containerPadding: [0, 0] }}
+              // No dragConfig.handle: the whole tile is the drag surface (there's no
+              // dedicated header bar anymore) — dragConfig.cancel still excludes the
+              // floating configure/hide buttons, and RGL itself always excludes its
+              // own resize handles regardless.
+              dragConfig={{ enabled: editing, cancel: '.graph-tile-no-drag' }}
+              resizeConfig={{ enabled: editing, handles: ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'] }}
+              compactor={verticalCompactor}
+              onLayoutChange={handleLayoutChange}
+            >
+              {visibleTiles.map((tile) => (
+                // This OUTER element is the one RGL clones its computed position/size
+                // onto (the full occupied grid cell, positioned absolute by RGL itself
+                // — that alone already makes it a valid containing block, nothing extra
+                // needed here) — kept bare (no border/radius/background) so the VISIBLE
+                // Card inside GraphTileCard can be inset 5px from it on every side,
+                // leaving a real empty gap between adjacent tiles that the grid math
+                // itself never sees (drag/resize/compaction still operate on the full,
+                // un-inset cell).
+                <Box key={tile.id} data-testid={`graph-tile-${tile.id}`}>
+                  <GraphTileCard
+                    tile={tile}
+                    editing={editing}
+                    descriptor={calcDescriptor}
+                    records={recordsFor(tile)}
+                    recordTotal={recordTotal}
+                    calcFields={calcFields}
+                    listOptions={aggregateOptions}
+                    onConfigure={() => setDialogTarget(tile)}
+                    onHide={() => hideTile(tile.id)}
+                  />
+                </Box>
+              ))}
+            </ReactGridLayout>
+          </Box>
         ) : null}
       </Box>
-
-      {ready && editing && !phone ? (
-        <Button variant="outlined" sx={{ mt: 1 }} onClick={() => setDialogTarget('new')}>
-          {t('+ Add widget')}
-        </Button>
-      ) : null}
+      </Box>
 
       {ready && editing && !phone && hiddenTiles.length > 0 ? (
         <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', mt: 1, alignItems: 'center' }}>
@@ -440,10 +578,18 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
         </Stack>
       ) : null}
 
+      <CalcFieldDialog
+        open={fieldDialogOpen}
+        initial={editingField}
+        numberFieldNames={calcDescriptor.fields.filter((f) => f.type === 'number').map((f) => f.name)}
+        onClose={() => setFieldDialogOpen(false)}
+        onSubmit={saveField}
+      />
+
       {ready ? (
         <WidgetConfigDialog
           open={dialogTarget != null}
-          descriptor={descriptor}
+          descriptor={calcDescriptor}
           initial={
             dialogTarget && dialogTarget !== 'new'
               ? { type: dialogTarget.type, title: dialogTarget.title ?? '', config: dialogTarget.config }

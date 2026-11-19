@@ -13,9 +13,8 @@ import (
 // re-embedding model.BaseModel (which carries `deleted_at,softdelete`) fails
 // loudly here instead of in production uploads.
 func TestPictureIsHardDeleted(t *testing.T) {
-	tt := reflect.TypeOf(Picture{})
-	for i := 0; i < tt.NumField(); i++ {
-		f := tt.Field(i)
+	tt := reflect.TypeFor[Picture]()
+	for f := range tt.Fields() {
 		if f.Anonymous {
 			t.Errorf("Picture embeds %s — embedded bases can smuggle a softdelete column in", f.Type)
 		}

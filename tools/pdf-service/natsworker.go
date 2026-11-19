@@ -16,6 +16,8 @@ import (
 // Phase 5) — two separate Go modules, so these constants are duplicated on
 // both sides rather than shared; keep them in sync by hand if either changes.
 const (
+	// versionSubject is core/internal/version's convention: "eerp.version.<name>".
+	versionSubject   = "eerp.version.pdf-service"
 	renderSubject    = "reports.render"
 	workerQueueGroup = "pdf-workers"
 	errorHeader      = "X-Render-Error"
@@ -74,4 +76,13 @@ func respondError(msg *nats.Msg, message string) {
 	if err := msg.RespondMsg(reply); err != nil {
 		log.Printf("nats respond error failed: %v", err)
 	}
+}
+
+// answerVersion replies to core's version probe (core/internal/version.NATSProbe).
+// A plain subscription, not the queue group: whichever replica answers first
+// wins, and every replica runs the same image.
+func answerVersion(nc *nats.Conn) (*nats.Subscription, error) {
+	return nc.Subscribe(versionSubject, func(msg *nats.Msg) {
+		_ = msg.Respond([]byte(version))
+	})
 }

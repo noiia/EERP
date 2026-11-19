@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
   DEFAULT_NUMBER_FORMAT,
+  formatDatePattern,
   formatNumber,
   parseNumber,
   useFormatStore,
@@ -74,5 +75,29 @@ describe('useFormatStore', () => {
     useFormatStore.getState().setNumberFormat(european)
     const raw = localStorage.getItem('eerp-format')
     expect(raw).toContain('","')
+  })
+})
+
+describe('formatDatePattern', () => {
+  const at = '2026-11-03T13:30:00Z'
+  it.each([
+    ['dd/MM/yyyy', '03/11/2026'],
+    ['MM-dd-yyyy', '11-03-2026'],
+    ['yyyy.MM.dd', '2026.11.03'],
+  ])('renders %s', (pattern, want) => {
+    expect(formatDatePattern(at, pattern, { timeZone: 'Europe/Paris' })).toBe(want)
+  })
+
+  it('reads the day and time in the given zone', () => {
+    // 23:30 UTC is already the next day in Paris.
+    expect(formatDatePattern('2026-11-03T23:30:00Z', 'dd/MM/yyyy', { timeZone: 'Europe/Paris', time: true })).toBe('04/11/2026 00:30')
+  })
+
+  it('falls back to a numeric short date for an unknown pattern', () => {
+    expect(formatDatePattern(at, 'EEEE', { timeZone: 'UTC', locale: 'en-US' })).toBe('11/03/2026')
+  })
+
+  it('renders nothing for an invalid date', () => {
+    expect(formatDatePattern('nope', 'dd/MM/yyyy')).toBe('')
   })
 })

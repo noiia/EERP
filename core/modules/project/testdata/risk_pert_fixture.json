@@ -1,0 +1,15 @@
+{
+  "tasks": [
+    {"id": "a1", "plannedHours": 16, "dateStart": null, "deadline": null},
+    {"id": "a2", "plannedHours": 24, "dateStart": null, "deadline": null},
+    {"id": "a3", "plannedHours": 8, "dateStart": null, "deadline": null},
+    {"id": "b1", "plannedHours": 8, "dateStart": null, "deadline": null},
+    {"id": "b2", "plannedHours": 0, "dateStart": "2026-01-05T00:00:00Z", "deadline": "2026-01-09T00:00:00Z"},
+    {"id": "u", "plannedHours": null, "dateStart": null, "deadline": null}
+  ],
+  "links": [
+    {"from": "a1", "to": "a2"}, {"from": "a2", "to": "a3"},
+    {"from": "b1", "to": "b2"}
+  ],
+  "finish": 6
+}

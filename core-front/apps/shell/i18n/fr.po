@@ -26,6 +26,18 @@ msgstr "Liste"
 msgid "Manage your workspace preferences."
 msgstr "Gérez les préférences de votre espace de travail."
 
+msgid "Frontend"
+msgstr "Interface"
+
+msgid "Core"
+msgstr "Serveur"
+
+msgid "PDF worker"
+msgstr "Générateur PDF"
+
+msgid "unavailable"
+msgstr "indisponible"
+
 msgid "Appearance"
 msgstr "Apparence"
 
@@ -596,3 +608,2655 @@ msgstr "créé(s)"
 
 msgid "failed"
 msgstr "échoué(s)"
+
+msgid "Copy details"
+msgstr "Copier les détails"
+
+msgid "Copied"
+msgstr "Copié"
+
+msgid "Required fields are missing"
+msgstr "Des champs obligatoires sont manquants"
+
+msgid "Fill in"
+msgstr "À renseigner"
+
+msgid "These required fields are not on this form, so they cannot be filled in here. Please send the details to your administrator:"
+msgstr "Ces champs obligatoires ne figurent pas sur ce formulaire et ne peuvent donc pas être renseignés ici. Transmettez les détails à votre administrateur :"
+
+msgid "Missing:"
+msgstr "Manquant :"
+
+msgid "Reference for your administrator"
+msgstr "Référence pour votre administrateur"
+
+msgid "The server could not complete this request. If it keeps happening, contact your administrator."
+msgstr "Le serveur n'a pas pu traiter cette demande. Si le problème persiste, contactez votre administrateur."
+
+msgid "more"
+msgstr "de plus"
+
+msgid "shown this month"
+msgstr "affichés ce mois-ci"
+
+msgid "shown"
+msgstr "affichés"
+
+
+msgid "ERP"
+msgstr "ERP"
+
+msgid "Log in"
+msgstr "Se connecter"
+
+msgid "My account"
+msgstr "Mon compte"
+
+msgid "Page not found"
+msgstr "Page introuvable"
+
+msgid "Back to home"
+msgstr "Retour à l'accueil"
+
+msgid "All rights reserved."
+msgstr "Tous droits réservés."
+
+msgid "Website"
+msgstr "Site web"
+
+msgid "Published data"
+msgstr "Données publiées"
+
+msgid "Routing"
+msgstr "Routage"
+
+msgid "Website users"
+msgstr "Utilisateurs du site"
+
+msgid "Published data, routing and website accounts."
+msgstr "Données publiées, routage et comptes du site web."
+
+msgid "Which tables and columns the public website may read."
+msgstr "Les tables et colonnes que le site public peut lire."
+
+msgid "Serve the website from a path or its own domain."
+msgstr "Servir le site depuis un chemin ou son propre domaine."
+
+msgid "Visitor accounts registered on the website."
+msgstr "Comptes visiteurs inscrits sur le site."
+
+msgid "Saved."
+msgstr "Enregistré."
+
+msgid "Only rows where"
+msgstr "Uniquement les lignes où"
+
+msgid "Column"
+msgstr "Colonne"
+
+msgid "Value"
+msgstr "Valeur"
+
+msgid "Remove filter"
+msgstr "Retirer le filtre"
+
+msgid "Add filter"
+msgstr "Ajouter un filtre"
+
+msgid "No table is declared for publication."
+msgstr "Aucune table n'est déclarée pour la publication."
+
+msgid "Path — the website lives under the ERP address"
+msgstr "Chemin — le site vit sous l'adresse de l'ERP"
+
+msgid "Host — the website has its own domain"
+msgstr "Domaine — le site a son propre domaine"
+
+msgid "Website host"
+msgstr "Domaine du site"
+
+msgid "ERP host"
+msgstr "Domaine de l'ERP"
+
+msgid "To avoid locking yourself out, save this from the ERP address you are entering, e.g. https://erp.example.com/app/settings/website/routing. To recover, set the environment variable EERP_SITE_ROUTING=path."
+msgstr "Pour éviter de vous verrouiller, enregistrez depuis l'adresse de l'ERP que vous saisissez, par ex. https://erp.example.com/app/settings/website/routing. Pour récupérer l'accès, définissez la variable d'environnement EERP_SITE_ROUTING=path."
+
+msgid "Phone"
+msgstr "Téléphone"
+
+msgid "Verified"
+msgstr "Vérifié"
+
+msgid "Disabled"
+msgstr "Désactivé"
+
+msgid "Yes"
+msgstr "Oui"
+
+msgid "No"
+msgstr "Non"
+
+# Website page editor (app/app/website/pages/[id]/design)
+msgid "Add block"
+msgstr "Ajouter un bloc"
+
+msgid "Text"
+msgstr "Texte"
+
+msgid "Image"
+msgstr "Image"
+
+msgid "Hero"
+msgstr "Bannière"
+
+msgid "Record list"
+msgstr "Liste d’enregistrements"
+
+msgid "Record detail"
+msgstr "Détail d’un enregistrement"
+
+msgid "Event booking"
+msgstr "Réservation d’événement"
+
+msgid "Appointment booking"
+msgstr "Prise de rendez-vous"
+
+msgid "Table"
+msgstr "Table"
+
+msgid "Fields"
+msgstr "Champs"
+
+msgid "Heading"
+msgstr "Titre de section"
+
+msgid "Body"
+msgstr "Contenu"
+
+msgid "Alignment"
+msgstr "Alignement"
+
+msgid "Left"
+msgstr "Gauche"
+
+msgid "Center"
+msgstr "Centré"
+
+msgid "Right"
+msgstr "Droite"
+
+msgid "Title"
+msgstr "Titre"
+
+msgid "Subtitle"
+msgstr "Sous-titre"
+
+msgid "Button label"
+msgstr "Libellé du bouton"
+
+msgid "Button link"
+msgstr "Lien du bouton"
+
+msgid "Record id"
+msgstr "Identifiant de l’enregistrement"
+
+msgid "Picture field"
+msgstr "Champ image"
+
+msgid "Alternative text"
+msgstr "Texte alternatif"
+
+msgid "Link"
+msgstr "Lien"
+
+msgid "Title field"
+msgstr "Champ titre"
+
+msgid "Display"
+msgstr "Affichage"
+
+msgid "Grid"
+msgstr "Grille"
+
+msgid "Records per page"
+msgstr "Enregistrements par page"
+
+msgid "Detail page"
+msgstr "Page de détail"
+
+msgid "not published"
+msgstr "non publiée"
+
+msgid "page not found"
+msgstr "page introuvable"
+
+msgid "Create a page holding a Record detail block on the same table, its record left empty, publish it, then pick it here."
+msgstr "Créez une page contenant un bloc Détail d'enregistrement sur la même table, sans enregistrement fixé, publiez-la, puis choisissez-la ici."
+
+msgid "Delete block"
+msgstr "Supprimer le bloc"
+
+msgid "View on site"
+msgstr "Voir sur le site"
+
+msgid "Back"
+msgstr "Retour"
+
+msgid "Nothing to show yet: configure this block."
+msgstr "Rien à afficher pour l’instant : configurez ce bloc."
+
+msgid "Select a block to configure it."
+msgstr "Sélectionnez un bloc pour le configurer."
+
+msgid "Could not save."
+msgstr "Impossible d’enregistrer."
+
+msgid "Password must be at least 8 characters."
+msgstr "Le mot de passe doit comporter au moins 8 caractères."
+
+msgid "Invalid email or password."
+msgstr "E-mail ou mot de passe invalide."
+
+msgid "This email cannot be used."
+msgstr "Cette adresse e-mail ne peut pas être utilisée."
+
+msgid "Too many attempts. Please try again later."
+msgstr "Trop de tentatives. Veuillez réessayer plus tard."
+
+msgid "Please check the form."
+msgstr "Veuillez vérifier le formulaire."
+
+msgid "Something went wrong. Please try again."
+msgstr "Une erreur est survenue. Veuillez réessayer."
+
+msgid "Sign up"
+msgstr "S’inscrire"
+
+msgid "Password"
+msgstr "Mot de passe"
+
+msgid "At least 8 characters."
+msgstr "Au moins 8 caractères."
+
+msgid "No account yet? Sign up"
+msgstr "Pas encore de compte ? Inscrivez-vous"
+
+msgid "Already have an account? Log in"
+msgstr "Déjà un compte ? Connectez-vous"
+
+msgid "Your session has expired. Please log in again."
+msgstr "Votre session a expiré. Veuillez vous reconnecter."
+
+msgid "Name is required; name and surname max 200, phone max 50 characters."
+msgstr "Le nom est obligatoire ; nom et prénom 200 caractères max., téléphone 50 max."
+
+msgid "Surname"
+msgstr "Prénom"
+
+msgid "Log out"
+msgstr "Se déconnecter"
+
+msgid "My bookings"
+msgstr "Mes réservations"
+
+msgid "Your bookings will appear here."
+msgstr "Vos réservations apparaîtront ici."
+
+msgid "Staff sign-in"
+msgstr "Connexion du personnel"
+
+msgid "Outgoing emails"
+msgstr "E-mails sortants"
+
+msgid "Booking and account emails, their delivery status, and retries."
+msgstr "E-mails de réservation et de compte, leur statut d'envoi et les relances."
+
+msgid "Could not retry."
+msgstr "Relance impossible."
+
+msgid "All"
+msgstr "Tous"
+
+msgid "pending"
+msgstr "en attente"
+
+msgid "sent"
+msgstr "envoyé"
+
+msgid "Recipient"
+msgstr "Destinataire"
+
+msgid "Subject"
+msgstr "Objet"
+
+msgid "Status"
+msgstr "Statut"
+
+msgid "Attempts"
+msgstr "Tentatives"
+
+msgid "Last error"
+msgstr "Dernière erreur"
+
+msgid "Retry"
+msgstr "Relancer"
+
+msgid "Just taken — pick another time."
+msgstr "Déjà pris — choisissez un autre horaire."
+
+msgid "Too many attempts. Please wait a minute and try again."
+msgstr "Trop de tentatives. Patientez une minute puis réessayez."
+
+msgid "Booking confirmed — a confirmation email is on its way to"
+msgstr "Réservation confirmée — un e-mail de confirmation est en route vers"
+
+msgid "No dates available right now."
+msgstr "Aucune date disponible pour le moment."
+
+msgid "Full"
+msgstr "Complet"
+
+msgid "Seats"
+msgstr "Places"
+
+msgid "Book"
+msgstr "Réserver"
+
+msgid "Previous week"
+msgstr "Semaine précédente"
+
+msgid "Next week"
+msgstr "Semaine suivante"
+
+msgid "Loading"
+msgstr "Chargement"
+
+msgid "This link is invalid or was already used."
+msgstr "Ce lien est invalide ou a déjà été utilisé."
+
+msgid "Cancel this booking?"
+msgstr "Annuler cette réservation ?"
+
+msgid "Cancel booking"
+msgstr "Annuler la réservation"
+
+msgid "Your booking is cancelled."
+msgstr "Votre réservation est annulée."
+
+msgid "Confirm your email address"
+msgstr "Confirmez votre adresse e-mail"
+
+msgid "Confirm my email"
+msgstr "Confirmer mon e-mail"
+
+msgid "Your email is confirmed. Your earlier bookings now appear in your account."
+msgstr "Votre e-mail est confirmé. Vos réservations précédentes apparaissent maintenant dans votre compte."
+
+msgid "confirmed"
+msgstr "confirmée"
+
+msgid "cancelled"
+msgstr "annulée"
+
+msgid "attended"
+msgstr "présente"
+
+msgid "no_show"
+msgstr "absente"
+
+msgid "Confirm your email to see bookings made before you signed up."
+msgstr "Confirmez votre e-mail pour voir les réservations faites avant votre inscription."
+
+msgid "Upcoming"
+msgstr "À venir"
+
+msgid "Past and cancelled"
+msgstr "Passées et annulées"
+
+msgid "Could not cancel — retry"
+msgstr "Annulation impossible — réessayer"
+
+msgid "Email sent"
+msgstr "E-mail envoyé"
+
+msgid "Could not send — retry"
+msgstr "Envoi impossible — réessayer"
+
+msgid "Resend the email"
+msgstr "Renvoyer l'e-mail"
+
+msgid "Event"
+msgstr "Événement"
+
+msgid "The block shows once the event is published."
+msgstr "Le bloc s'affiche une fois l'événement publié."
+
+msgid "Horizontal alignment"
+msgstr "Alignement horizontal"
+
+msgid "Vertical alignment"
+msgstr "Alignement vertical"
+
+msgid "Top"
+msgstr "Haut"
+
+msgid "Bottom"
+msgstr "Bas"
+
+msgid "Button size"
+msgstr "Taille du bouton"
+
+msgid "Small"
+msgstr "Petit"
+
+msgid "Medium"
+msgstr "Moyen"
+
+msgid "Large"
+msgstr "Grand"
+
+msgid "Button width"
+msgstr "Largeur du bouton"
+
+msgid "Fit its text"
+msgstr "Ajustée au texte"
+
+msgid "Full width"
+msgstr "Toute la largeur"
+
+msgid "Padding"
+msgstr "Marge intérieure"
+
+msgid "Compact"
+msgstr "Compacte"
+
+msgid "Normal"
+msgstr "Normale"
+
+msgid "Spacious"
+msgstr "Spacieuse"
+
+msgid "Publish"
+msgstr "Publier"
+
+msgid "Not public yet — the website shows nothing for these fields:"
+msgstr "Pas encore public — le site n'affiche rien pour ces champs :"
+
+msgid "Record carousel"
+msgstr "Carrousel d'enregistrements"
+
+msgid "Record (empty = the one in the URL)"
+msgstr "Enregistrement (vide = celui de l'URL)"
+
+msgid "Records (empty = the first ones)"
+msgstr "Enregistrements (vide = les premiers)"
+
+msgid "Maximum number of records"
+msgstr "Nombre maximum d'enregistrements"
+
+msgid "No records"
+msgstr "Aucun enregistrement"
+
+msgid "Picture position"
+msgstr "Position de l'image"
+
+msgid "Picture width beside the text (%)"
+msgstr "Largeur de l'image à côté du texte (%)"
+
+msgid "Card width (px)"
+msgstr "Largeur des cartes (px)"
+
+msgid "Favicon"
+msgstr "Favicon"
+
+msgid "The small icon shown in browser tabs, for the ERP and the public website, and the icon of the installed app. Without one, the company logo is used. A square PNG (e.g. 64×64) works best; browsers may keep the old one for a few minutes."
+msgstr "La petite icône affichée dans les onglets du navigateur, pour l'ERP et le site public, et l'icône de l'application installée. Sans elle, le logo de la société est utilisé. Un PNG carré (ex. 64×64) convient le mieux ; les navigateurs peuvent garder l'ancienne quelques minutes."
+
+msgid "Replace"
+msgstr "Remplacer"
+
+msgid "Upload"
+msgstr "Téléverser"
+
+msgid "Company logo"
+msgstr "Logo de l'entreprise"
+
+msgid "Change the company logo"
+msgstr "Changer le logo de l'entreprise"
+
+msgid "Add the company logo"
+msgstr "Ajouter le logo de l'entreprise"
+
+msgid "Per page"
+msgstr "Par page"
+
+msgid "Previous picture"
+msgstr "Image précédente"
+
+msgid "Next picture"
+msgstr "Image suivante"
+
+msgid "Image carousel"
+msgstr "Carrousel d'images"
+
+msgid "Related records picker"
+msgstr "Sélecteur d'enregistrements liés"
+
+msgid "Related table"
+msgstr "Table liée"
+
+msgid "Column holding the record id"
+msgstr "Colonne contenant l'id de l'enregistrement"
+
+msgid "Related title field"
+msgstr "Champ titre lié"
+
+msgid "Related picture field"
+msgstr "Champ image lié"
+
+msgid "Related fields"
+msgstr "Champs liés"
+
+msgid "Caption field"
+msgstr "Champ de légende"
+
+msgid "Event list"
+msgstr "Liste d'événements"
+
+msgid "No upcoming events."
+msgstr "Aucun événement à venir."
+
+msgid "Book a slot"
+msgstr "Réserver un créneau"
+
+msgid "1 seat left"
+msgstr "1 place restante"
+
+msgid "seats left"
+msgstr "places restantes"
+
+msgid "The event in the URL"
+msgstr "L'événement de l'URL"
+
+msgid "Left on the event in the URL, this page can serve every event: pick it as the Event page of an Event list block."
+msgstr "Laissé sur l'événement de l'URL, cette page sert pour tous les événements : choisissez-la comme Page d'événement d'un bloc Liste d'événements."
+
+msgid "Cards"
+msgstr "Cartes"
+
+msgid "Maximum number of events"
+msgstr "Nombre maximum d'événements"
+
+
+msgid "Event page"
+msgstr "Page d'événement"
+
+msgid "Create a page holding Event booking and Appointment booking blocks left on the event in the URL, publish it, then pick it here."
+msgstr "Créez une page contenant des blocs Réservation d'événement et Réservation de rendez-vous laissés sur l'événement de l'URL, publiez-la, puis choisissez-la ici."
+
+msgid "Email templates"
+msgstr "Modèles d'e-mail"
+
+msgid "The emails the workspace sends, reworded and translated."
+msgstr "Les e-mails envoyés par l'espace de travail, reformulés et traduits."
+
+msgid "No email templates are registered."
+msgstr "Aucun modèle d'e-mail n'est enregistré."
+
+msgid "Customized"
+msgstr "Personnalisé"
+
+msgid "Default text"
+msgstr "Texte par défaut"
+
+msgid "Language"
+msgstr "Langue"
+
+msgid "Reset to default"
+msgstr "Rétablir le texte par défaut"
+
+msgid "Back to the default text."
+msgstr "Texte par défaut rétabli."
+
+msgid "Click a variable to insert it; it is replaced by the real value in each email. The plain-text version is built from this text."
+msgstr "Cliquez sur une variable pour l'insérer ; elle est remplacée par la vraie valeur dans chaque e-mail. La version texte brut est construite à partir de ce texte."
+
+msgid "Reminders"
+msgstr "Rappels"
+
+msgid "Send the reminder email this many hours before the start (0 = no reminders)"
+msgstr "Envoyer l'e-mail de rappel ce nombre d'heures avant le début (0 = aucun rappel)"
+
+msgid "Bookings made less than that before the start get no reminder: their confirmation is recent enough."
+msgstr "Les réservations faites moins longtemps avant le début ne reçoivent pas de rappel : leur confirmation est assez récente."
+
+msgid "Edit the email texts"
+msgstr "Modifier les textes des e-mails"
+
+msgid "Event booking confirmed"
+msgstr "Réservation d'événement confirmée"
+
+msgid "Event booking reminder"
+msgstr "Rappel de réservation d'événement"
+
+msgid "Event booking cancelled"
+msgstr "Réservation d'événement annulée"
+
+msgid "Website: confirm your email"
+msgstr "Site web : confirmation de l'e-mail"
+
+msgid "Bold"
+msgstr "Gras"
+
+msgid "Italic"
+msgstr "Italique"
+
+msgid "Underline"
+msgstr "Souligné"
+
+msgid "Bulleted list"
+msgstr "Liste à puces"
+
+msgid "Numbered list"
+msgstr "Liste numérotée"
+
+msgid "Remove link"
+msgstr "Retirer le lien"
+
+msgid "Link address (https://…, mailto:… or {{variable}})"
+msgstr "Adresse du lien (https://…, mailto:… ou {{variable}})"
+
+msgid "Full — join the waiting list"
+msgstr "Complet — rejoindre la liste d'attente"
+
+msgid "Join the waiting list"
+msgstr "Rejoindre la liste d'attente"
+
+msgid "You're on the waiting list — we'll email you if a seat frees up:"
+msgstr "Vous êtes sur la liste d'attente — nous vous écrirons si une place se libère :"
+
+msgid "Someone booked this seat first. You stay on the waiting list."
+msgstr "Quelqu'un a réservé cette place avant vous. Vous restez sur la liste d'attente."
+
+msgid "A seat is free"
+msgstr "Une place est libre"
+
+msgid "Book my seat"
+msgstr "Réserver ma place"
+
+msgid "Your seat is booked — a confirmation email is on its way."
+msgstr "Votre place est réservée — un e-mail de confirmation est en route."
+
+msgid "Waiting list"
+msgstr "Liste d'attente"
+
+msgid "Hours a freed seat stays reserved for the next person on the waiting list"
+msgstr "Heures pendant lesquelles une place libérée reste proposée à la personne suivante sur la liste d'attente"
+
+msgid "waitlisted"
+msgstr "en liste d'attente"
+
+msgid "expired"
+msgstr "expirée"
+
+msgid "pending_payment"
+msgstr "en attente de paiement"
+
+msgid "Event waiting list joined"
+msgstr "Liste d'attente d'événement rejointe"
+
+msgid "Event waiting list: a seat is free"
+msgstr "Liste d'attente : une place est libre"
+
+msgid "Event booking confirmed, to pay at the event"
+msgstr "Réservation confirmée, à régler sur place"
+
+msgid "Add to calendar"
+msgstr "Ajouter au calendrier"
+
+msgid "Add all dates to my calendar"
+msgstr "Ajouter toutes les dates à mon calendrier"
+
+msgid "Events calendar feed"
+msgstr "Flux calendrier des événements"
+
+msgid "Subscribe to every event session and appointment from your calendar app. Keep the link private: anyone with it can read the schedule."
+msgstr "Abonnez-vous à toutes les sessions et à tous les rendez-vous depuis votre application de calendrier. Gardez le lien privé : toute personne qui l'a peut lire le planning."
+
+msgid "Calendar link"
+msgstr "Lien du calendrier"
+
+msgid "Copy it now: it is not shown again."
+msgstr "Copiez-le maintenant : il ne sera plus affiché."
+
+msgid "Replace my calendar link"
+msgstr "Remplacer mon lien de calendrier"
+
+msgid "Create my calendar link"
+msgstr "Créer mon lien de calendrier"
+
+msgid "Stop the link"
+msgstr "Désactiver le lien"
+
+msgid "Online payment is unavailable right now. Please try again in a few minutes."
+msgstr "Le paiement en ligne est indisponible pour le moment. Réessayez dans quelques minutes."
+
+msgid "Taking you to the payment page…"
+msgstr "Redirection vers la page de paiement…"
+
+msgid "Thank you"
+msgstr "Merci"
+
+msgid "Your payment is being confirmed. Your booking confirmation will arrive by email in a moment."
+msgstr "Votre paiement est en cours de confirmation. La confirmation de votre réservation arrivera par e-mail dans un instant."
+
+msgid "Takes card payments for paid event bookings through Stripe Checkout. Without it, bookings are paid at the event."
+msgstr "Encaisse par carte les réservations payantes via Stripe Checkout. Sans cela, les réservations se règlent sur place."
+
+msgid "Activate the Stripe payments app (Settings → Apps) for these settings to take effect."
+msgstr "Activez l'application Paiements Stripe (Paramètres → Applications) pour que ces réglages s'appliquent."
+
+msgid "Take payments online"
+msgstr "Encaisser en ligne"
+
+msgid "Secret key (sk_…)"
+msgstr "Clé secrète (sk_…)"
+
+msgid "A secret key is saved; leave blank to keep it."
+msgstr "Une clé secrète est enregistrée ; laissez vide pour la conserver."
+
+msgid "Webhook signing secret (whsec_…)"
+msgstr "Secret de signature du webhook (whsec_…)"
+
+msgid "A signing secret is saved; leave blank to keep it."
+msgstr "Un secret de signature est enregistré ; laissez vide pour le conserver."
+
+msgid "In the Stripe dashboard, add a webhook endpoint for the checkout.session.completed and checkout.session.expired events at:"
+msgstr "Dans le tableau de bord Stripe, ajoutez un point de terminaison webhook pour les événements checkout.session.completed et checkout.session.expired à l'adresse :"
+
+msgid "Groups to seed"
+msgstr "Groupes à générer"
+
+msgid "already seeded"
+msgstr "déjà généré"
+
+msgid "needed by"
+msgstr "requis par"
+
+msgid "Companies & tax catalog"
+msgstr "Sociétés et catalogue de taxes"
+
+msgid "Products & variants"
+msgstr "Produits et variantes"
+
+msgid "Contacts"
+msgstr "Contacts"
+
+msgid "CRM leads & tags"
+msgstr "Pistes CRM et étiquettes"
+
+msgid "Quotes"
+msgstr "Devis"
+
+msgid "Invoices"
+msgstr "Factures"
+
+msgid "Property management"
+msgstr "Gestion locative"
+
+msgid "Events & bookings"
+msgstr "Événements et réservations"
+
+msgid "About 100,000 rows each of contacts, CRM leads, products, variants, quotes, invoices, rent receipts and event bookings, with lines, several taxes and companies, plus graph views with calculated fields on every list over 10,000 rows. Pick the groups below; each is seeded once per workspace, and all of them take about half a minute."
+msgstr "Environ 100 000 lignes de contacts, pistes CRM, produits, variantes, devis, factures, quittances et réservations d'événements, avec leurs lignes, plusieurs taxes et sociétés, plus des vues graphiques avec champs calculés sur chaque liste de plus de 10 000 lignes. Choisissez les groupes ci-dessous ; chacun n'est généré qu'une fois par espace de travail, et l'ensemble prend environ une demi-minute."
+
+msgid "Background section"
+msgstr "Section d'arrière-plan"
+
+msgid "Picture from table"
+msgstr "Image depuis la table"
+
+msgid "Record (empty = the first one with a picture)"
+msgstr "Enregistrement (vide = le premier ayant une image)"
+
+msgid "Text and button"
+msgstr "Texte et bouton"
+
+msgid "Picture fit"
+msgstr "Ajustement de l'image"
+
+msgid "Fill the block (crop)"
+msgstr "Remplir le bloc (recadrer)"
+
+msgid "Whole picture"
+msgstr "Image entière"
+
+msgid "Link (without a button)"
+msgstr "Lien (sans bouton)"
+
+msgid "Optional: shown over the picture."
+msgstr "Facultatif : affiché par-dessus l'image."
+
+msgid "Background color"
+msgstr "Couleur de fond"
+
+msgid "No color"
+msgstr "Aucune couleur"
+
+msgid "Parallax (picture stays fixed while scrolling)"
+msgstr "Parallaxe (l'image reste fixe au défilement)"
+
+msgid "Darken the picture (%)"
+msgstr "Assombrir l'image (%)"
+
+msgid "Blocks placed over this section are drawn on top of it."
+msgstr "Les blocs placés sur cette section s'affichent par-dessus."
+
+msgid "Optional: shown on the section itself."
+msgstr "Facultatif : affiché sur la section elle-même."
+
+msgid "Page background"
+msgstr "Arrière-plan de la page"
+
+msgid "Set a background picture (and parallax) in the page form; add a Background section block for a colored band."
+msgstr "Définissez une image d'arrière-plan (et la parallaxe) dans le formulaire de la page ; ajoutez un bloc Section d'arrière-plan pour une bande colorée."
+
+msgid "Open the page form"
+msgstr "Ouvrir le formulaire de la page"
+
+msgid "Legal notice"
+msgstr "Mentions légales"
+
+msgid "No legal notice has been set yet."
+msgstr "Aucune mention légale n'a encore été renseignée."
+
+msgid "Publisher"
+msgstr "Éditeur"
+
+msgid "Hosting"
+msgstr "Hébergement"
+
+msgid "Company name"
+msgstr "Raison sociale"
+
+msgid "Legal form"
+msgstr "Forme juridique"
+
+msgid "Share capital"
+msgstr "Capital social"
+
+msgid "Registered office"
+msgstr "Siège social"
+
+msgid "Registration (SIRET / RCS)"
+msgstr "Immatriculation (SIRET / RCS)"
+
+msgid "VAT number"
+msgstr "Numéro de TVA"
+
+msgid "Publication director"
+msgstr "Directeur de la publication"
+
+msgid "Host"
+msgstr "Hébergeur"
+
+msgid "Address"
+msgstr "Adresse"
+
+msgid "Additional text (privacy, cookies, credits…)"
+msgstr "Texte complémentaire (confidentialité, cookies, crédits…)"
+
+msgid "View on the website"
+msgstr "Voir sur le site"
+
+msgid "The publisher and host details shown on the website and in the ERP."
+msgstr "Les informations sur l'éditeur et l'hébergeur affichées sur le site et dans l'ERP."
+
+msgid "The publisher and host of this workspace and its website."
+msgstr "L'éditeur et l'hébergeur de cet espace de travail et de son site."
+
+msgid "security.txt"
+msgstr "security.txt"
+
+msgid "How security researchers can reach you (RFC 9116)."
+msgstr "Comment les chercheurs en sécurité peuvent vous contacter (RFC 9116)."
+
+msgid "robots.txt"
+msgstr "robots.txt"
+
+msgid "What search engines may crawl."
+msgstr "Ce que les moteurs de recherche peuvent explorer."
+
+msgid "Contacts (one per line)"
+msgstr "Contacts (un par ligne)"
+
+msgid "mailto:, tel: or https:// addresses. Leave empty to stop serving the file."
+msgstr "Adresses mailto:, tel: ou https://. Laissez vide pour ne plus servir le fichier."
+
+msgid "Expires"
+msgstr "Expiration"
+
+msgid "At most a year away. Renew it before then, or the file stops being served."
+msgstr "Dans un an au plus. Renouvelez-la avant, sinon le fichier n'est plus servi."
+
+msgid "Policy URL"
+msgstr "URL de la politique"
+
+msgid "Acknowledgments URL"
+msgstr "URL des remerciements"
+
+msgid "Encryption key URL"
+msgstr "URL de la clé de chiffrement"
+
+msgid "Preferred languages"
+msgstr "Langues préférées"
+
+msgid "Served file"
+msgstr "Fichier servi"
+
+msgid "Not served."
+msgstr "Non servi."
+
+msgid "Additional rules"
+msgstr "Règles supplémentaires"
+
+msgid "Appended after the built-in rules, which keep crawlers out of the ERP, the API and visitor pages."
+msgstr "Ajoutées après les règles intégrées, qui tiennent les robots à l'écart de l'ERP, de l'API et des pages visiteurs."
+
+msgid "Served file (for this address)"
+msgstr "Fichier servi (pour cette adresse)"
+
+msgid "Location"
+msgstr "Emplacement"
+
+msgid "Service zone"
+msgstr "Zone de service"
+
+msgid "Contacts in this zone"
+msgstr "Contacts dans cette zone"
+
+msgid "Search an address"
+msgstr "Rechercher une adresse"
+
+msgid "Locate from address"
+msgstr "Localiser depuis l'adresse"
+
+msgid "Clear"
+msgstr "Effacer"
+
+msgid "Click the map to add points; click a point to remove it."
+msgstr "Cliquez sur la carte pour ajouter des points ; cliquez sur un point pour le retirer."
+
+msgid "Near an address"
+msgstr "Près d'une adresse"
+
+msgid "Use my location"
+msgstr "Utiliser ma position"
+
+msgid "Within (km, optional)"
+msgstr "Dans un rayon de (km, facultatif)"
+
+msgid "Zone of"
+msgstr "Zone de"
+
+msgid "Zone"
+msgstr "Zone"
+
+msgid "Distance"
+msgstr "Distance"
+
+msgid "near"
+msgstr "près de"
+
+msgid "inside zone of"
+msgstr "dans la zone de"
+
+msgid "covers"
+msgstr "contient"
+
+msgid "Near"
+msgstr "Près de"
+
+msgid "Inside zone"
+msgstr "Dans la zone"
+
+msgid "Covers point"
+msgstr "Contient le point"
+
+msgid "Nearest to me (asks the visitor's location)"
+msgstr "Les plus proches (demande la position du visiteur)"
+
+msgid "Lists published events with a future session (appointment events too), soonest first — or nearest first when the visitor shares their location."
+msgstr "Liste les événements publiés ayant une session à venir (et les événements sur rendez-vous), du plus proche au plus lointain dans le temps — ou du plus proche géographiquement quand le visiteur partage sa position."
+
+msgid "changed"
+msgstr "modifié"
+
+msgid "Address not found"
+msgstr "Adresse introuvable"
+
+msgid "Distances need the event table's map position (geo_location) published under Settings → Website → Published data."
+msgstr "Les distances nécessitent que la position sur la carte de la table des événements (geo_location) soit publiée dans Paramètres → Site web → Données publiées."
+
+msgid "Username"
+msgstr "Nom d'utilisateur"
+
+msgid "Sign in"
+msgstr "Se connecter"
+
+msgid "Signing in…"
+msgstr "Connexion…"
+
+msgid "Login failed"
+msgstr "Échec de la connexion"
+
+msgid "Continue with"
+msgstr "Continuer avec"
+
+msgid "or"
+msgstr "ou"
+
+msgid "Sign in with email and password"
+msgstr "Se connecter avec e-mail et mot de passe"
+
+msgid "Sign in with"
+msgstr "Se connecter avec"
+
+msgid "the company directory"
+msgstr "l'annuaire de l'entreprise"
+
+msgid "Single sign-on failed. Try again or use another method."
+msgstr "La connexion unique a échoué. Réessayez ou utilisez une autre méthode."
+
+msgid "Authentication"
+msgstr "Authentification"
+
+msgid "Default method"
+msgstr "Méthode par défaut"
+
+msgid "Alternatives"
+msgstr "Alternatives"
+
+msgid "Company directory (LDAP)"
+msgstr "Annuaire de l'entreprise (LDAP)"
+
+msgid "LLDAP defaults"
+msgstr "Valeurs par défaut LLDAP"
+
+msgid "Test connection"
+msgstr "Tester la connexion"
+
+msgid "Test discovery"
+msgstr "Tester la découverte"
+
+msgid "Stored — leave empty to keep"
+msgstr "Enregistré — laisser vide pour conserver"
+
+msgid "Callback URL"
+msgstr "URL de rappel"
+
+msgid "Group"
+msgstr "Groupe"
+
+msgid "Role"
+msgstr "Rôle"
+
+msgid "Default role"
+msgstr "Rôle par défaut"
+
+msgid "— none (refuse) —"
+msgstr "— aucun (refuser) —"
+
+msgid "Add provider"
+msgstr "Ajouter un fournisseur"
+
+msgid "ERP public URL"
+msgstr "URL publique de l'ERP"
+
+msgid "Local"
+msgstr "Local"
+
+msgid "OK"
+msgstr "OK"
+
+msgid "Test failed."
+msgstr "Le test a échoué."
+
+msgid "Configure LDAP"
+msgstr "Configurer LDAP"
+
+msgid "Label"
+msgstr "Libellé"
+
+msgid "Server URL"
+msgstr "URL du serveur"
+
+msgid "Use StartTLS"
+msgstr "Utiliser StartTLS"
+
+msgid "Allow an unencrypted connection (danger)"
+msgstr "Autoriser une connexion non chiffrée (danger)"
+
+msgid "The bind password and every user's password cross the network in clear. Use it only on a network you trust; prefer ldaps:// when the directory supports it."
+msgstr "Le mot de passe du compte de service et celui de chaque utilisateur circulent en clair sur le réseau. À n'utiliser que sur un réseau de confiance ; préférez ldaps:// si l'annuaire le permet."
+
+msgid "Bind DN"
+msgstr "DN de liaison"
+
+msgid "Bind password"
+msgstr "Mot de passe de liaison"
+
+msgid "Base DN"
+msgstr "DN de base"
+
+msgid "User filter"
+msgstr "Filtre utilisateur"
+
+msgid "Email attribute"
+msgstr "Attribut e-mail"
+
+msgid "Name attribute"
+msgstr "Attribut nom"
+
+msgid "Groups attribute"
+msgstr "Attribut groupes"
+
+msgid "Photo attribute"
+msgstr "Attribut photo"
+
+msgid "Group search base"
+msgstr "Base de recherche des groupes"
+
+msgid "Group filter"
+msgstr "Filtre de groupes"
+
+msgid "Single sign-on (OIDC)"
+msgstr "Authentification unique (OIDC)"
+
+msgid "Identifier"
+msgstr "Identifiant"
+
+msgid "Issuer URL"
+msgstr "URL de l'émetteur"
+
+msgid "Client ID"
+msgstr "ID client"
+
+msgid "Client secret"
+msgstr "Secret client"
+
+msgid "Scopes"
+msgstr "Portées"
+
+msgid "Groups claim"
+msgstr "Claim des groupes"
+
+msgid "Trust the provider’s email"
+msgstr "Faire confiance à l'e-mail du fournisseur"
+
+msgid "<ERP URL>"
+msgstr "<URL de l'ERP>"
+
+msgid "Role mapping"
+msgstr "Correspondance des rôles"
+
+msgid "Add mapping"
+msgstr "Ajouter une correspondance"
+
+msgid "Sign-in methods: password, company directory (LDAP), single sign-on (OIDC)."
+msgstr "Méthodes de connexion : mot de passe, annuaire de l'entreprise (LDAP), authentification unique (OIDC)."
+
+msgid "Could not load the authentication settings."
+msgstr "Impossible de charger les paramètres d'authentification."
+
+msgid "Allowed email domains"
+msgstr "Domaines e-mail autorisés"
+
+msgid "Comma-separated. Empty admits every account of this provider — restrict a public provider (Google, Microsoft)."
+msgstr "Séparés par des virgules. Vide : tout compte de ce fournisseur est admis — restreignez un fournisseur public (Google, Microsoft)."
+
+msgid "Method"
+msgstr "Méthode"
+
+msgid "All methods"
+msgstr "Toutes les méthodes"
+
+msgid "Notifications"
+msgstr "Notifications"
+
+msgid "Running now"
+msgstr "En cours"
+
+msgid "Mark all as read"
+msgstr "Tout marquer comme lu"
+
+msgid "Enable desktop notifications"
+msgstr "Activer les notifications du bureau"
+
+msgid "No notifications"
+msgstr "Aucune notification"
+
+msgid "Failed"
+msgstr "Échec"
+
+msgid "Scheduled actions"
+msgstr "Actions planifiées"
+
+msgid "Demo data seeding"
+msgstr "Génération de données de démonstration"
+
+msgid "Teams"
+msgstr "Teams"
+
+msgid "Seeding demo data"
+msgstr "Génération des données de démonstration"
+
+msgid "Demo data seeding failed"
+msgstr "Échec de la génération des données de démonstration"
+
+msgid "New notifications"
+msgstr "Nouvelles notifications"
+
+msgid "Starting…"
+msgstr "Démarrage…"
+
+msgid "The full demo seed failed."
+msgstr "La génération complète des données de démonstration a échoué."
+
+msgid "of"
+msgstr "sur"
+
+msgid "more than"
+msgstr "plus de"
+
+msgid "Close"
+msgstr "Fermer"
+
+msgid "Rent receipts"
+msgstr "Quittances de loyer"
+
+msgid "Display taxes on report"
+msgstr "Afficher les taxes sur le rapport"
+
+msgid "Prints the Tax column on rent receipts generated from now on. Receipts already generated keep their PDF until it is regenerated."
+msgstr "Imprime la colonne Taxe sur les quittances générées à partir de maintenant. Les quittances déjà générées gardent leur PDF tant qu'il n'est pas régénéré."
+
+msgid "Status bar"
+msgstr "Barre de statut"
+
+msgid "Steps"
+msgstr "Étapes"
+
+msgid "Revert to module settings"
+msgstr "Revenir aux réglages du module"
+
+msgid "Pick at least one step."
+msgstr "Choisissez au moins une étape."
+
+msgid "The steps shown at the top of the form, taken from one of its selection fields. By default: the field the app chose, with every one of its values."
+msgstr "Les étapes affichées en haut du formulaire, tirées d'un de ses champs de sélection. Par défaut : le champ choisi par l'application, avec toutes ses valeurs."
+
+msgid "Changing the status bar requires the settings:views:write permission."
+msgstr "Modifier la barre de statut nécessite la permission settings:views:write."
+
+msgid "Some counts could not be loaded"
+msgstr "Certains totaux n'ont pas pu être chargés"
+
+msgid "Products"
+msgstr "Produits"
+
+msgid "Generate references automatically"
+msgstr "Générer les références automatiquement"
+
+msgid "On: each new product gets the next reference (PRD-00001, PRD-00002…), which cannot be edited. Off: references are typed by hand."
+msgstr "Activé : chaque nouveau produit reçoit la référence suivante (PRD-00001, PRD-00002…), non modifiable. Désactivé : les références sont saisies à la main."
+
+msgid "Create…"
+msgstr "Créer…"
+
+msgid "Create an address"
+msgstr "Créer une adresse"
+
+msgid "Number and street"
+msgstr "Numéro et rue"
+
+msgid "Zip code"
+msgstr "Code postal"
+
+msgid "City"
+msgstr "Ville"
+
+msgid "State"
+msgstr "Région"
+
+msgid "Hours"
+msgstr "Heures"
+
+msgid "Minutes"
+msgstr "Minutes"
+
+msgid "h"
+msgstr "h"
+
+msgid "min"
+msgstr "min"
+
+msgid "Form"
+msgstr "Formulaire"
+
+msgid "Long text"
+msgstr "Texte long"
+
+msgid "Number"
+msgstr "Nombre"
+
+msgid "Date"
+msgstr "Date"
+
+msgid "Checkbox"
+msgstr "Case à cocher"
+
+msgid "Selection"
+msgstr "Liste de choix"
+
+msgid "User data"
+msgstr "Données utilisateur"
+
+msgid "Message"
+msgstr "Message"
+
+msgid "Target {n}"
+msgstr "Cible {n}"
+
+msgid "Remove target {n}"
+msgstr "Retirer la cible {n}"
+
+msgid "Not linked"
+msgstr "Non lié"
+
+msgid "← record of target {n}"
+msgstr "← enregistrement de la cible {n}"
+
+msgid "Fixed value"
+msgstr "Valeur fixe"
+
+msgid "Remove fixed value"
+msgstr "Retirer la valeur fixe"
+
+msgid "Add fixed value"
+msgstr "Ajouter une valeur fixe"
+
+msgid "Remove field"
+msgstr "Retirer le champ"
+
+msgid "Stored in"
+msgstr "Enregistré dans"
+
+msgid "Options (one per line)"
+msgstr "Options (une par ligne)"
+
+msgid "Required"
+msgstr "Obligatoire"
+
+msgid "Saved into"
+msgstr "Enregistré dans"
+
+msgid "Each submission creates one record per target, in order. Only tables and columns a module allows are offered."
+msgstr "Chaque envoi crée un enregistrement par cible, dans l'ordre. Seules les tables et colonnes autorisées par un module sont proposées."
+
+msgid "Add target"
+msgstr "Ajouter une cible"
+
+msgid "Add field"
+msgstr "Ajouter un champ"
+
+msgid "Send"
+msgstr "Envoyer"
+
+msgid "After submit"
+msgstr "Après l'envoi"
+
+msgid "Then"
+msgstr "Ensuite"
+
+msgid "Show a message"
+msgstr "Afficher un message"
+
+msgid "Go to a page"
+msgstr "Aller à une page"
+
+msgid "Thank you — your answers were sent."
+msgstr "Merci — vos réponses ont été envoyées."
+
+msgid "Page"
+msgstr "Page"
+
+msgid "Login required"
+msgstr "Connexion requise"
+
+msgid "After login, go to"
+msgstr "Après la connexion, aller à"
+
+msgid "This page"
+msgstr "Cette page"
+
+msgid "Allow account creation"
+msgstr "Autoriser la création de compte"
+
+msgid "Street"
+msgstr "Rue"
+
+msgid "Complement"
+msgstr "Complément d'adresse"
+
+msgid "This email already has an account — log in instead."
+msgstr "Cet e-mail a déjà un compte — connectez-vous plutôt."
+
+msgid "This field is required."
+msgstr "Ce champ est obligatoire."
+
+msgid "Check this value."
+msgstr "Vérifiez cette valeur."
+
+msgid "This form is not available right now."
+msgstr "Ce formulaire n'est pas disponible pour le moment."
+
+msgid "Please log in to send this form."
+msgstr "Connectez-vous pour envoyer ce formulaire."
+
+msgid "Create an account"
+msgstr "Créer un compte"
+
+msgid "Log in to continue"
+msgstr "Se connecter pour continuer"
+
+msgid "Street number"
+msgstr "Numéro"
+
+msgid "Login"
+msgstr "Connexion"
+
+msgid "Site page"
+msgstr "Page du site"
+
+msgid "External link"
+msgstr "Lien externe"
+
+msgid "URL"
+msgstr "URL"
+
+msgid "Not a valid link (https://, mailto: or a /path)."
+msgstr "Lien invalide (https://, mailto: ou un /chemin)."
+
+msgid "Section"
+msgstr "Section"
+
+msgid "Button"
+msgstr "Bouton"
+
+msgid "after login"
+msgstr "après connexion"
+
+msgid "Link to a page that doesn't exist"
+msgstr "Lien vers une page qui n'existe pas"
+
+msgid "A published page links to an unpublished page"
+msgstr "Une page publiée renvoie vers une page non publiée"
+
+msgid "Unpublished page in the menu"
+msgstr "Page non publiée dans le menu"
+
+msgid "Detail page has no detail or booking block"
+msgstr "La page de détail n'a ni bloc de détail ni bloc de réservation"
+
+msgid "The page could not be loaded."
+msgstr "La page n'a pas pu être chargée."
+
+msgid "Problems"
+msgstr "Problèmes"
+
+msgid "No problems found."
+msgstr "Aucun problème trouvé."
+
+msgid "Unpublished"
+msgstr "Non publiée"
+
+msgid "Click a page to open it in the builder. Drag a box to move it, drag from the dot on its right onto another page to add a link, or drag the end of an arrow to change where it leads. Select an arrow to remove it."
+msgstr "Cliquez sur une page pour l'ouvrir dans l'éditeur. Faites glisser une case pour la déplacer, tirez depuis le point à sa droite jusqu'à une autre page pour ajouter un lien, ou faites glisser l'extrémité d'une flèche pour changer sa destination. Sélectionnez une flèche pour la supprimer."
+
+msgid "Could not save the positions."
+msgstr "Impossible d'enregistrer les positions."
+
+msgid "That block already has a link. Pick another one."
+msgstr "Ce bloc a déjà un lien. Choisissez-en un autre."
+
+msgid "This link is no longer on the page."
+msgstr "Ce lien n'est plus sur la page."
+
+msgid "Arrange automatically"
+msgstr "Disposer automatiquement"
+
+msgid "New link"
+msgstr "Nouveau lien"
+
+msgid "From"
+msgstr "De"
+
+msgid "To"
+msgstr "Vers"
+
+msgid "Which block holds the link?"
+msgstr "Quel bloc porte le lien ?"
+
+msgid "Add a new button block at the bottom of the page"
+msgstr "Ajouter un nouveau bloc bouton en bas de la page"
+
+msgid "Button text"
+msgstr "Texte du bouton"
+
+msgid "Add link"
+msgstr "Ajouter le lien"
+
+msgid "Remove this link?"
+msgstr "Supprimer ce lien ?"
+
+msgid "The block stays on the page; only its link is removed."
+msgstr "Le bloc reste sur la page ; seul son lien est supprimé."
+
+msgid "Image link"
+msgstr "Lien de l'image"
+
+msgid "Card detail page"
+msgstr "Page de détail des cartes"
+
+msgid "Page after submit"
+msgstr "Page après envoi"
+
+msgid "Databases"
+msgstr "Bases de données"
+
+msgid "List, create, switch, delete, extract and restore the databases of this server. The page sits outside the ERP and asks for the master key, not your session."
+msgstr "Lister, créer, changer, supprimer, extraire et restaurer les bases de données de ce serveur. La page est hors de l'ERP et demande la clé maître, pas votre session."
+
+msgid "Open database management"
+msgstr "Ouvrir la gestion des bases de données"
+
+msgid "Language & currency"
+msgstr "Langue et devise"
+
+msgid "The default language and currency, and the currencies visitors can pick."
+msgstr "La langue et la devise par défaut, et les devises que les visiteurs peuvent choisir."
+
+msgid "What a first-time visitor sees. Visitors can change both in the website footer; an account keeps its own choice."
+msgstr "Ce que voit un nouveau visiteur. Les visiteurs peuvent changer les deux dans le pied de page du site ; un compte garde son propre choix."
+
+msgid "Currencies"
+msgstr "Devises"
+
+msgid "Prices are stored in the workspace currency; other currencies are converted for display only, at the live rate (European Central Bank) unless you set one. Bookings are still charged in the workspace currency."
+msgstr "Les prix sont enregistrés dans la devise de l'espace de travail ; les autres devises sont converties pour l'affichage seulement, au taux en direct (Banque centrale européenne) sauf si vous en fixez un. Les réservations restent facturées dans la devise de l'espace de travail."
+
+msgid "Workspace currency"
+msgstr "Devise de l'espace de travail"
+
+msgid "Rate"
+msgstr "Taux"
+
+msgid "No live rate"
+msgstr "Pas de taux en direct"
+
+msgid "Live rate"
+msgstr "Taux en direct"
+
+msgid "No live rate: set one, or the currency is not offered."
+msgstr "Pas de taux en direct : fixez-en un, sinon la devise n'est pas proposée."
+
+msgid "Add a currency (ISO code)"
+msgstr "Ajouter une devise (code ISO)"
+
+msgid "The rate you set is below the live rate, so prices show lower than their market conversion:"
+msgstr "Le taux que vous avez fixé est inférieur au taux en direct : les prix s'affichent plus bas que leur conversion au cours du marché :"
+
+msgid "Default currency"
+msgstr "Devise par défaut"
+
+msgid "Currency"
+msgstr "Devise"
+
+msgid "Short date format"
+msgstr "Format de date court"
+
+msgid "The language's own"
+msgstr "Celui de la langue"
+
+msgid "Used where space is short, such as the website booking list on a phone."
+msgstr "Utilisé quand la place manque, comme la liste de réservation du site sur téléphone."
+
+msgid "How numbers and short dates display across the workspace, for everyone."
+msgstr "L'affichage des nombres et des dates courtes dans tout l'espace de travail, pour tout le monde."
+
+msgid "Main"
+msgstr "Principal"
+
+msgid "A heading and paragraphs."
+msgstr "Un titre et des paragraphes."
+
+msgid "A picture from a record, with optional text and a button over it."
+msgstr "Une image d’un enregistrement, avec un texte et un bouton facultatifs par-dessus."
+
+msgid "A large title, a subtitle and a button."
+msgstr "Un grand titre, un sous-titre et un bouton."
+
+msgid "Records as a grid of cards or a table."
+msgstr "Des enregistrements en grille de cartes ou en tableau."
+
+msgid "One record: its picture and fields."
+msgstr "Un enregistrement : son image et ses champs."
+
+msgid "A row of record cards that scrolls sideways."
+msgstr "Une rangée de cartes qui défile horizontalement."
+
+msgid "Pictures one at a time, with arrows and swipe."
+msgstr "Des images une par une, avec flèches et balayage."
+
+msgid "An event’s sessions, booked by visitors."
+msgstr "Les séances d’un événement, réservées par les visiteurs."
+
+msgid "Free time slots of an appointment event."
+msgstr "Les créneaux libres d’un événement sur rendez-vous."
+
+msgid "Upcoming events, soonest first."
+msgstr "Les prochains événements, les plus proches en premier."
+
+msgid "A colored or picture band other blocks sit on."
+msgstr "Une bande colorée ou illustrée sur laquelle se posent d’autres blocs."
+
+msgid "Fields visitors fill in, saved into records."
+msgstr "Des champs remplis par les visiteurs, enregistrés dans des fiches."
+
+msgid "Layout and content"
+msgstr "Mise en page et contenu"
+
+msgid "Records"
+msgstr "Enregistrements"
+
+msgid "Events"
+msgstr "Événements"
+
+msgid "Visitors"
+msgstr "Visiteurs"
+
+msgid "Close (Esc)"
+msgstr "Fermer (Échap)"
+
+msgid "Blocks"
+msgstr "Blocs"
+
+msgid "Select a block on the page or in this list to configure it."
+msgstr "Sélectionnez un bloc sur la page ou dans cette liste pour le configurer."
+
+msgid "No blocks yet."
+msgstr "Aucun bloc pour le moment."
+
+msgid "Ctrl+S saves the page. Esc closes the block settings."
+msgstr "Ctrl+S enregistre la page. Échap ferme les réglages du bloc."
+
+msgid "This page has no blocks yet"
+msgstr "Cette page n’a pas encore de bloc"
+
+msgid "Add a hero, a text or any other block, then drag it into place and resize it from its corner."
+msgstr "Ajoutez une bannière, un texte ou tout autre bloc, puis faites-le glisser à sa place et redimensionnez-le par son coin."
+
+msgid "Back to the page form"
+msgstr "Retour à la fiche de la page"
+
+msgid "Unsaved changes"
+msgstr "Modifications non enregistrées"
+
+msgid "All changes saved"
+msgstr "Toutes les modifications sont enregistrées"
+
+msgid "Preview width"
+msgstr "Largeur de l’aperçu"
+
+msgid "Desktop"
+msgstr "Ordinateur"
+
+msgid "Desktop: drag and resize blocks"
+msgstr "Ordinateur : déplacer et redimensionner les blocs"
+
+msgid "Phone: blocks stacked as visitors see them"
+msgstr "Téléphone : blocs empilés comme les voient les visiteurs"
+
+msgid "Layout"
+msgstr "Mise en page"
+
+msgid "Picture"
+msgstr "Image"
+
+msgid "Background"
+msgstr "Arrière-plan"
+
+msgid "Data"
+msgstr "Données"
+
+msgid "Card"
+msgstr "Carte"
+
+msgid "Access"
+msgstr "Accès"
+
+msgid "Leave an empty line between paragraphs."
+msgstr "Laissez une ligne vide entre les paragraphes."
+
+msgid "Fields shown on each record."
+msgstr "Les champs affichés sur chaque enregistrement."
+
+msgid "The default view: visitors can switch between grid and list."
+msgstr "L’affichage par défaut : les visiteurs peuvent passer de la grille à la liste."
+
+msgid "Pick a table first."
+msgstr "Choisissez d’abord une table."
+
+msgid "Optional: rows of another table linked to this record, e.g. product variants."
+msgstr "Facultatif : les lignes d’une autre table liées à cet enregistrement, par exemple les variantes d’un produit."
+
+msgid "Map details"
+msgstr "Détails de la carte"
+
+msgid "Legend"
+msgstr "Légende"
+
+msgid "A page of the site"
+msgstr "Une page du site"
+
+msgid "Login, sign-up, account, or another site"
+msgstr "Connexion, inscription, compte ou autre site"
+
+msgid "Needs attention"
+msgstr "À vérifier"
+
+msgid "Broken"
+msgstr "Cassé"
+
+msgid "Click a page to open it in the builder."
+msgstr "Cliquez sur une page pour l’ouvrir dans l’éditeur."
+
+msgid "Drag a box to move it."
+msgstr "Faites glisser une boîte pour la déplacer."
+
+msgid "Drag from the dot on a page’s right onto another page to add a link, or drag the end of an arrow to change where it leads. Select an arrow to remove it."
+msgstr "Faites glisser le point à droite d’une page vers une autre page pour ajouter un lien, ou l’extrémité d’une flèche pour changer sa destination. Sélectionnez une flèche pour la supprimer."
+
+msgid "Every page of the site and the buttons and links between them."
+msgstr "Toutes les pages du site, et les boutons et liens qui les relient."
+
+msgid "Domain and search engines"
+msgstr "Domaine et moteurs de recherche"
+
+msgid "Switch to dark mode"
+msgstr "Passer en mode sombre"
+
+msgid "Switch to light mode"
+msgstr "Passer en mode clair"
+
+msgid "A sample value: no published record has one yet."
+msgstr "Valeur d’exemple : aucun enregistrement publié n’en a encore."
+
+msgid "After the value"
+msgstr "Après la valeur"
+
+msgid "Amount"
+msgstr "Montant"
+
+msgid "Apply"
+msgstr "Appliquer"
+
+msgid "Automatic"
+msgstr "Automatique"
+
+msgid "Before the value"
+msgstr "Avant la valeur"
+
+msgid "Choice"
+msgstr "Choix"
+
+msgid "Color"
+msgstr "Couleur"
+
+msgid "Country of numbers without a +prefix"
+msgstr "Pays des numéros sans préfixe +"
+
+msgid "Currency from a column"
+msgstr "Devise lue dans une colonne"
+
+msgid "Custom label"
+msgstr "Libellé personnalisé"
+
+msgid "Date and time"
+msgstr "Date et heure"
+
+msgid "Date style"
+msgstr "Format de date"
+
+msgid "Decimal number"
+msgstr "Nombre décimal"
+
+msgid "Decimals"
+msgstr "Décimales"
+
+msgid "Display settings"
+msgstr "Réglages d’affichage"
+
+msgid "Duration"
+msgstr "Durée"
+
+msgid "Empty: automatic."
+msgstr "Vide : automatique."
+
+msgid "Empty: the column name."
+msgstr "Vide : le nom de la colonne."
+
+msgid "Empty: the country of the site’s default language. Numbers of another country are written internationally."
+msgstr "Vide : le pays de la langue par défaut du site. Les numéros d’un autre pays s’écrivent au format international."
+
+msgid "Empty: the server’s. The zone is always shown next to the time."
+msgstr "Vide : celui du serveur. Le fuseau est toujours affiché après l’heure."
+
+msgid "Empty: the workspace currency, converted for visitors who pick another one."
+msgstr "Vide : la devise de l’espace de travail, convertie pour les visiteurs qui en choisissent une autre."
+
+msgid "Field display"
+msgstr "Affichage du champ"
+
+msgid "Font Awesome Free icons. The icon is decorative: the label and value carry the meaning."
+msgstr "Icônes Font Awesome Free. L’icône est décorative : le libellé et la valeur portent le sens."
+
+msgid "For records that each store their own currency code."
+msgstr "Pour les enregistrements qui stockent chacun leur code de devise."
+
+msgid "Format"
+msgstr "Format"
+
+msgid "Hide the label"
+msgstr "Masquer le libellé"
+
+msgid "How each field shows"
+msgstr "Affichage de chaque champ"
+
+msgid "Icons"
+msgstr "Icônes"
+
+msgid "In the ERP:"
+msgstr "Dans l’ERP :"
+
+msgid "Label hidden"
+msgstr "Libellé masqué"
+
+msgid "Like the text"
+msgstr "Comme le texte"
+
+msgid "Link color"
+msgstr "Couleur des liens"
+
+msgid "Linked record"
+msgstr "Enregistrement lié"
+
+msgid "Long (March 1, 2026)"
+msgstr "Long (1 mars 2026)"
+
+msgid "Loose"
+msgstr "Large"
+
+msgid "Medium (Mar 1, 2026)"
+msgstr "Moyen (1 mars 2026)"
+
+msgid "Muted"
+msgstr "Atténuée"
+
+msgid "No icon"
+msgstr "Aucune icône"
+
+msgid "No icon matches."
+msgstr "Aucune icône ne correspond."
+
+msgid "Not a country code (two letters, e.g. FR, US)."
+msgstr "Code pays invalide (deux lettres, par ex. FR, US)."
+
+msgid "Nothing to show for this field."
+msgstr "Rien à afficher pour ce champ."
+
+msgid "Only the value shows. Screen readers still announce the label."
+msgstr "Seule la valeur s’affiche. Les lecteurs d’écran annoncent toujours le libellé."
+
+msgid "Percentage"
+msgstr "Pourcentage"
+
+msgid "Position"
+msgstr "Position"
+
+msgid "Rating"
+msgstr "Note"
+
+msgid "Reset to automatic"
+msgstr "Revenir à l’automatique"
+
+msgid "Search icons"
+msgstr "Rechercher une icône"
+
+msgid "Search icons (phone, mail, instagram…)"
+msgstr "Rechercher une icône (phone, mail, instagram…)"
+
+msgid "Short (03/01/2026)"
+msgstr "Court (01/03/2026)"
+
+msgid "Show as"
+msgstr "Afficher comme"
+
+msgid "Spacing"
+msgstr "Espacement"
+
+msgid "Tight"
+msgstr "Serré"
+
+msgid "Time zone"
+msgstr "Fuseau horaire"
+
+msgid "Web address"
+msgstr "Adresse web"
+
+msgid "When no"
+msgstr "Si non"
+
+msgid "When yes"
+msgstr "Si oui"
+
+msgid "Whole number"
+msgstr "Nombre entier"
+
+msgid "Yes / no"
+msgstr "Oui / non"
+
+msgid "with an icon"
+msgstr "avec une icône"
+
+msgid "{n} out of {max}"
+msgstr "{n} sur {max}"
+
+msgid "Solid"
+msgstr "Plein"
+
+msgid "Regular"
+msgstr "Contour"
+
+msgid "Brands"
+msgstr "Marques"
+
+msgid "Search bar"
+msgstr "Barre de recherche"
+
+msgid "A search bar over the tables you pick."
+msgstr "Une barre de recherche sur les tables choisies."
+
+msgid "Type at least 2 characters"
+msgstr "Saisissez au moins 2 caractères"
+
+msgid "No results"
+msgstr "Aucun résultat"
+
+msgid "Searching…"
+msgstr "Recherche…"
+
+msgid "Search"
+msgstr "Rechercher"
+
+msgid "Placeholder"
+msgstr "Texte indicatif"
+
+msgid "Results per table"
+msgstr "Résultats par table"
+
+msgid "Searched tables"
+msgstr "Tables recherchées"
+
+msgid "Results are grouped by table, in this order."
+msgstr "Les résultats sont regroupés par table, dans cet ordre."
+
+msgid "Add a table to search in."
+msgstr "Ajoutez une table dans laquelle chercher."
+
+msgid "Move"
+msgstr "Déplacer"
+
+msgid "Schedule on"
+msgstr "Planifier le"
+
+msgid "Move up"
+msgstr "Monter"
+
+msgid "Remove table"
+msgstr "Retirer la table"
+
+msgid "Section label"
+msgstr "Libellé de la section"
+
+msgid "Search in"
+msgstr "Chercher dans"
+
+msgid "Add table"
+msgstr "Ajouter une table"
+
+msgid "Search results"
+msgstr "Résultats de recherche"
+
+msgid "Add column"
+msgstr "Ajouter une colonne"
+
+msgid "Rename column"
+msgstr "Renommer la colonne"
+
+msgid "Column name"
+msgstr "Nom de la colonne"
+
+msgid "No column named {name} exists for this card."
+msgstr "Aucune colonne nommée {name} n'existe pour cette carte."
+
+msgid "This board has too many columns: only the first ones are shown."
+msgstr "Ce tableau a trop de colonnes : seules les premières sont affichées."
+
+msgid "Gantt"
+msgstr "Gantt"
+
+msgid "Zoom"
+msgstr "Zoom"
+
+msgid "Day"
+msgstr "Jour"
+
+msgid "Week"
+msgstr "Semaine"
+
+msgid "Month"
+msgstr "Mois"
+
+msgid "Today"
+msgstr "Aujourd'hui"
+
+msgid "Timeline position"
+msgstr "Position de la frise"
+
+msgid "Previous period"
+msgstr "Période précédente"
+
+msgid "Next period"
+msgstr "Période suivante"
+
+msgid "Gantt start"
+msgstr "Début du Gantt"
+
+msgid "Gantt end"
+msgstr "Fin du Gantt"
+
+msgid "records shown — narrow the range or the filters to see the rest"
+msgstr "enregistrements affichés — réduisez la période ou les filtres pour voir le reste"
+
+msgid "Which field powers each list's Kanban, Calendar and Gantt display modes, and whether Graph mode is on."
+msgstr "Quel champ alimente les modes d'affichage Kanban, Calendrier et Gantt de chaque liste, et si le mode Graphique est activé."
+
+msgid "Colors of"
+msgstr "Couleurs de"
+
+msgid "Drag an unscheduled record onto the timeline to plan it."
+msgstr "Glissez un élément non planifié sur la frise pour le planifier."
+
+msgid "WBS"
+msgstr "WBS"
+
+msgid "PERT"
+msgstr "PERT"
+
+msgid "Add note"
+msgstr "Ajouter une note"
+
+msgid "Delete note"
+msgstr "Supprimer la note"
+
+msgid "Note"
+msgstr "Note"
+
+msgid "How to use this diagram"
+msgstr "Comment utiliser ce diagramme"
+
+msgid "Scroll to zoom, drag the background to move around."
+msgstr "Faites défiler pour zoomer, faites glisser le fond pour vous déplacer."
+
+msgid "Drag a box to move it: your arrangement is saved for you only."
+msgstr "Faites glisser une boîte pour la déplacer : votre disposition est enregistrée pour vous seul."
+
+msgid "Shift+click or Shift+drag on the background selects several boxes; drag one to move them all."
+msgstr "Maj+clic ou Maj+glisser sur le fond sélectionne plusieurs boîtes ; faites-en glisser une pour toutes les déplacer."
+
+msgid "Double-click a box to open its record. Zoomed out, boxes show only their title."
+msgstr "Double-cliquez sur une boîte pour ouvrir son enregistrement. En vue éloignée, les boîtes n’affichent que leur titre."
+
+msgid "Drag from the dot on the right of a box to another box to add a dependency."
+msgstr "Faites glisser depuis le point à droite d’une boîte vers une autre boîte pour ajouter une dépendance."
+
+msgid "Drag from the dot under a box to another box to make it its parent."
+msgstr "Faites glisser depuis le point sous une boîte vers une autre boîte pour en faire son parent."
+
+msgid "Click a link to select it, then press Delete to remove it."
+msgstr "Cliquez sur un lien pour le sélectionner, puis appuyez sur Suppr pour le retirer."
+
+msgid "Drop a box onto another to move it under that one."
+msgstr "Déposez une boîte sur une autre pour la placer sous celle-ci."
+
+msgid "Undo"
+msgstr "Annuler"
+
+msgid "Redo"
+msgstr "Rétablir"
+
+msgid "Drop a box with no links onto a line to insert it there."
+msgstr "Déposez une boîte sans lien sur un trait pour l’insérer à cet endroit."
+
+msgid "Ctrl+Z undoes your last change, Ctrl+Y redoes it."
+msgstr "Ctrl+Z annule votre dernière modification, Ctrl+Y la rétablit."
+
+msgid "Add note adds a text box only you see; drag from its dot to a box to link them."
+msgstr "Ajouter une note crée une zone de texte visible par vous seul ; faites glisser depuis son point vers une boîte pour les relier."
+
+msgid "Re-arrange places every box again; Fit view shows the whole diagram."
+msgstr "Réorganiser replace toutes les boîtes ; Ajuster la vue affiche tout le diagramme."
+
+msgid "Re-arrange"
+msgstr "Réorganiser"
+
+msgid "Export PNG"
+msgstr "Exporter en PNG"
+
+msgid "Export PDF"
+msgstr "Exporter en PDF"
+
+msgid "Fit view"
+msgstr "Ajuster la vue"
+
+msgid "More than {n} records match — narrow the filters to draw the diagram"
+msgstr "Plus de {n} éléments correspondent : affinez les filtres pour dessiner le diagramme"
+
+msgid "Expand"
+msgstr "Déplier"
+
+msgid "Collapse"
+msgstr "Replier"
+
+msgid "+1 task · {h} h"
+msgstr "+1 tâche · {h} h"
+
+msgid "+{n} tasks · {h} h"
+msgstr "+{n} tâches · {h} h"
+
+msgid "Folded branch"
+msgstr "Branche repliée"
+
+msgid "ES"
+msgstr "DPT"
+
+msgid "EF"
+msgstr "FPT"
+
+msgid "LS"
+msgstr "DPA"
+
+msgid "LF"
+msgstr "FPA"
+
+msgid "Slack: {n} d"
+msgstr "Marge : {n} j"
+
+msgid "No estimate"
+msgstr "Aucune estimation"
+
+msgid "Critical path"
+msgstr "Chemin critique"
+
+msgid "Closed"
+msgstr "Clôturée"
+
+msgid "1 hidden link"
+msgstr "1 lien masqué"
+
+msgid "{n} hidden links"
+msgstr "{n} liens masqués"
+
+msgid "Dependency cycle: critical path not computed"
+msgstr "Cycle de dépendances : chemin critique non calculé"
+
+msgid "Add contact"
+msgstr "Ajouter un contact"
+
+msgid "Create a new contact"
+msgstr "Créer un nouveau contact"
+
+msgid "Add user"
+msgstr "Ajouter un utilisateur"
+
+msgid "Add text"
+msgstr "Ajouter un texte"
+
+msgid "Contact"
+msgstr "Contact"
+
+msgid "User"
+msgstr "Utilisateur"
+
+msgid "Pick a color"
+msgstr "Choisir une couleur"
+
+msgid "Clear color"
+msgstr "Effacer la couleur"
+
+msgid "Deleted contact"
+msgstr "Contact supprimé"
+
+msgid "Unknown user"
+msgstr "Utilisateur inconnu"
+
+msgid "OBS"
+msgstr "OBS"
+
+msgid "Risk"
+msgstr "Risque"
+
+msgid "Edit box"
+msgstr "Modifier l’encadré"
+
+msgid "Drag a box to move it: the chart is shared, and only the project manager can change it."
+msgstr "Faites glisser un encadré pour le déplacer : le diagramme est partagé et seul le chef de projet peut le modifier."
+
+msgid "Add boxes from the toolbar; drag from a box's dot to another to put it under that one."
+msgstr "Ajoutez des encadrés depuis la barre d’outils ; faites glisser le point d’un encadré vers un autre pour le placer sous celui-ci."
+
+msgid "New risk"
+msgstr "Nouveau risque"
+
+msgid "Matrix"
+msgstr "Matrice"
+
+msgid "Ishikawa"
+msgstr "Ishikawa"
+
+msgid "Register"
+msgstr "Registre"
+
+msgid "Likelihood"
+msgstr "Probabilité"
+
+msgid "Severity"
+msgstr "Gravité"
+
+msgid "Current"
+msgstr "Actuel"
+
+msgid "After remediation"
+msgstr "Après remédiation"
+
+msgid "Now"
+msgstr "Maintenant"
+
+msgid "After"
+msgstr "Après"
+
+msgid "Uncategorized"
+msgstr "Sans catégorie"
+
+msgid "Delay"
+msgstr "Délai"
+
+msgid "Cost"
+msgstr "Coût"
+
+msgid "Quality"
+msgstr "Qualité"
+
+msgid "Not computable"
+msgstr "Non calculable"
+
+msgid "Category"
+msgstr "Catégorie"
+
+msgid "Impact on"
+msgstr "Impact sur"
+
+msgid "Detectability"
+msgstr "Détectabilité"
+
+msgid "If it happens"
+msgstr "Si le risque survient"
+
+msgid "Criticity"
+msgstr "Criticité"
+
+msgid "Remediation"
+msgstr "Remédiation"
+
+msgid "Responsible"
+msgstr "Responsable"
+
+msgid "Deadline"
+msgstr "Échéance"
+
+msgid "Residual criticity"
+msgstr "Criticité résiduelle"
+
+msgid "Full screen"
+msgstr "Plein écran"
+
+msgid "Exit full screen"
+msgstr "Quitter le plein écran"
+
+msgid "More"
+msgstr "Plus"
+
+msgid "Insights"
+msgstr "Analyses"
+
+msgid "Matrices"
+msgstr "Matrices"
+
+msgid "Swimlanes"
+msgstr "Couloirs"
+
+msgid "Unassigned"
+msgstr "Non assigné"
+
+msgid "First 1000 shown"
+msgstr "Premiers 1000 affichés"
+
+msgid "Baseline"
+msgstr "Ligne de base"
+
+msgid "No baseline"
+msgstr "Aucune ligne de base"
+
+msgid "Dependency cycle: no critical path"
+msgstr "Cycle de dépendances : aucun chemin critique"
+
+msgid "PBS"
+msgstr "PBS"
+
+msgid "Add item"
+msgstr "Ajouter un élément"
+
+msgid "Edit item"
+msgstr "Modifier l'élément"
+
+msgid "Parent"
+msgstr "Parent"
+
+msgid "No parent"
+msgstr "Sans parent"
+
+msgid "No task produces this"
+msgstr "Aucune tâche ne produit ce livrable"
+
+msgid "No milestone yet for {name}"
+msgstr "Aucun jalon pour l’instant pour {name}"
+
+msgid "New note"
+msgstr "Nouvelle note"
+
+msgid "Invalid note file."
+msgstr "Fichier de note invalide."
+
+msgid "This note contains formatting that this editor does not support."
+msgstr "Cette note contient une mise en forme que cet éditeur ne prend pas en charge."
+
+msgid "Discard unsaved changes?"
+msgstr "Abandonner les modifications non enregistrées ?"
+
+msgid "Strikethrough"
+msgstr "Barré"
+
+msgid "Task list"
+msgstr "Liste de tâches"
+
+msgid "Blockquote"
+msgstr "Citation"
+
+msgid "Code block"
+msgstr "Bloc de code"
+
+msgid "Subscript"
+msgstr "Indice"
+
+msgid "Superscript"
+msgstr "Exposant"
+
+msgid "This note has changed. Reopen it before saving again."
+msgstr "Cette note a été modifiée. Rouvrez-la avant de l’enregistrer à nouveau."
+
+msgid "Only .ocnote files can be edited as notes."
+msgstr "Seuls les fichiers .ocnote peuvent être modifiés comme notes."
+
+msgid "The note is too large."
+msgstr "La note est trop volumineuse."
+
+msgid "The note must contain a Tiptap JSON document."
+msgstr "La note doit contenir un document JSON Tiptap."
+
+msgid "The note version is required."
+msgstr "La version de la note est requise."
+
+msgid "Align left"
+msgstr "Aligner à gauche"
+
+msgid "Align center"
+msgstr "Centrer"
+
+msgid "Align right"
+msgstr "Aligner à droite"
+
+msgid "Insert table"
+msgstr "Insérer un tableau"
+
+msgid "Insert image"
+msgstr "Insérer une image"
+
+msgid "Image address"
+msgstr "Adresse de l’image"
+
+msgid "Text color"
+msgstr "Couleur du texte"
+
+msgid "Download"
+msgstr "Télécharger"
+
+msgid "Loading…"
+msgstr "Chargement…"
+
+msgid "Document tools"
+msgstr "Outils du document"
+
+msgid "Text style"
+msgstr "Style de texte"
+
+msgid "Normal text"
+msgstr "Texte normal"
+
+msgid "Font family"
+msgstr "Police"
+
+msgid "Font size"
+msgstr "Taille de police"
+
+msgid "Default"
+msgstr "Par défaut"
+
+msgid "Line spacing"
+msgstr "Interligne"
+
+msgid "Justify"
+msgstr "Justifier"
+
+msgid "Custom color"
+msgstr "Couleur personnalisée"
+
+msgid "Reset color"
+msgstr "Réinitialiser la couleur"
+
+msgid "Table size"
+msgstr "Dimensions du tableau"
+
+msgid "Add row above"
+msgstr "Insérer une ligne au-dessus"
+
+msgid "Add row below"
+msgstr "Insérer une ligne en dessous"
+
+msgid "Add column before"
+msgstr "Insérer une colonne avant"
+
+msgid "Add column after"
+msgstr "Insérer une colonne après"
+
+msgid "Toggle header row"
+msgstr "Activer ou désactiver la ligne d’en-tête"
+
+msgid "Merge cells"
+msgstr "Fusionner les cellules"
+
+msgid "Split cell"
+msgstr "Scinder la cellule"
+
+msgid "Delete row"
+msgstr "Supprimer la ligne"
+
+msgid "Delete column"
+msgstr "Supprimer la colonne"
+
+msgid "Delete table"
+msgstr "Supprimer le tableau"
+
+msgid "Upload image"
+msgstr "Importer une image"
+
+msgid "Image from URL"
+msgstr "Image depuis une URL"
+
+msgid "Remove image"
+msgstr "Supprimer l’image"
+
+msgid "Horizontal line"
+msgstr "Ligne horizontale"
+
+msgid "Clear formatting"
+msgstr "Effacer la mise en forme"
+
+msgid "Link address"
+msgstr "Adresse du lien"
+
+msgid "Link text"
+msgstr "Texte du lien"
+
+msgid "Enter a valid address."
+msgstr "Saisissez une adresse valide."
+
+msgid "Insert"
+msgstr "Insérer"
+
+msgid "Choose an image smaller than 5 MB."
+msgstr "Choisissez une image de moins de 5 Mo."
+
+msgid "The image could not be loaded."
+msgstr "Impossible de charger l’image."
+
+msgid "Find and replace"
+msgstr "Rechercher et remplacer"
+
+msgid "Find in document"
+msgstr "Rechercher dans le document"
+
+msgid "Replace with"
+msgstr "Remplacer par"
+
+msgid "Replace all"
+msgstr "Tout remplacer"
+
+msgid "Previous result"
+msgstr "Résultat précédent"
+
+msgid "Next result"
+msgstr "Résultat suivant"
+
+msgid "Match case"
+msgstr "Respecter la casse"
+
+msgid "Whole words"
+msgstr "Mots entiers"
+
+msgid "Close search"
+msgstr "Fermer la recherche"
+
+msgid "Document outline"
+msgstr "Sommaire du document"
+
+msgid "Outline"
+msgstr "Sommaire"
+
+msgid "Close outline"
+msgstr "Fermer le sommaire"
+
+msgid "Headings"
+msgstr "Titres"
+
+msgid "Untitled heading"
+msgstr "Titre sans nom"
+
+msgid "Add headings to navigate your document."
+msgstr "Ajoutez des titres pour naviguer dans votre document."
+
+msgid "Note content"
+msgstr "Contenu de la note"
+
+msgid "Code language"
+msgstr "Langage du code"
+
+msgid "Print"
+msgstr "Imprimer"
+
+msgid "Allow pop-ups to print this document."
+msgstr "Autorisez les fenêtres contextuelles pour imprimer ce document."
+
+msgid "words"
+msgstr "mots"
+
+msgid "characters"
+msgstr "caractères"
+
+msgid "Editing"
+msgstr "Édition"
+
+msgid "Read only"
+msgstr "Lecture seule"
+
+msgid "Your changes have not been saved yet."
+msgstr "Vos modifications n’ont pas encore été enregistrées."
+
+msgid "Keep editing"
+msgstr "Continuer l’édition"
+
+msgid "Discard changes"
+msgstr "Abandonner les modifications"
+
+msgid "Records: {n}"
+msgstr "Enregistrements : {n}"
+
+msgid "Add task"
+msgstr "Ajouter une tâche"
+
+msgid "Remove from diagram"
+msgstr "Retirer du diagramme"
+
+msgid "No match"
+msgstr "Aucun résultat"

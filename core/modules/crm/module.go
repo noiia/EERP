@@ -2,6 +2,7 @@ package crm
 
 import (
 	"core/internal/module"
+	"core/internal/website/formtarget"
 	"core/modules/crm/internal"
 	"core/orm"
 )
@@ -15,6 +16,8 @@ type crmModule struct{}
 func (m *crmModule) Name() string { return "crm" }
 
 func (m *crmModule) Register() error {
+	// What a public website form may write into a CRM lead.
+	formtarget.RegisterFormTarget("crm", "name", "company", "phone", "notes", "status", "contact_id")
 	if err := orm.Register[internal.CRM](); err != nil {
 		return err
 	}

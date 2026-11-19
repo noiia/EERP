@@ -8,6 +8,12 @@ msgstr ""
 msgid "Crm"
 msgstr "CRM"
 
+# module.json's display_name ("CRM") — the landing-menu tile, a distinct
+# msgid from "Crm" above (the header-menu default label, humanized from the
+# bare entity name) even though both happen to read the same in French.
+msgid "CRM"
+msgstr "CRM"
+
 msgid "Name"
 msgstr "Nom"
 
@@ -49,6 +55,9 @@ msgstr "Contact"
 
 msgid "Tags"
 msgstr "Étiquettes"
+
+msgid "Signature"
+msgstr "Signature"
 
 # status field.selection.options — each option's DISPLAY goes through t()
 # (widgets.tsx's SelectionWidget); the stored value stays the raw English

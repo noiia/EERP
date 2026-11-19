@@ -39,3 +39,42 @@ export interface GraphLayout {
 }
 
 export const EMPTY_GRAPH_LAYOUT: GraphLayout = { tiles: [] }
+
+/** A chart-only calculated field (see views/graph-aggregate.ts's evalFormula).
+ * `key` is what a tile's config references; `roles` empty = visible to all. */
+export interface GraphField {
+  id: string
+  key: string
+  label: string
+  formula: string
+  roles: string[]
+  /** Computed once per dated child row (e.g. each rent receipt) instead of once per record. */
+  dated?: boolean
+}
+
+export type GraphFieldDraft = Pick<GraphField, 'key' | 'label' | 'formula' | 'roles' | 'dated'>
+
+/**
+ * Server-side Graph aggregation (docs/adr/ADR-023-graph-server-aggregation.md):
+ * `GET /{entity}?aggregate=…` plus the list filters, computed by Go over EVERY
+ * matching row instead of the fetched page. `value` is a column or a formula
+ * with calc_ references already expanded (expandCalcFormula); omitted means
+ * "count rows".
+ */
+export interface GraphAggregateRequest {
+  aggregate: 'sum' | 'avg' | 'mean' | 'median' | 'count'
+  value?: string
+  /** Date column to bucket by (with `bucket`). */
+  x?: string
+  bucket?: 'day' | 'week' | 'month'
+  /** Column to split by (a series, a pie slice). */
+  group?: string
+}
+
+/** One (bucket, group) cell: `value` aggregated, `count` = rows in the cell. */
+export interface GraphAggregateRow {
+  x?: string
+  group?: string
+  value: number
+  count: number
+}

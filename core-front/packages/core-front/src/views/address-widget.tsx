@@ -51,7 +51,7 @@ function parseStreetLine(raw: string): { number: number | null; street: string }
 /** One normalized suggestion from the OSM search BFF route — mirrors
  * apps/shell's OSMSuggestion shape exactly (kept independent here: the
  * engine package doesn't depend on the shell app). */
-interface OSMSuggestion {
+export interface OSMSuggestion {
   label: string
   number: number | null
   street: string
@@ -60,6 +60,8 @@ interface OSMSuggestion {
   city: string
   state: string
   country: string
+  lat: number | null
+  lon: number | null
 }
 
 const OSM_SEARCH_DEBOUNCE_MS = 300
@@ -69,7 +71,7 @@ const OSM_MIN_QUERY_LENGTH = 3
 
 /** Debounced address search against the BFF proxy — never Nominatim
  * directly (see the file-level doc comment). */
-function useOSMSuggestions() {
+export function useOSMSuggestions() {
   const [options, setOptions] = useState<OSMSuggestion[]>([])
   const [loading, setLoading] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)

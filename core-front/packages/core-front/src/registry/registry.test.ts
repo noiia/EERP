@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ViewDescriptor } from '../views/descriptor'
 import { headerMenuRegistry, registerHeaderMenu } from '../views/header-menu-registry'
-import type { ReportDescriptor } from '../views/report-descriptor'
+import { DEFAULT_REPORT_NAME, type ReportDescriptor } from '../views/report-descriptor'
 import { ModuleRegistry, type FrontModule } from './registry'
 
 const formDescriptor: ViewDescriptor = {
@@ -89,6 +89,18 @@ describe('ModuleRegistry', () => {
     expect(registry.formPathFor('tag')).toBeNull()
   })
 
+  it('resolves which module owns an entity, by displayName when registered with one', () => {
+    const registry = new ModuleRegistry()
+    registry.register(crm, { displayName: 'Customers' })
+    registry.register({
+      name: 'inventory',
+      routes: [{ path: '/inventory/items', descriptor: { ...treeDescriptor, entity: 'item' } }],
+    })
+    expect(registry.moduleForEntity('crm')).toEqual({ name: 'crm', displayName: 'Customers' })
+    expect(registry.moduleForEntity('item')).toEqual({ name: 'inventory', displayName: undefined })
+    expect(registry.moduleForEntity('no-such-entity')).toBeNull()
+  })
+
   it('rejects a descriptor whose widget the field type forbids, naming module and route', () => {
     const bad: FrontModule = {
       name: 'broken',
@@ -115,23 +127,52 @@ describe('ModuleRegistry reports', () => {
     permissions: ['crm:crm:read'],
     layout: [{ kind: 'field', name: 'name' }],
   }
+  const names = (registry: ModuleRegistry) => [...registry.buildReportRegistry().keys()].sort()
 
   it('resolves a registered report by name, not by path', () => {
     const registry = new ModuleRegistry()
     registry.register({ ...crm, reports: [statement] })
-    expect(registry.buildReportRegistry().get('crm.statement')).toBe(statement)
+    expect(registry.buildReportRegistry().get('crm.statement')).toMatchObject(statement)
   })
 
-  it('is empty when a module declares no reports', () => {
+  it('always holds the built-in default report, abstract', () => {
     const registry = new ModuleRegistry().register(crm)
-    expect(registry.buildReportRegistry().size).toBe(0)
+    expect(names(registry)).toEqual([DEFAULT_REPORT_NAME])
+    expect(registry.buildReportRegistry().get(DEFAULT_REPORT_NAME)).toMatchObject({
+      abstract: true,
+      chrome: { header: true, footer: true },
+    })
   })
 
   it('is idempotent by module name, same as routes', () => {
     const registry = new ModuleRegistry()
     registry.register({ ...crm, reports: [statement] })
     registry.register({ ...crm, reports: [statement] })
-    expect(registry.buildReportRegistry().size).toBe(1)
+    expect(names(registry)).toEqual(['core.default', 'crm.statement'])
+  })
+
+  it('flattens inheritance: a report extending the default gets its header and footer', () => {
+    const registry = new ModuleRegistry().register({ ...crm, reports: [{ ...statement, extends: DEFAULT_REPORT_NAME }] })
+    const resolved = registry.buildReportRegistry().get('crm.statement')!
+    expect(resolved.chrome).toEqual({ header: true, footer: true })
+    expect(resolved.layout).toEqual(statement.layout)
+    expect(resolved.extends).toBeUndefined()
+  })
+
+  it('a report may extend one that a later-registered module ships', () => {
+    const base: ReportDescriptor = { name: 'tag.base', abstract: true, entity: '', permissions: [], layout: [], chrome: { header: true } }
+    const registry = new ModuleRegistry()
+    registry.register({ ...crm, reports: [{ ...statement, extends: 'tag.base' }] })
+    registry.register({ name: 'tag', routes: [], reports: [base] })
+    expect(registry.buildReportRegistry().get('crm.statement')?.chrome).toEqual({ header: true })
+  })
+
+  it('refuses to replace the built-in base, and an unknown parent fails the build', () => {
+    expect(() =>
+      new ModuleRegistry().register({ ...crm, reports: [{ ...statement, name: DEFAULT_REPORT_NAME }] }),
+    ).toThrowError(/built-in base report/)
+    const registry = new ModuleRegistry().register({ ...crm, reports: [{ ...statement, extends: 'nope' }] })
+    expect(() => registry.buildReportRegistry()).toThrowError(/extends unknown report "nope"/)
   })
 
   it('rejects a report descriptor with an invalid node, naming module and report', () => {
@@ -151,11 +192,12 @@ describe('ModuleRegistry reports', () => {
     )
   })
 
-  it('reportForEntity resolves the first report over that entity, null otherwise', () => {
+  it('reportForEntity resolves the first printable report over that entity, null otherwise', () => {
     const registry = new ModuleRegistry()
     registry.register({ ...crm, reports: [statement] })
-    expect(registry.reportForEntity('crm')).toBe(statement)
+    expect(registry.reportForEntity('crm')).toMatchObject(statement)
     expect(registry.reportForEntity('tag')).toBeNull()
+    expect(registry.reportForEntity('')).toBeNull() // the abstract default has no entity
   })
 })
 
@@ -212,6 +254,44 @@ describe('ModuleRegistry.menu', () => {
       .register(inventory, { appMode: true })
     expect(registry.menu().map((m) => m.name)).toEqual(['crm', 'inventory'])
   })
+
+  it('callerPermissions: drops a route the caller lacks permission for', () => {
+    const twoRoutes: FrontModule = {
+      name: 'crm2',
+      routes: [
+        { path: '/crm2/contacts', descriptor: treeDescriptor, permission: 'crm2:contacts:read' },
+        { path: '/crm2/leads', descriptor: treeDescriptor, permission: 'crm2:leads:read' },
+      ],
+    }
+    const registry = new ModuleRegistry().register(twoRoutes, { appMode: true })
+    const menu = registry.menu(['crm2:contacts:read'])
+    expect(menu).toHaveLength(1)
+    expect(menu[0].routes.map((r) => r.path)).toEqual(['/crm2/contacts'])
+  })
+
+  it('callerPermissions: drops the whole tile when every route is denied', () => {
+    const registry = new ModuleRegistry().register(crm, { appMode: true })
+    expect(registry.menu(['unrelated:module:read'])).toEqual([])
+  })
+
+  it('callerPermissions: keeps a route with no declared permission regardless', () => {
+    const open: FrontModule = {
+      name: 'open',
+      routes: [{ path: '/open', descriptor: treeDescriptor }],
+    }
+    const registry = new ModuleRegistry().register(open, { appMode: true })
+    expect(registry.menu(['unrelated:module:read'])).toHaveLength(1)
+  })
+
+  it('callerPermissions: a wildcard grant keeps every route', () => {
+    const registry = new ModuleRegistry().register(crm, { appMode: true })
+    expect(registry.menu(['*:*:*'])).toHaveLength(1)
+  })
+
+  it('omitting callerPermissions keeps every route, unfiltered', () => {
+    const registry = new ModuleRegistry().register(crm, { appMode: true })
+    expect(registry.menu()).toHaveLength(1)
+  })
 })
 
 describe('ModuleRegistry.headerMenus', () => {
@@ -265,6 +345,13 @@ describe('ModuleRegistry.headerMenus', () => {
         ],
       },
     ])
+  })
+
+  it('appends a route\'s navQuery to its menu line', () => {
+    const menus = new ModuleRegistry()
+      .register({ name: 'crm', routes: [{ path: '/crm/list', descriptor: { ...treeDescriptor, navQuery: '?filter[active]=true' } }] })
+      .headerMenus()
+    expect(menus[0].menus[0].entries).toEqual([{ kind: 'line', label: 'Crm', path: '/crm/list?filter[active]=true' }])
   })
 
   it('includes a catalog route and drops form routes (no :param, no plain routes either)', () => {

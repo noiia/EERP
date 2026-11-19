@@ -5,10 +5,33 @@ import (
 	"testing"
 	"time"
 
+	"core/internal/settings"
 	"core/modules/sale"
+	"core/modules/warehouse"
 
 	"github.com/google/uuid"
 )
+
+// defaultFloorAreaUomName: metric picks the square meter default, imperial
+// the square foot one — and anything else (an unset/garbage settings value)
+// degrades to metric, the same "unset means the original behavior" posture
+// settings.resolveUnitSystem itself already takes.
+func TestDefaultFloorAreaUomName(t *testing.T) {
+	tests := []struct {
+		system string
+		want   string
+	}{
+		{settings.UnitSystemMetric, warehouse.DefaultSurfaceUomNameMetric},
+		{settings.UnitSystemImperial, warehouse.DefaultSurfaceUomNameImperial},
+		{"", warehouse.DefaultSurfaceUomNameMetric},
+		{"garbage", warehouse.DefaultSurfaceUomNameMetric},
+	}
+	for _, tt := range tests {
+		if got := defaultFloorAreaUomName(tt.system); got != tt.want {
+			t.Errorf("defaultFloorAreaUomName(%q) = %q, want %q", tt.system, got, tt.want)
+		}
+	}
+}
 
 // receiptGeneratedThisMonth: nil (never generated — the whole reason
 // LastReceiptMonth is a *string, not a string) must read as false, not

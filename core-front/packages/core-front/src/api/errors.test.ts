@@ -1,5 +1,12 @@
-import { describe, expect, it } from 'vitest'
-import { ApiError, codeFromStatus, parseError } from './errors'
+import { describe, expect, it, vi } from 'vitest'
+import {
+  ApiError,
+  codeFromStatus,
+  parseError,
+  settleAction,
+  unwrapActionResult,
+  unwrapActions,
+} from './errors'
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -68,5 +75,62 @@ describe('parseError', () => {
     const err = await parseError(new Response('not json', { status: 502 }))
     expect(err.code).toBe('INTERNAL_ERROR')
     expect(err.status).toBe(502)
+  })
+})
+
+describe('parseError fields', () => {
+  it('keeps the missing field names a VALIDATION_ERROR carries', async () => {
+    const err = await parseError(
+      jsonResponse(422, {
+        error: { code: 'VALIDATION_ERROR', message: 'missing', request_id: 'r1', fields: ['issuer_name', 7] },
+      }),
+    )
+    expect(err.fields).toEqual(['issuer_name'])
+  })
+})
+
+describe('Server Action boundary', () => {
+  it('round-trips an ApiError as a value, then throws it back on the client', async () => {
+    const settled = await settleAction(async () => {
+      throw new ApiError({ code: 'VALIDATION_ERROR', message: 'm', status: 422, requestId: 'r1', fields: ['a'] })
+    })
+    // Survives serialization, like a real Server Action result.
+    const wire = JSON.parse(JSON.stringify(settled)) as unknown
+    expect(() => unwrapActionResult(wire)).toThrow(ApiError)
+    try {
+      unwrapActionResult(wire)
+    } catch (e) {
+      expect(e).toMatchObject({ code: 'VALIDATION_ERROR', message: 'm', status: 422, requestId: 'r1', fields: ['a'] })
+    }
+  })
+
+  it('hides a non-ApiError message behind a generic INTERNAL_ERROR', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const settled = await settleAction(async () => {
+      throw new Error('connect ECONNREFUSED 10.0.0.3:8080')
+    })
+    spy.mockRestore()
+    expect(() => unwrapActionResult(settled)).toThrow(/contact your administrator/)
+  })
+
+  it('passes successful values through untouched', async () => {
+    const value = { id: '1', ok: false }
+    expect(unwrapActionResult(await settleAction(async () => value))).toBe(value)
+  })
+
+  it('unwrapActions wraps every function, async or not, and leaves other members alone', async () => {
+    const settledError = await settleAction(async () => {
+      throw new ApiError({ code: 'NOT_FOUND', message: 'gone', status: 404 })
+    })
+    const actions = unwrapActions({
+      ok: async (n: number) => n + 1,
+      fails: async () => settledError,
+      sync: () => 'plain',
+      label: 'kept',
+    })
+    await expect(actions.ok(1)).resolves.toBe(2)
+    await expect(actions.fails()).rejects.toMatchObject({ code: 'NOT_FOUND', message: 'gone' })
+    expect(actions.sync()).toBe('plain')
+    expect(actions.label).toBe('kept')
   })
 })

@@ -1,0 +1,50 @@
+package dbmanage
+
+import (
+	"context"
+	"fmt"
+
+	"core/internal/auth"
+	"core/internal/module"
+	"core/internal/notify"
+	"core/orm"
+
+	"github.com/bytecodealliance/wasmtime-go/v50"
+)
+
+// Provisioner builds a fully-usable EERP database from an empty one — the
+// exact same path core/cmd/app/main.go's normal boot takes
+// (module.NewRegistry(...).Boot(ctx) + auth.SeedDevAdmin), reused here rather
+// than duplicated. Safe to call against an ALREADY-provisioned database too:
+// Boot()'s underlying ensureTable/ensureColumns are idempotent (IF NOT
+// EXISTS throughout — core/internal/module/migration.go) and, since the
+// go_module.go fix that made this whole feature possible, no longer gated
+// behind a process-global in-memory diff that only holds true once per
+// process — see that fix's own doc comment for the full story.
+type Provisioner struct {
+	Engine      *wasmtime.Engine
+	Linker      *wasmtime.Linker
+	ModuleRoots []string
+	Environment string
+}
+
+// Provision runs schema creation + default-admin seeding against db. Callers
+// pass a throwaway *orm.DB pointed at the target database (prepare.go); the
+// function itself holds no state and is safe to call repeatedly. onProgress
+// (may be nil) receives the done/total counts forwarded straight from
+// module.Registry.BootWithProgress — see that method's doc comment.
+func (p Provisioner) Provision(ctx context.Context, db *orm.DB, onProgress func(done, total int)) error {
+	registry := module.NewRegistry(p.Engine, p.Linker, db, p.ModuleRoots)
+	if errs := registry.BootWithProgress(ctx, onProgress); len(errs) > 0 {
+		return fmt.Errorf("dbmanage: provision schema: %w", errs[0])
+	}
+	if err := auth.SeedDevAdmin(ctx, db, p.Environment); err != nil {
+		return fmt.Errorf("dbmanage: seed default admin: %w", err)
+	}
+	// Same as at boot (internal/app): the admin is the database's first user,
+	// seeded after the modules migrated, so the notification catalog syncs again.
+	if err := notify.NewRepository(db).SyncCatalog(ctx); err != nil {
+		return fmt.Errorf("dbmanage: sync notification catalog: %w", err)
+	}
+	return nil
+}

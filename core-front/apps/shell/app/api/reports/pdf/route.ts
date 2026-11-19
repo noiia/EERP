@@ -1,18 +1,8 @@
-import { ApiError, streamReportPDF } from '@eerp/core-front/server'
-import { NextResponse } from 'next/server'
+import { streamReportPDF } from '@eerp/core-front/server'
+import { errorResponse } from '@/lib/route-errors'
 
 // BFF proxy for downloading a generated report — same shape as
 // /api/pictures/:id: stream the bytes through without buffering.
-
-function errorResponse(e: unknown): NextResponse {
-  if (e instanceof ApiError) {
-    return NextResponse.json(
-      { error: { code: e.code, message: e.message, request_id: e.requestId } },
-      { status: e.status },
-    )
-  }
-  throw e
-}
 
 // GET /api/reports/pdf?key=...
 export async function GET(request: Request) {

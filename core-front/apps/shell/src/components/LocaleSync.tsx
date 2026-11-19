@@ -6,6 +6,7 @@ import {
   useCompanyStore,
   useFormatStore,
   useI18nStore,
+  useUnitStore,
 } from '@eerp/core-front'
 import { resolveEffectiveLocale, type LocalePreferences } from '@/lib/locale'
 // Catalogs register as an import side effect; importing here guarantees the pool is
@@ -37,12 +38,19 @@ export function LocaleSync({ preferences }: { preferences: LocalePreferences | n
       })
     }
 
+    // Present = the server answered (null = no workspace pattern): mirror it.
+    if (preferences.date_format !== undefined) {
+      useFormatStore.getState().setDateFormat(preferences.date_format)
+    }
+
     // Same reasoning as number_format above: an absent active_company (the
     // read itself failed upstream) keeps the mirror's last-known value
     // instead of clobbering it with an empty currency.
     if (preferences.active_company) {
       useCompanyStore.getState().setCurrency(preferences.active_company.currency)
     }
+
+    if (preferences.unit_system) useUnitStore.getState().setSystem(preferences.unit_system)
 
     useAccountsStore.getState().setUsernameAtFormat(Boolean(preferences.username_at_format))
   }, [preferences])

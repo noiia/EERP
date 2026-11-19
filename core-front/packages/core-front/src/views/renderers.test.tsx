@@ -2,12 +2,48 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 // The flat list navigates to a record's form on row click via the App Router.
+// mockPathname backs FormRenderer's own handleDelete (its own doc comment) —
+// a plain mutable var a test can reassign before rendering, mirroring how
+// pushMock is a plain shared mock every test already reads/clears.
 const pushMock = vi.fn()
+const prefetchMock = vi.fn()
+let mockPathname = '/app/crm/c1'
+let mockSearchParams: URLSearchParams | null = null
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: pushMock }),
+  useRouter: () => ({ push: pushMock, prefetch: prefetchMock }),
+  usePathname: () => mockPathname,
+  useSearchParams: () => mockSearchParams,
 }))
 
+// WBS mode's renderer is lazy (lazy-widgets.tsx); the stub shows what it was handed.
+vi.mock('./diagram/wbs-renderer', () => ({
+  WbsRenderer: (p: { parentField: string; groupField?: string; boxFields?: unknown[]; hoursField?: string }) => (
+    <div data-testid="wbs-renderer">{JSON.stringify([p.parentField, p.groupField, p.boxFields, p.hoursField])}</div>
+  ),
+}))
+vi.mock('./diagram/pert-renderer', () => ({
+  PertRenderer: (p: { dependencies: unknown; startField?: string; endField?: string; hoursField?: string; boxFields?: unknown[] }) => (
+    <div data-testid="pert-renderer">{JSON.stringify([p.dependencies, p.startField, p.endField, p.hoursField, p.boxFields])}</div>
+  ),
+}))
+vi.mock('./diagram/obs-renderer', () => ({
+  ObsRenderer: (p: { projectId: string }) => <div data-testid="obs-renderer">{p.projectId}</div>,
+}))
+vi.mock('./risk/risk-renderer', () => ({
+  RiskRenderer: (p: { projectId: string }) => <div data-testid="risk-renderer">{p.projectId}</div>,
+}))
+vi.mock('./insights/insights-renderer', () => ({
+  InsightsRenderer: (p: { config: unknown; projectId: string }) => (
+    <div data-testid="insights-renderer">{JSON.stringify([p.projectId, p.config])}</div>
+  ),
+}))
+vi.mock('./matrix/matrix-renderer', () => ({
+  MatrixRenderer: (p: { config: unknown; projectId: string }) => (
+    <div data-testid="matrix-renderer">{JSON.stringify([p.projectId, p.config])}</div>
+  ),
+}))
 import { ChatterOpsProvider, type ChatterMessageRecord, type ChatterOps } from './chatter-ops'
+import { useBreadcrumbStore } from './breadcrumb-store'
 import type { ViewDescriptor } from './descriptor'
 import { GraphOpsProvider } from './graph-ops'
 import { useListNavStore } from './list-nav-store'
@@ -15,10 +51,13 @@ import { moduleRegistry } from '../registry'
 import { menuActionRegistry, registerMenuAction } from './menu-actions'
 import { useRecordLabelStore } from './record-label-store'
 import { RelationOpsProvider, type RelationOps, type RelationRecord } from './relation-ops'
-import { CreateBar, EntityView } from './renderers'
+import { CreateBar, EntityView, newFormSeed } from './renderers'
 import { useSessionStore, type Identity } from './session-store'
 import { useUiStore } from './ui-store'
+import { useUndoToastStore } from './undo-toast'
 import type { EntityActions } from './stores'
+import { ApiError } from '../api/errors'
+import { setViewportWidth } from '../test/viewport'
 
 function identityWith(permissions: string[]): Identity {
   return { userId: 'u1', tenantId: 't1', roles: ['tester'], permissions }
@@ -26,10 +65,14 @@ function identityWith(permissions: string[]): Identity {
 
 beforeEach(() => {
   pushMock.mockClear()
+  mockPathname = '/app/crm/c1'
+  mockSearchParams = null
   useSessionStore.setState({ identity: null })
   useUiStore.setState({ viewMode: {} })
   useRecordLabelStore.setState({ id: null, label: null })
-  useListNavStore.setState({ ids: {} })
+  useListNavStore.setState({ nav: {} })
+  useBreadcrumbStore.setState({ trail: [] })
+  useUndoToastStore.setState({ pending: null })
 })
 
 interface Contact {
@@ -48,6 +91,187 @@ const formDescriptor: ViewDescriptor<Contact> = {
   viewType: 'form',
   fields: [{ name: 'name', label: 'Name', type: 'text' }],
 }
+
+describe('FormRenderer status breadcrumb', () => {
+  interface Lead {
+    id: string
+    name: string
+    status: string
+  }
+  const leadForm: ViewDescriptor<Lead> = {
+    entity: 'crm',
+    viewType: 'form',
+    fields: [
+      { name: 'name', label: 'Name', type: 'text' },
+      { name: 'status', label: 'Status', type: 'selection', selection: { options: ['incoming', 'won', 'lost'] } },
+    ],
+    statusBar: { field: 'status', editable: true },
+  }
+  const lead: Lead = { id: 'l1', name: 'Ada', status: 'incoming' }
+  function leadActions() {
+    return {
+      create: vi.fn(async (b: Partial<Lead>) => ({ id: 'new', name: '', status: 'incoming', ...b }) as Lead),
+      update: vi.fn(async (id: string, b: Partial<Lead>) => ({ ...lead, ...b, id }) as Lead),
+    }
+  }
+
+  it('an editable breadcrumb replaces the field in the body, and a click sets it and saves', async () => {
+    useSessionStore.setState({ identity: identityWith(['crm:crm:write']) })
+    const actions = leadActions()
+    render(<EntityView descriptor={leadForm} initialData={[lead]} actions={actions} />)
+    expect(screen.queryByRole('combobox', { name: 'Status' })).not.toBeInTheDocument() // no body dropdown
+    fireEvent.click(screen.getByRole('button', { name: 'won', hidden: true }))
+    await waitFor(() => expect(actions.update).toHaveBeenCalled())
+    expect(actions.update.mock.calls[0][1]).toMatchObject({ status: 'won' })
+    await waitFor(() => expect(screen.getByText('won').closest('[aria-current="step"]')).not.toBeNull())
+  })
+
+  it('lists the admin override\'s steps', () => {
+    useSessionStore.setState({ identity: identityWith(['crm:crm:write']) })
+    render(
+      <EntityView
+        descriptor={leadForm}
+        initialData={[lead]}
+        actions={leadActions()}
+        statusBarConfig={{ field: null, steps: ['incoming', 'won'] }}
+      />,
+    )
+    expect(screen.getByRole('button', { name: 'won', hidden: true })).toBeInTheDocument()
+    expect(screen.queryByText('lost')).not.toBeInTheDocument()
+  })
+
+  it('without the write permission the steps are not clickable', () => {
+    useSessionStore.setState({ identity: identityWith(['crm:crm:read']) })
+    render(<EntityView descriptor={leadForm} initialData={[lead]} actions={leadActions()} />)
+    expect(screen.getByText('won')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'won', hidden: true })).not.toBeInTheDocument()
+  })
+
+  it('on an unsaved record a click only sets the draft', async () => {
+    useSessionStore.setState({ identity: identityWith(['crm:crm:write']) })
+    const actions = leadActions()
+    render(<EntityView descriptor={leadForm} initialData={[]} actions={actions} />)
+    fireEvent.click(screen.getByRole('button', { name: 'won', hidden: true }))
+    await waitFor(() => expect(screen.getByText('won').closest('[aria-current="step"]')).not.toBeNull())
+    expect(actions.create).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+  })
+
+  it('a display-only breadcrumb (sale) keeps the field in the body', () => {
+    useSessionStore.setState({ identity: identityWith(['crm:crm:write']) })
+    render(
+      <EntityView
+        descriptor={{ ...leadForm, statusBar: { field: 'status' } }}
+        initialData={[lead]}
+        actions={leadActions()}
+      />,
+    )
+    expect(screen.getByRole('combobox', { name: 'Status' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'won', hidden: true })).not.toBeInTheDocument()
+  })
+})
+
+describe('form context (ViewDescriptor.formContext)', () => {
+  const descriptor: ViewDescriptor<Contact> = {
+    entity: 'product',
+    viewType: 'form',
+    fields: [
+      { name: 'name', label: 'Name', type: 'text' },
+      {
+        name: 'reference',
+        label: 'Reference',
+        type: 'text',
+        states: { readOnly: { field: 'context.auto_reference', op: 'eq', value: true } },
+      },
+    ],
+  }
+
+  it.each([
+    [{ auto_reference: true }, true],
+    [{ auto_reference: false }, false],
+    [undefined, false],
+  ])('context %o makes the field read-only: %s', (formContext, disabled) => {
+    render(<EntityView descriptor={descriptor} initialData={[{ id: 'p1', name: 'Desk' }]} actions={noopActions} formContext={formContext} />)
+    expect((screen.getByLabelText('Reference') as HTMLInputElement).disabled).toBe(disabled)
+  })
+
+  it('never puts the context into the record it saves', async () => {
+    const update = vi.fn(async (id: string, b: Partial<Contact>) => ({ id, name: '', ...b }) as Contact)
+    render(
+      <EntityView
+        descriptor={descriptor}
+        initialData={[{ id: 'p1', name: 'Desk' }]}
+        actions={{ create: vi.fn(), update }}
+        formContext={{ auto_reference: true }}
+      />,
+    )
+    fireEvent.change(screen.getByPlaceholderText('Name'), { target: { value: 'Chair' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(update).toHaveBeenCalled())
+    expect(Object.keys(update.mock.calls[0][1] as object).some((k) => k.startsWith('context.') || k === 'auto_reference')).toBe(false)
+  })
+})
+
+describe('form ?link= after a create', () => {
+  it('points the named record at the new one once created, and never on an edit', async () => {
+    const update = vi.fn(async () => ({ id: 't1' }))
+    const ops = { list: vi.fn(async () => []), get: vi.fn(), create: vi.fn(), remove: vi.fn(), update } as unknown as RelationOps
+    mockSearchParams = new URLSearchParams('link=project_task:t1:milestone_id')
+    const create = vi.fn(async (b: Partial<Contact>) => ({ id: 'm9', name: '', ...b }) as Contact)
+    render(
+      <RelationOpsProvider ops={ops}>
+        <EntityView descriptor={formDescriptor} initialData={[]} actions={{ create, update: vi.fn() }} />
+      </RelationOpsProvider>,
+    )
+    fireEvent.change(screen.getByPlaceholderText('Name'), { target: { value: 'Go live' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(update).toHaveBeenCalledWith('project_task', 't1', { milestone_id: 'm9' }))
+    fireEvent.change(screen.getByPlaceholderText('Name'), { target: { value: 'Go live 2' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeDefined())
+    expect(update).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('banners above the view', () => {
+  it('a failed save shows its error banner between the toolbar and the form, not in it', async () => {
+    const actions: EntityActions<Contact> = {
+      create: vi.fn(),
+      update: vi.fn(async () => {
+        throw new ApiError({ code: 'CONFLICT', message: 'Name already taken', status: 409, requestId: 'r1' })
+      }),
+    }
+    const { container } = render(
+      <EntityView descriptor={formDescriptor} initialData={[{ id: 'c1', name: 'Ada' }]} actions={actions} />,
+    )
+    fireEvent.change(screen.getByPlaceholderText('Name'), { target: { value: 'Bob' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    const banner = await screen.findByRole('alert')
+    expect(banner).toHaveTextContent('Name already taken')
+    const slot = container.querySelector('[data-banner-slot]')!
+    expect(slot).toContainElement(banner)
+    // The slot comes before the form's card in the page.
+    const card = screen.getByPlaceholderText('Name').closest('.MuiCard-root')!
+    expect(slot.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('a dashboard warns above its tiles when some counts could not be loaded', () => {
+    const { container } = render(
+      <EntityView
+        descriptor={{ ...formDescriptor, viewType: 'dashboard' }}
+        initialData={[]}
+        actions={noopActions}
+        widgets={[
+          { id: 'a', title: 'Contacts', count: 3 },
+          { id: 'b', title: 'Leads', count: null },
+        ]}
+      />,
+    )
+    const banner = screen.getByRole('alert')
+    expect(banner).toHaveTextContent('Some counts could not be loaded: Leads')
+    expect(container.querySelector('[data-banner-slot]')).toContainElement(banner)
+  })
+})
 
 describe('EntityView', () => {
   it('renders an error alert with the code and request id, no renderer', () => {
@@ -251,6 +475,65 @@ describe('EntityView', () => {
     expect(screen.getByText('Ada')).toBeInTheDocument()
   })
 
+  it('the order column shows "<order> - <name>"', () => {
+    type Row = { id: string; name: string; wbs_number: string }
+    const tasks: ViewDescriptor<Row> = {
+      entity: 'project_task',
+      viewType: 'tree',
+      fields: [
+        { name: 'wbs_number', label: 'Order', type: 'text' },
+        { name: 'name', label: 'Name', type: 'text' },
+      ],
+      viewModeDefaults: { wbsOrderField: 'wbs_number' },
+    }
+    render(<EntityView descriptor={tasks} initialData={[{ id: '1', name: 'Design', wbs_number: '1.2' }]} actions={noopActions as unknown as EntityActions<Row>} />)
+    expect(screen.getByText('1.2 - Design')).toBeInTheDocument()
+  })
+
+  it('a text/color column shows a swatch beside the hex, and leaves a non-color value as plain text', () => {
+    type Group = { id: string; name: string; color: string }
+    const groups: ViewDescriptor<Group> = {
+      entity: 'project_color',
+      viewType: 'tree',
+      fields: [
+        { name: 'name', label: 'Name', type: 'text' },
+        { name: 'color', label: 'Color', type: 'text', widget: 'color' },
+      ],
+    }
+    render(
+      <EntityView
+        descriptor={groups}
+        initialData={[
+          { id: '1', name: 'Red', color: '#ff0000' },
+          { id: '2', name: 'Odd', color: 'not-a-color' },
+        ]}
+        actions={noopActions as unknown as EntityActions<Group>}
+      />,
+    )
+    const cell = screen.getByText('#ff0000')
+    expect(cell.parentElement!.querySelector<HTMLElement>('[data-testid="color-dot"]')!.style.background).toBe('rgb(255, 0, 0)')
+    expect(screen.getByText('not-a-color').parentElement!.querySelector('[data-testid="color-dot"]')).toBeNull()
+  })
+
+  it('server-pages a list: footer counts every row and a page change fetches that page', async () => {
+    const treeDescriptor: ViewDescriptor<Contact> = { ...formDescriptor, viewType: 'tree' }
+    const firstPage = Array.from({ length: 20 }, (_, i) => ({ id: String(i), name: `Row ${i}` }))
+    const listPage = vi.fn(async () => ({ records: [{ id: 'p2', name: 'Second page row' }], total: 100_001 }))
+    const ops: RelationOps = { list: vi.fn(), get: vi.fn(), create: vi.fn(), remove: vi.fn(), listPage }
+    render(
+      <RelationOpsProvider ops={ops}>
+        <EntityView descriptor={treeDescriptor} initialData={firstPage} recordTotal={100_001} actions={noopActions} />
+      </RelationOpsProvider>,
+    )
+    // The seeded first page is reused — no request until the user pages.
+    expect(screen.getByText(/1–20 of 100,?001/)).toBeInTheDocument()
+    expect(listPage).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: /next page/i }))
+    await waitFor(() => expect(screen.getByText('Second page row')).toBeInTheDocument())
+    expect(listPage).toHaveBeenCalledWith('crm', expect.objectContaining({ page: 2, pageSize: 20 }))
+  })
+
   it('navigates to the record form on row click when the descriptor sets formPath', () => {
     const treeDescriptor: ViewDescriptor<Contact> = {
       ...formDescriptor,
@@ -265,7 +548,7 @@ describe('EntityView', () => {
       />,
     )
     fireEvent.click(screen.getByText('Ada'))
-    expect(pushMock).toHaveBeenCalledWith('/crm/42')
+    expect(pushMock).toHaveBeenCalledWith('/app/crm/42')
   })
 
   it('keeps rows inert when the descriptor has no formPath', () => {
@@ -347,6 +630,92 @@ describe('EntityView', () => {
 
       fireEvent.click(selectAll)
       expect(screen.queryByRole('button', { name: 'Actions' })).not.toBeInTheDocument()
+    })
+
+    describe('built-in bulk Delete (docs/adr/ADR-015-undo-toast.md)', () => {
+      const treeDescriptor: ViewDescriptor<Contact> = { ...formDescriptor, viewType: 'tree' }
+      const rows = [
+        { id: '1', name: 'Ada' },
+        { id: '2', name: 'Grace' },
+      ]
+
+      it('hidden with no crm:crm:delete permission, even with remove bound', () => {
+        const remove = vi.fn(async () => {})
+        render(
+          <EntityView descriptor={treeDescriptor} initialData={rows} actions={{ ...noopActions, remove }} />,
+        )
+        fireEvent.click(screen.getByRole('button', { name: 'Select all' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+        expect(screen.queryByRole('menuitem', { name: /Delete/ })).not.toBeInTheDocument()
+      })
+
+      it('hidden with permission but no bound remove Server Action', () => {
+        useSessionStore.setState({ identity: identityWith(['crm:crm:delete']) })
+        render(<EntityView descriptor={treeDescriptor} initialData={rows} actions={noopActions} />)
+        fireEvent.click(screen.getByRole('button', { name: 'Select all' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+        expect(screen.queryByRole('menuitem', { name: /Delete/ })).not.toBeInTheDocument()
+      })
+
+      it('commits immediately, not deferred — rows hidden AND remove called right away, toast follows', async () => {
+        useSessionStore.setState({ identity: identityWith(['crm:crm:delete']) })
+        const remove = vi.fn(async () => {})
+        render(
+          <EntityView descriptor={treeDescriptor} initialData={rows} actions={{ ...noopActions, remove }} />,
+        )
+        fireEvent.click(screen.getByRole('button', { name: 'Select all' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+        fireEvent.click(screen.getByRole('menuitem', { name: /Delete/ }))
+
+        expect(screen.queryByText('Ada')).not.toBeInTheDocument()
+        expect(screen.queryByText('Grace')).not.toBeInTheDocument()
+        expect(remove).toHaveBeenCalledWith('1')
+        expect(remove).toHaveBeenCalledWith('2')
+        await waitFor(() => expect(useUndoToastStore.getState().pending?.message).toContain('2'))
+      })
+
+      it('recovering calls restore for each id (a real reversal) and re-adds the rows', async () => {
+        useSessionStore.setState({ identity: identityWith(['crm:crm:delete']) })
+        const remove = vi.fn(async () => {})
+        const restore = vi.fn(async (id: string) => ({ id, name: '' }))
+        render(
+          <EntityView
+            descriptor={treeDescriptor}
+            initialData={rows}
+            actions={{ ...noopActions, remove, restore }}
+          />,
+        )
+        fireEvent.click(screen.getByRole('button', { name: 'Select all' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+        fireEvent.click(screen.getByRole('menuitem', { name: /Delete/ }))
+        await waitFor(() => expect(useUndoToastStore.getState().pending).not.toBeNull())
+
+        useUndoToastStore.getState().recover()
+
+        await waitFor(() => expect(screen.getByText('Ada')).toBeInTheDocument())
+        expect(screen.getByText('Grace')).toBeInTheDocument()
+        expect(restore).toHaveBeenCalledWith('1')
+        expect(restore).toHaveBeenCalledWith('2')
+      })
+
+      it('a rejected delete restores just that row and shows an error, a succeeding sibling stays deleted', async () => {
+        useSessionStore.setState({ identity: identityWith(['crm:crm:delete']) })
+        const remove = vi.fn(async (id: string) => {
+          if (id === '2') throw new Error('boom')
+        })
+        render(
+          <EntityView descriptor={treeDescriptor} initialData={rows} actions={{ ...noopActions, remove }} />,
+        )
+        fireEvent.click(screen.getByRole('button', { name: 'Select all' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Actions' }))
+        fireEvent.click(screen.getByRole('menuitem', { name: /Delete/ }))
+
+        // '2' (Grace) failed and comes back; '1' (Ada) succeeded and stays gone.
+        await waitFor(() => expect(screen.getByText('Grace')).toBeInTheDocument())
+        expect(screen.queryByText('Ada')).not.toBeInTheDocument()
+        expect(screen.getByText('Some records could not be deleted.')).toBeInTheDocument()
+        expect(useUndoToastStore.getState().pending?.message).toContain('1')
+      })
     })
   })
 
@@ -454,6 +823,124 @@ describe('EntityView', () => {
     })
   })
 
+  describe('estimated totals (total_estimated, ADR-032) in the server-paged grid', () => {
+    const treeDescriptor: ViewDescriptor<Contact> = { ...formDescriptor, viewType: 'tree' }
+    const page = (from: number, n: number) => Array.from({ length: n }, (_, i) => ({ id: `r${from + i}`, name: `Row ${from + i}` }))
+
+    it('labels the estimate with ≈', () => {
+      const listPage = vi.fn(async () => ({ records: [], total: 0 }))
+      render(
+        <RelationOpsProvider ops={{ list: vi.fn(), listPage, get: vi.fn(), create: vi.fn(), remove: vi.fn() }}>
+          <EntityView descriptor={treeDescriptor} initialData={page(1, 20)} recordTotal={10001} recordTotalEstimated actions={noopActions} />
+        </RelationOpsProvider>,
+      )
+      expect(screen.getByText('1–20 of ≈ 10001')).toBeInTheDocument()
+    })
+
+    it('never stops paging at an estimate: a full page always offers the next one', async () => {
+      // The planner undercounted: 20 estimated, but 25 rows really match.
+      const listPage = vi.fn(async () => ({ records: page(21, 5), total: 25 }))
+      render(
+        <RelationOpsProvider ops={{ list: vi.fn(), listPage, get: vi.fn(), create: vi.fn(), remove: vi.fn() }}>
+          <EntityView descriptor={treeDescriptor} initialData={page(1, 20)} recordTotal={20} recordTotalEstimated actions={noopActions} />
+        </RelationOpsProvider>,
+      )
+      const next = screen.getByRole('button', { name: /next page/i })
+      expect(next).toBeEnabled()
+      fireEvent.click(next)
+      await waitFor(() => expect(listPage).toHaveBeenCalledWith('crm', expect.objectContaining({ page: 2, pageSize: 20 })))
+      await waitFor(() => expect(screen.getByText('Row 25')).toBeInTheDocument())
+      expect(screen.getByText('21–25 of 25')).toBeInTheDocument()
+    })
+  })
+
+  describe('built-in form Delete (docs/adr/ADR-015-undo-toast.md)', () => {
+    it('hidden with no crm:crm:delete permission, even with remove bound', () => {
+      const remove = vi.fn(async () => {})
+      render(
+        <EntityView
+          descriptor={formDescriptor}
+          initialData={[{ id: 'c1', name: 'Ada' }]}
+          actions={{ ...noopActions, remove }}
+        />,
+      )
+      expect(screen.getByRole('button', { name: 'Options' })).toBeDisabled()
+    })
+
+    it('hidden with permission but no bound remove Server Action', () => {
+      useSessionStore.setState({ identity: identityWith(['crm:crm:delete']) })
+      render(
+        <EntityView descriptor={formDescriptor} initialData={[{ id: 'c1', name: 'Ada' }]} actions={noopActions} />,
+      )
+      expect(screen.getByRole('button', { name: 'Options' })).toBeDisabled()
+    })
+
+    it('commits immediately (not deferred): remove is called right away, navigation + toast follow its success', async () => {
+      useSessionStore.setState({ identity: identityWith(['crm:crm:delete']) })
+      const remove = vi.fn(async () => {})
+      mockPathname = '/app/crm/c1'
+      render(
+        <EntityView
+          descriptor={formDescriptor}
+          initialData={[{ id: 'c1', name: 'Ada' }]}
+          actions={{ ...noopActions, remove }}
+        />,
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Options' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: /Delete/ }))
+
+      expect(remove).toHaveBeenCalledWith('c1')
+      await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/app/crm'))
+      expect(useUndoToastStore.getState().pending?.message).toBeTruthy()
+    })
+
+    it('recovering calls restore (a real reversal) and navigates back to the form', async () => {
+      useSessionStore.setState({ identity: identityWith(['crm:crm:delete']) })
+      const remove = vi.fn(async () => {})
+      const restore = vi.fn(async (id: string) => ({ id, name: 'Ada' }))
+      mockPathname = '/app/crm/c1'
+      render(
+        <EntityView
+          descriptor={formDescriptor}
+          initialData={[{ id: 'c1', name: 'Ada' }]}
+          actions={{ ...noopActions, remove, restore }}
+        />,
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Options' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: /Delete/ }))
+      await waitFor(() => expect(useUndoToastStore.getState().pending).not.toBeNull())
+
+      useUndoToastStore.getState().recover()
+
+      await waitFor(() => expect(restore).toHaveBeenCalledWith('c1'))
+      await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/app/crm/c1'))
+    })
+
+    it('a rejected delete never navigates away and shows an inline error instead', async () => {
+      useSessionStore.setState({ identity: identityWith(['crm:crm:delete']) })
+      const remove = vi.fn(async () => {
+        throw new Error('boom')
+      })
+      mockPathname = '/app/crm/c1'
+      render(
+        <EntityView
+          descriptor={formDescriptor}
+          initialData={[{ id: 'c1', name: 'Ada' }]}
+          actions={{ ...noopActions, remove }}
+        />,
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Options' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: /Delete/ }))
+
+      expect(await screen.findByText('boom')).toBeInTheDocument()
+      expect(pushMock).not.toHaveBeenCalled()
+      expect(useUndoToastStore.getState().pending).toBeNull()
+    })
+  })
+
   describe('form record navigator (</>)', () => {
     // FormListNav resolves its formPath via moduleRegistry.formPathFor(entity)
     // rather than off the FORM descriptor's own `formPath` — that field is
@@ -475,6 +962,14 @@ describe('EntityView', () => {
           },
         ],
       })
+    })
+
+    it('marks an estimated total in the record navigator', () => {
+      useListNavStore.getState().setNav(formDescriptor.entity, {
+        ids: ['1', '2'], offset: 0, total: 100048, totalEstimated: true,
+      })
+      render(<EntityView descriptor={formDescriptor} initialData={[{ id: '1', name: 'Ada' }]} actions={noopActions} />)
+      expect(screen.getByText('1 / ≈ 100048')).toBeInTheDocument()
     })
 
     it('shows position/total and steps to the next record after browsing a filtered list', () => {
@@ -504,7 +999,44 @@ describe('EntityView', () => {
       expect(next).toBeEnabled()
 
       fireEvent.click(next)
-      expect(pushMock).toHaveBeenCalledWith('/crm/2')
+      expect(pushMock).toHaveBeenCalledWith('/app/crm/2')
+    })
+
+    it('stepping to the next record REPLACES the current record\'s breadcrumb entry instead of appending', () => {
+      const treeDescriptor: ViewDescriptor<Contact> = {
+        ...formDescriptor,
+        viewType: 'tree',
+        formPath: '/crm/:id',
+      }
+      const { unmount } = render(
+        <EntityView
+          descriptor={treeDescriptor}
+          initialData={[
+            { id: '1', name: 'Ada' },
+            { id: '2', name: 'Grace' },
+          ]}
+          actions={noopActions}
+        />,
+      )
+      unmount()
+
+      // Mirrors what PathBreadcrumbs (apps/shell) would already have in the
+      // trail by the time this form is on screen: the list crumb, then this
+      // record's own.
+      useBreadcrumbStore.setState({
+        trail: [
+          { label: 'CRM - List', href: '/crm/list' },
+          { label: 'Ada', href: '/crm/1' },
+        ],
+      })
+      render(<EntityView descriptor={formDescriptor} initialData={[{ id: '1', name: 'Ada' }]} actions={noopActions} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Next record' }))
+
+      // The record-2 crumb isn't pushed here (that's PathBreadcrumbs' own
+      // pathname-watching effect, not rendered in this test) — what matters
+      // is record 1's crumb is already gone, leaving nothing for the
+      // upcoming visit() to append after but the list.
+      expect(useBreadcrumbStore.getState().trail).toEqual([{ label: 'CRM - List', href: '/crm/list' }])
     })
 
     it('renders nothing for a record reached directly, with no RelationOps to fall back to', () => {
@@ -525,6 +1057,60 @@ describe('EntityView', () => {
       expect(list).toHaveBeenCalledWith('crm')
       await waitFor(() => expect(screen.getByText('2 / 2')).toBeInTheDocument())
     })
+
+    it('counts over the whole filtered set and fetches the next page, with the list filter, past the loaded one', async () => {
+      const options = { filter: { status: 'won' } }
+      // Page 1 of a server-paged list: 20 rows of 45 matching the filter.
+      useListNavStore.getState().setNav('crm', {
+        ids: Array.from({ length: 20 }, (_, i) => `r${i + 1}`), offset: 0, total: 45, paging: { options, pageSize: 20 },
+      })
+      const listPage = vi.fn(async () => ({ records: [{ id: 'r21' }, { id: 'r22' }], total: 45 }))
+      render(
+        <RelationOpsProvider ops={{ list: vi.fn(), listPage, get: vi.fn(), create: vi.fn(), remove: vi.fn() }}>
+          <EntityView descriptor={formDescriptor} initialData={[{ id: 'r20', name: 'Ada' }]} actions={noopActions} />
+        </RelationOpsProvider>,
+      )
+      expect(screen.getByText('20 / 45')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Next record' }))
+      await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/app/crm/r21'))
+      expect(listPage).toHaveBeenCalledWith('crm', { ...options, page: 2, pageSize: 20 })
+      expect(useListNavStore.getState().nav.crm).toMatchObject({ offset: 20, total: 45 })
+    })
+
+    it('an estimated total never disables Next: it steps past the estimated last record', async () => {
+      // Planner estimate 20, but more rows really match (ADR-032).
+      useListNavStore.getState().setNav('crm', {
+        ids: Array.from({ length: 20 }, (_, i) => `r${i + 1}`), offset: 0, total: 20, totalEstimated: true, paging: { pageSize: 20 },
+      })
+      const listPage = vi.fn(async () => ({ records: [{ id: 'r21' }], total: 21 }))
+      render(
+        <RelationOpsProvider ops={{ list: vi.fn(), listPage, get: vi.fn(), create: vi.fn(), remove: vi.fn() }}>
+          <EntityView descriptor={formDescriptor} initialData={[{ id: 'r20', name: 'Ada' }]} actions={noopActions} />
+        </RelationOpsProvider>,
+      )
+      expect(screen.getByText('20 / ≈ 20')).toBeInTheDocument()
+      const next = screen.getByRole('button', { name: 'Next record' })
+      expect(next).toBeEnabled()
+      fireEvent.click(next)
+      await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/app/crm/r21'))
+    })
+
+    it('stays on the record, navigator intact, when the page past an estimate is empty', async () => {
+      useListNavStore.getState().setNav('crm', {
+        ids: Array.from({ length: 20 }, (_, i) => `r${i + 1}`), offset: 0, total: 20, totalEstimated: true, paging: { pageSize: 20 },
+      })
+      const listPage = vi.fn(async () => ({ records: [], total: 20 }))
+      render(
+        <RelationOpsProvider ops={{ list: vi.fn(), listPage, get: vi.fn(), create: vi.fn(), remove: vi.fn() }}>
+          <EntityView descriptor={formDescriptor} initialData={[{ id: 'r20', name: 'Ada' }]} actions={noopActions} />
+        </RelationOpsProvider>,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Next record' }))
+      await waitFor(() => expect(listPage).toHaveBeenCalled())
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Next record' })).toBeEnabled())
+      expect(pushMock).not.toHaveBeenCalled()
+      expect(screen.getByText(/^20 \//)).toBeInTheDocument()
+    })
   })
 
   describe('form chatter panel', () => {
@@ -534,6 +1120,7 @@ describe('EntityView', () => {
         create: vi.fn(async (_table: string, _record: string, kind: 'message' | 'log', body: string) => ({
           id: 'm1',
           author: 'me@x.com',
+          authorId: 'u1',
           kind,
           body,
           createdAt: '2026-01-01T00:00:00Z',
@@ -821,6 +1408,35 @@ describe('EntityView', () => {
       expect(screen.getByRole('group', { name: 'open' })).toHaveTextContent('Ada')
     })
 
+    it('shows Gantt only once BOTH its start and end fields resolve, and renders the timeline', () => {
+      const taskDescriptor: ViewDescriptor<Contact & { start?: string | null; end?: string | null }> = {
+        entity: 'crm',
+        viewType: 'tree',
+        fields: [
+          { name: 'name', label: 'Name', type: 'text' },
+          { name: 'start', label: 'Start', type: 'date' },
+          { name: 'end', label: 'End', type: 'date' },
+        ],
+        viewModeDefaults: { ganttStartField: 'start' },
+      }
+      const acts = noopActions as unknown as EntityActions<Contact & { start?: string | null; end?: string | null }>
+      const data = [{ id: '1', name: 'Ada', start: null, end: null }]
+      const { unmount } = render(<EntityView descriptor={taskDescriptor} initialData={data} actions={acts} />)
+      expect(screen.queryByRole('button', { name: 'Gantt' })).not.toBeInTheDocument()
+      unmount()
+      render(
+        <EntityView
+          descriptor={taskDescriptor}
+          initialData={data}
+          actions={acts}
+          viewFields={{ kanbanStatusField: null, calendarDateField: null, ganttEndField: 'end' }}
+        />,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Gantt' }))
+      expect(screen.getByRole('button', { name: 'Day' })).toBeInTheDocument()
+      expect(screen.getByRole('group', { name: 'Unscheduled' })).toHaveTextContent('Ada')
+    })
+
     it('switching to Calendar with a configured date field renders a real month grid, not a placeholder', () => {
       const taskDescriptor: ViewDescriptor<Contact & { due_date?: string | null }> = {
         entity: 'crm',
@@ -858,6 +1474,158 @@ describe('EntityView', () => {
       // posture RelationOps takes for a host with no relation wiring.
       expect(screen.getByText(/Graph layouts are not available/)).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Graph', pressed: true })).toBeInTheDocument()
+    })
+
+    it('switching to WBS hands the lazy WbsRenderer the module defaults', async () => {
+      render(
+        <EntityView
+          descriptor={{ ...treeDescriptor, viewModeDefaults: { wbsParentField: 'parent_id', wbsGroupField: 'project_id', wbsOrderField: 'wbs_number', pertHoursField: 'planned_hours', kanbanStatusField: 'status' } }}
+          initialData={[{ id: '1', name: 'Ada' }]}
+          actions={noopActions}
+        />,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'WBS' }))
+      expect(screen.queryByRole('grid')).not.toBeInTheDocument()
+      expect(await screen.findByTestId('wbs-renderer')).toHaveTextContent(
+        JSON.stringify(['parent_id', 'project_id', ['wbs_number', 'name', 'status', null, null, 'planned_hours'], 'planned_hours']),
+      )
+    })
+
+    it('switching to PERT hands the lazy PertRenderer the module defaults', async () => {
+      const dep = { entity: 'project_task_dependency', fromField: 'depends_on_id', toField: 'task_id' }
+      render(
+        <EntityView
+          descriptor={{ ...treeDescriptor, viewModeDefaults: { pertDependencies: dep, pertHoursField: 'planned_hours', ganttStartField: 'date_start', ganttEndField: 'deadline' } }}
+          initialData={[{ id: '1', name: 'Ada' }]}
+          actions={noopActions}
+        />,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'PERT' }))
+      expect(screen.queryByRole('grid')).not.toBeInTheDocument()
+      expect(await screen.findByTestId('pert-renderer')).toHaveTextContent(
+        JSON.stringify([dep, 'date_start', 'deadline', 'planned_hours', [null, 'name', null, 'date_start', 'deadline', 'planned_hours']]),
+      )
+    })
+
+    it('OBS shows only when the list is pinned to one project, and renders for that id', async () => {
+      const obs = { entity: 'project_obs_box', projectField: 'project_id', projectEntity: 'project', companyField: 'company_id' }
+      const { unmount } = render(
+        <EntityView descriptor={{ ...treeDescriptor, viewModeDefaults: { obs } }} initialData={[{ id: '1', name: 'Ada' }]} actions={noopActions} />,
+      )
+      expect(screen.queryByRole('button', { name: 'OBS' })).not.toBeInTheDocument()
+      unmount()
+      render(
+        <EntityView
+          descriptor={{ ...treeDescriptor, listFilter: { filter: { project_id: 'p1' } }, viewModeDefaults: { obs } }}
+          initialData={[{ id: '1', name: 'Ada' }]}
+          actions={noopActions}
+        />,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'OBS' }))
+      expect(screen.queryByRole('grid')).not.toBeInTheDocument()
+      expect(await screen.findByTestId('obs-renderer')).toHaveTextContent('p1')
+    })
+
+    it('OBS follows the URL-seeded project filter: remounts on another project, falls back to a refiltered List when cleared', async () => {
+      const obs = { entity: 'project_obs_box', projectField: 'project_id', projectEntity: 'project', companyField: 'company_id' }
+      const listPage = vi.fn(async () => ({ records: [{ id: 'x', name: 'Fresh row' }], total: 1 }))
+      const ops: RelationOps = { list: vi.fn(async () => []), get: vi.fn(), create: vi.fn(), remove: vi.fn(), listPage }
+      const descriptor = {
+        ...treeDescriptor,
+        fields: [...treeDescriptor.fields, { name: 'project_id', label: 'Project id', type: 'text' as const }],
+        viewModeDefaults: { obs },
+      }
+      const ui = () => (
+        <RelationOpsProvider ops={ops}>
+          <EntityView descriptor={descriptor} initialData={[{ id: '1', name: 'Old row' }]} actions={noopActions} />
+        </RelationOpsProvider>
+      )
+      mockSearchParams = new URLSearchParams('filter[project_id]=p1')
+      const { rerender } = render(ui())
+      fireEvent.click(await screen.findByRole('button', { name: 'OBS' }))
+      expect(await screen.findByTestId('obs-renderer')).toHaveTextContent('p1')
+      mockSearchParams = new URLSearchParams('filter[project_id]=p2')
+      rerender(ui())
+      await waitFor(() => expect(screen.getByTestId('obs-renderer')).toHaveTextContent('p2'))
+      fireEvent.click(screen.getAllByTestId('CancelIcon')[0])
+      await waitFor(() => expect(screen.queryByTestId('obs-renderer')).not.toBeInTheDocument())
+      expect(screen.queryByRole('button', { name: 'OBS' })).not.toBeInTheDocument()
+      // Unfiltered first page is the seeded one; the grid is back and was not left blank/stale.
+      expect(await screen.findByText('Old row')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'List' })).toHaveAttribute('aria-pressed', 'true')
+    })
+
+    it('Risk shows only when pinned to one project; a persisted risk mode with no pin renders List', async () => {
+      const risk = { entity: 'project_risk', linkEntity: 'project_risk_link', categoryEntity: 'project_risk_category', projectField: 'project_id', formPath: '/project/risks/:id' }
+      useUiStore.setState({ viewMode: { [treeDescriptor.entity]: 'risk' } })
+      const { unmount } = render(
+        <EntityView descriptor={{ ...treeDescriptor, viewModeDefaults: { risk } }} initialData={[{ id: '1', name: 'Ada' }]} actions={noopActions} />,
+      )
+      expect(screen.queryByRole('button', { name: 'Risk' })).not.toBeInTheDocument()
+      expect(screen.queryByTestId('risk-renderer')).not.toBeInTheDocument()
+      expect(await screen.findByRole('grid')).toBeInTheDocument()
+      unmount()
+      useUiStore.setState({ viewMode: {} })
+      render(
+        <EntityView
+          descriptor={{ ...treeDescriptor, listFilter: { filter: { project_id: 'p1' } }, viewModeDefaults: { risk } }}
+          initialData={[{ id: '1', name: 'Ada' }]}
+          actions={noopActions}
+        />,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Risk' }))
+      expect(await screen.findByTestId('risk-renderer')).toHaveTextContent('p1')
+    })
+
+    it('Insights and Matrices show only when pinned to one project, and render their lazy placeholders', async () => {
+      const insights = { projectField: 'project_id', projectEntity: 'project', metricsPath: 'metrics', milestoneEntity: 'project_milestone' }
+      const matrix = {
+        projectField: 'project_id',
+        raciEntity: 'project_task_raci',
+        userLabelField: 'email',
+        dependencies: { entity: 'project_task_dependency', fromField: 'depends_on_id', toField: 'task_id' },
+        priorityField: 'priority',
+        deadlineField: 'deadline',
+        closedField: 'closed',
+        urgentDays: 7,
+        taskEntity: 'project_task',
+        taskFormPath: '/project/tasks/:id',
+      }
+      const { unmount } = render(
+        <EntityView descriptor={{ ...treeDescriptor, viewModeDefaults: { insights, matrix } }} initialData={[{ id: '1', name: 'Ada' }]} actions={noopActions} />,
+      )
+      expect(screen.queryByRole('button', { name: 'Insights' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Matrices' })).not.toBeInTheDocument()
+      unmount()
+      render(
+        <EntityView
+          descriptor={{ ...treeDescriptor, listFilter: { filter: { project_id: 'p1' } }, viewModeDefaults: { insights, matrix } }}
+          initialData={[{ id: '1', name: 'Ada' }]}
+          actions={noopActions}
+        />,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Insights' }))
+      expect(screen.queryByRole('grid')).not.toBeInTheDocument()
+      expect(await screen.findByTestId('insights-renderer')).toHaveTextContent(
+        JSON.stringify(['p1', insights]),
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Matrices' }))
+      expect(await screen.findByTestId('matrix-renderer')).toHaveTextContent(
+        JSON.stringify(['p1', matrix]),
+      )
+    })
+
+    it('a persisted insights or matrix mode with no pin falls back to the list', async () => {
+      const insights = { projectField: 'project_id', projectEntity: 'project', metricsPath: 'metrics', milestoneEntity: 'project_milestone' }
+      for (const mode of ['insights', 'matrix'] as const) {
+        useUiStore.setState({ viewMode: { [treeDescriptor.entity]: mode } })
+        const { unmount } = render(
+          <EntityView descriptor={{ ...treeDescriptor, viewModeDefaults: { insights } }} initialData={[{ id: '1', name: 'Ada' }]} actions={noopActions} />,
+        )
+        expect(await screen.findByRole('grid')).toBeInTheDocument()
+        unmount()
+        useUiStore.setState({ viewMode: {} })
+      }
     })
 
     it('switching to Graph with a GraphOpsProvider renders the real canvas, not the placeholder', async () => {
@@ -963,7 +1731,15 @@ describe('EntityView', () => {
       useSessionStore.setState({ identity: identityWith(['crm:contacts:write']) })
       render(<CreateBar descriptor={creatableList} />)
       fireEvent.click(screen.getByRole('button', { name: 'Create' }))
-      expect(pushMock).toHaveBeenCalledWith('/crm/new')
+      expect(pushMock).toHaveBeenCalledWith('/app/crm/new')
+    })
+
+    it('carries the list\'s filter[] params to the new form', () => {
+      useSessionStore.setState({ identity: identityWith(['crm:contacts:write']) })
+      mockSearchParams = new URLSearchParams('filter[project_id]=p1&page=2')
+      render(<CreateBar descriptor={creatableList} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+      expect(pushMock).toHaveBeenCalledWith('/app/crm/new?filter%5Bproject_id%5D=p1')
     })
 
     it('honors role wildcards from the session mirror', () => {
@@ -1043,6 +1819,31 @@ describe('EntityView', () => {
     expect(screen.getByText('Root')).toBeInTheDocument()
   })
 
+  it('labels hierarchical tree items "<order> - <name>" by the order field', () => {
+    type Row = { id: string; name: string; wbs_number: string; parent_id: string | null }
+    const tasks: ViewDescriptor<Row> = {
+      entity: 'project_task',
+      viewType: 'tree',
+      fields: [
+        { name: 'wbs_number', label: 'Order', type: 'text' },
+        { name: 'name', label: 'Name', type: 'text' },
+      ],
+      viewModeDefaults: { wbsOrderField: 'wbs_number' },
+    }
+    render(
+      <EntityView
+        descriptor={tasks}
+        initialData={[
+          { id: 'a', name: 'Design', wbs_number: '1', parent_id: null },
+          { id: 'b', name: 'Mockups', wbs_number: '1.1', parent_id: 'a' },
+        ]}
+        actions={noopActions as unknown as EntityActions<Row>}
+      />,
+    )
+    expect(screen.getByRole('tree')).toBeInTheDocument()
+    expect(screen.getByText('1 - Design')).toBeInTheDocument()
+  })
+
   it('renders a dashboard block per list view with its name and entry count', () => {
     const dashDescriptor: ViewDescriptor<Contact> = { ...formDescriptor, viewType: 'dashboard' }
     render(
@@ -1055,8 +1856,38 @@ describe('EntityView', () => {
     )
     expect(screen.getByText('Contacts')).toBeInTheDocument()
     expect(screen.getByText('12')).toBeInTheDocument()
-    // The block links to its list view.
-    expect(screen.getByRole('link')).toHaveAttribute('href', '/crm/list')
+    // The block links to its list view through a client-side Next link (no full
+    // page load): it prefetches on hover, never just for being on screen.
+    const link = screen.getByRole('link')
+    expect(link).toHaveAttribute('href', '/app/crm/list')
+    expect(prefetchMock).not.toHaveBeenCalled()
+    fireEvent.mouseEnter(link)
+    expect(prefetchMock).toHaveBeenCalledWith('/app/crm/list')
+  })
+
+  it('renders the descriptor dashboardLinks as tiles after the counts', () => {
+    const dashDescriptor: ViewDescriptor<Contact> = {
+      ...formDescriptor,
+      viewType: 'dashboard',
+      dashboardLinks: [
+        { title: 'Workflows', description: 'Pages and the buttons between them', icon: 'diagram-project', path: '/website/workflows' },
+      ],
+    }
+    render(
+      <EntityView
+        descriptor={dashDescriptor}
+        initialData={[]}
+        actions={noopActions}
+        widgets={[{ id: 'w1', title: 'Pages', href: '/website/pages', count: 3 }]}
+      />,
+    )
+    const links = screen.getAllByRole('link')
+    expect(links.map((l) => l.getAttribute('href'))).toEqual(['/app/website/pages', '/app/website/workflows'])
+    expect(links[1]).toHaveTextContent('Workflows')
+    expect(links[1]).toHaveTextContent('Pages and the buttons between them')
+    expect(links[1].querySelector('svg')).not.toBeNull()
+    fireEvent.mouseEnter(links[1])
+    expect(prefetchMock).toHaveBeenCalledWith('/app/website/workflows')
   })
 
   it('shows a dash for a dashboard block whose count failed to load', () => {
@@ -1070,5 +1901,152 @@ describe('EntityView', () => {
       />,
     )
     expect(screen.getByText('—')).toBeInTheDocument()
+  })
+})
+
+describe('tree Distance column', () => {
+  const treeDescriptor: ViewDescriptor<Contact> = { ...formDescriptor, viewType: 'tree' }
+  it('shows a formatted Distance column when rows carry _distance_m', () => {
+    render(
+      <EntityView
+        descriptor={treeDescriptor}
+        initialData={[{ id: '1', name: 'A', _distance_m: 1500 } as Contact]}
+        actions={noopActions}
+      />,
+    )
+    expect(screen.getByText('Distance')).toBeInTheDocument()
+    expect(screen.getByText(/^1[.,]5 km$/)).toBeInTheDocument()
+  })
+  it('has no Distance column otherwise', () => {
+    render(<EntityView descriptor={treeDescriptor} initialData={[{ id: '1', name: 'A' }]} actions={noopActions} />)
+    expect(screen.queryByText('Distance')).not.toBeInTheDocument()
+  })
+  it('never renders a geo field as a grid column (it stays a search-bar filter)', () => {
+    const withGeo: ViewDescriptor<Contact> = {
+      ...treeDescriptor,
+      fields: [...treeDescriptor.fields, { name: 'geo_location', label: 'Map spot', type: 'geo', widget: 'point' }],
+    }
+    render(<EntityView descriptor={withGeo} initialData={[{ id: '1', name: 'A' }]} actions={noopActions} />)
+    expect(screen.queryByText('Map spot')).not.toBeInTheDocument()
+  })
+})
+
+describe('newFormSeed', () => {
+  const tasks: ViewDescriptor<{ id: string }> = {
+    entity: 'project_task',
+    viewType: 'form',
+    fields: [
+      { name: 'name', label: 'Name', type: 'text' },
+      { name: 'active', label: 'Active', type: 'boolean' },
+      { name: 'project_id', label: 'Project', type: 'relation', relation: { entity: 'project', kind: 'many2one' } },
+    ],
+  }
+
+  it('seeds many2one fields only from filter[] params', () => {
+    const params = new URLSearchParams('filter[project_id]=p1&filter[active]=true&filter[name]=x')
+    expect(newFormSeed(tasks, params)).toEqual({ project_id: 'p1' })
+  })
+
+  it('seeds nothing without params', () => {
+    expect(newFormSeed(tasks, null)).toEqual({})
+  })
+})
+
+describe('DisplayModeSwitcher on phone', () => {
+  const taskDescriptor: ViewDescriptor<Contact & { start?: string | null; end?: string | null }> = {
+    entity: 'crm',
+    viewType: 'tree',
+    fields: [
+      { name: 'name', label: 'Name', type: 'text' },
+      { name: 'start', label: 'Start', type: 'date' },
+      { name: 'end', label: 'End', type: 'date' },
+    ],
+    viewModeDefaults: { kanbanStatusField: 'name', calendarDateField: 'start', ganttStartField: 'start', ganttEndField: 'end' },
+  }
+  const renderTasks = () =>
+    render(
+      <EntityView
+        descriptor={taskDescriptor}
+        initialData={[{ id: '1', name: 'Ada', start: null, end: null }]}
+        actions={noopActions as unknown as EntityActions<Contact & { start?: string | null; end?: string | null }>}
+      />,
+    )
+
+  it('shows one "Display mode: <mode>" button instead of the toggle group on phone', () => {
+    setViewportWidth(390)
+    renderTasks()
+    expect(screen.queryByRole('group', { name: 'Display mode' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Display mode: List' })).toBeInTheDocument()
+  })
+
+  it('switches mode from the menu', () => {
+    setViewportWidth(390)
+    renderTasks()
+    fireEvent.click(screen.getByRole('button', { name: 'Display mode: List' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Gantt' }))
+    expect(screen.getByTestId('gantt-track')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Display mode: Gantt' })).toBeInTheDocument()
+  })
+
+  it('keeps the toggle group at desktop width', () => {
+    renderTasks()
+    expect(screen.getByRole('group', { name: 'Display mode' })).toBeInTheDocument()
+  })
+})
+
+describe('List on phone (390px)', () => {
+  const list: ViewDescriptor<Contact> = {
+    entity: 'crm',
+    viewType: 'tree',
+    formPath: '/crm/:id',
+    createPermission: 'crm:crm:write',
+    fields: [
+      { name: 'name', label: 'Name', type: 'text' },
+      { name: 'email', label: 'Email', type: 'text' },
+    ],
+  }
+  const renderList = () => {
+    useSessionStore.setState({ identity: identityWith(['*:*:*']) })
+    return render(<EntityView descriptor={list} initialData={[{ id: '1', name: 'Ada' }]} actions={noopActions} title="Contacts" />)
+  }
+
+  // Defect: title, search bar and Create shared one row, squeezing the search
+  // field to ~85px and pushing Create past the page inset.
+  it('wraps the title row so the search bar takes its own full-width line', () => {
+    setViewportWidth(390)
+    renderList()
+    expect(screen.getByTestId('list-title-row')).toHaveStyle({ flexWrap: 'wrap' })
+    expect(screen.getByTestId('list-search-slot')).toHaveStyle({ flexBasis: '100%', order: '1' })
+  })
+
+  // Defect: the grid squeezed every column into the screen width ("N", "We…").
+  it('scrolls grid columns sideways inside the grid wrapper only', () => {
+    setViewportWidth(390)
+    renderList()
+    expect(screen.getByTestId('list-grid')).toHaveStyle({ overflowX: 'auto' })
+    // The 140px column minWidth itself is checked in a real browser (jsdom gives the grid 0px).
+  })
+
+  // Defect: the full-width search field pushed Select all past the page inset.
+  it('lets the search bar share its line with Select all', () => {
+    setViewportWidth(390)
+    renderList()
+    const bar = screen.getByPlaceholderText('Search…').closest('.MuiTextField-root')!.parentElement!.parentElement!
+    expect(bar).toHaveStyle({ flex: '1', minWidth: '0' })
+    // Defect: Select all was a 26px-high target.
+    expect(screen.getByRole('button', { name: /Select all/ })).toHaveStyle({ minHeight: '40px' })
+  })
+
+  // Defect: Create was a 33px-high target.
+  it('gives Create a 40px touch target', () => {
+    setViewportWidth(390)
+    renderList()
+    expect(screen.getByRole('button', { name: 'Create' })).toHaveStyle({ minHeight: '40px' })
+  })
+
+  it('keeps the one-row header at desktop width', () => {
+    renderList()
+    expect(screen.getByTestId('list-title-row')).not.toHaveStyle({ flexWrap: 'wrap' })
+    expect(screen.getByTestId('list-grid')).not.toHaveStyle({ overflowX: 'auto' })
   })
 })

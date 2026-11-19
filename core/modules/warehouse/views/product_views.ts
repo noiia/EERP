@@ -9,17 +9,25 @@ export interface Product {
   tenant_id: string
   name: string
   reference?: string
-  unit?: string
   unit_price?: number
-  tax_rate?: number
+  picture?: boolean | null
 }
 
 const productFields: ViewDescriptor['fields'] = [
   { name: 'name', label: 'Name', type: 'text', required: true },
-  { name: 'reference', label: 'Reference', type: 'text' },
-  { name: 'unit', label: 'Unit', type: 'text' },
+  // Automatic by default: Go fills it from the product sequence (PRD-00001)
+  // and keeps it, and the field is read-only while the warehouse setting
+  // auto_reference is on — the form reads that setting as its context
+  // (formContext below). Off, the user types it.
+  {
+    name: 'reference',
+    label: 'Reference',
+    type: 'text',
+    states: { readOnly: { field: 'context.auto_reference', op: 'eq', value: true } },
+  },
   { name: 'unit_price', label: 'Unit price (excl. tax)', type: 'number', widget: 'float' },
-  { name: 'tax_rate', label: 'Tax rate', type: 'number', widget: 'percent' },
+  // No single tax rate any more: a product's taxes are the sale module's
+  // Taxes field (product_tax), added to this form by sale_views.ts.
 ]
 
 // Form-only: every ProductVariant referencing this product, embedded
@@ -28,7 +36,16 @@ const productFields: ViewDescriptor['fields'] = [
 // exists" (module.go's doc comment) visible: a product's own form shows
 // whichever variant(s) already exist for it.
 const productFormFields: ViewDescriptor['fields'] = [
+  { name: 'picture', label: 'Picture', type: 'boolean', widget: 'picture', hideLabel: true },
   ...productFields,
+  // The unit the product is sold in (product_uoms): a sale line takes it as
+  // its own unit unless it picks another (sale's resolveLineUnit).
+  {
+    name: 'uom_id',
+    label: 'Unit of measure',
+    type: 'relation',
+    relation: { entity: 'product_uoms', kind: 'many2one', labelField: 'name' },
+  },
   {
     name: 'variants',
     label: 'Variants',
@@ -51,21 +68,30 @@ const productFormView: ViewDescriptor = {
   viewType: 'form',
   fields: productFormFields,
   permissions: ['product:product:read'],
+  // The warehouse settings: auto_reference makes the reference read-only.
+  formContext: '/settings/warehouse',
   // Same header/two-column body the default anatomy would synthesize, EXCEPT
   // 'variants' is pulled into its own full-width group after the columns —
   // a relation table cramped into a 50%-width column reads worse than the
   // stock two-up layout the other (scalar) fields still get.
   layout: [
-    { kind: 'row', id: FORM_HEADER_ID, children: [{ kind: 'field', name: 'name', variant: 'title' }] },
+    // The picture on top, beside the name.
+    {
+      kind: 'row',
+      id: FORM_HEADER_ID,
+      children: [
+        { kind: 'field', name: 'picture' },
+        { kind: 'field', name: 'name', variant: 'title' },
+      ],
+    },
     {
       kind: 'group',
       id: FORM_COLUMNS_ID,
       columns: 2,
       children: [
         { kind: 'field', name: 'reference' },
-        { kind: 'field', name: 'unit' },
         { kind: 'field', name: 'unit_price' },
-        { kind: 'field', name: 'tax_rate' },
+        { kind: 'field', name: 'uom_id' },
       ],
     },
     { kind: 'group', id: 'variants_group', children: [{ kind: 'field', name: 'variants' }] },

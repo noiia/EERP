@@ -1,0 +1,175 @@
+'use client'
+import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react'
+import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
+import Drawer from '@mui/material/Drawer'
+import Typography from '@mui/material/Typography'
+import useMediaQuery from '@mui/material/useMediaQuery'
+import { layout, onChatFrame, onLiveReconnect, T, useRecordLabelStore, useSessionStore, useT } from '@eerp/core-front'
+import { getTeam, listChannels, listDirect, listMembers, listShared, type Channel, type DirectChat, type Member, type Team } from './client'
+import { useChatStore, type ChatMessageFrame, type ChatDeletedFrame, type ChatReactionFrame, type ChatUpdatedFrame } from './chat-store'
+import { ChatPane } from './ChatPane'
+import { FilesPane } from './FilesPane'
+import { SharedPane } from './SharedPane'
+import { Sidebar, type WorkspaceView } from './Sidebar'
+
+// The shell's top bar is a dense MUI Toolbar (AppTopBar.tsx), 48px tall.
+const TOP_BAR = 48
+const SIDEBAR_WIDTH = 260
+
+export function TeamsWorkspace({ teamId, view }: { teamId?: string; view: WorkspaceView }) {
+  const t = useT()
+  const me = useSessionStore((s) => s.identity?.userId)
+  const phone = useMediaQuery(`(max-width:${layout.phoneMaxWidth - 0.05}px)`)
+  const [drawer, setDrawer] = useState(false)
+  const [team, setTeam] = useState<Team | null>(null)
+  const [members, setMembers] = useState<Member[]>([])
+  const [channels, setChannels] = useState<Channel[]>([])
+  const [directs, setDirects] = useState<DirectChat[]>([])
+  // Attachments need file storage; Go mounts /shared only when S3 is configured.
+  const [canAttach, setCanAttach] = useState(false)
+  // foldersRev reloads the sidebar's folder tree; panelRev also remounts the chat's folder panel.
+  const [foldersRev, setFoldersRev] = useState(0)
+  const [panelRev, setPanelRev] = useState(0)
+  const [folderName, setFolderName] = useState<string | null>(null)
+  const unread = useChatStore((s) => s.unread)
+  const directIds = useRef(new Set<string>())
+
+  const reloadDirects = useCallback(() => {
+    listDirect().then((d) => {
+      setDirects(d)
+      directIds.current = new Set(d.map((x) => x.id))
+      useChatStore.getState().setUnread(Object.fromEntries(d.map((x) => [x.id, x.unread])))
+    }).catch(() => {})
+  }, [])
+
+  const reload = useCallback(() => {
+    reloadDirects()
+    if (!teamId) return
+    getTeam(teamId).then(setTeam).catch(() => setTeam(null))
+    listMembers(teamId).then(setMembers).catch(() => setMembers([]))
+    listChannels(teamId).then((c) => {
+      setChannels(c)
+      useChatStore.getState().setUnread(Object.fromEntries(c.map((x) => [x.id, x.unread])))
+    }).catch(() => setChannels([]))
+  }, [teamId, reloadDirects])
+
+  useEffect(reload, [reload])
+  // A linked folder, or one Go created for files sent: re-read folder_id and the sidebar's folder tree.
+  const folderChanged = useCallback(() => {
+    reload()
+    setFoldersRev((n) => n + 1)
+    setPanelRev((n) => n + 1)
+  }, [reload])
+  useEffect(() => {
+    listShared().then(() => setCanAttach(true), () => setCanAttach(false))
+  }, [])
+
+  useEffect(() => onChatFrame((f) => {
+    const store = useChatStore.getState()
+    if (f.type === 'chat_reaction') return store.applyReactions(f as unknown as ChatReactionFrame)
+    if (f.type === 'chat_message_deleted') return store.remove(f as unknown as ChatDeletedFrame)
+    if (f.type === 'chat_message_updated') return store.update(f as unknown as ChatUpdatedFrame)
+    const frame = f as unknown as ChatMessageFrame
+    store.receive(frame)
+    // A first message in a conversation this sidebar doesn't list yet.
+    if (!frame.team_id && !directIds.current.has(frame.channel_id)) reloadDirects()
+  }), [reloadDirects])
+
+  // Frames sent while the socket was down are not replayed: re-read the sidebar and the open channel.
+  useEffect(() => onLiveReconnect(() => {
+    reload()
+    const open = useChatStore.getState().open
+    if (open) useChatStore.getState().load(open).catch(() => {})
+  }), [reload])
+
+  // Close the drawer after navigating from it.
+  useEffect(() => setDrawer(false), [view.kind, view.id])
+
+  const direct = view.kind === 'direct' ? directs.find((d) => d.id === view.id) : undefined
+  const channel = view.kind === 'channel' ? channels.find((c) => c.id === view.id) : undefined
+  const candidates = (direct ? [{ user_id: direct.other_user.id, display_name: direct.other_user.display_name }] : members)
+    .filter((m) => m.user_id !== me)
+
+  // The breadcrumb's last crumb is the URL's last segment (a channel id, or "files") unless a
+  // label is reported for it — the same store a record form reports its title to.
+  const crumbKey = view.kind === 'files' ? 'files' : view.id
+  const crumbLabel = direct
+    ? direct.other_user.display_name || t('Disabled user')
+    : !team ? null
+    : channel ? `${team.name} / # ${channel.name}`
+    : view.kind === 'files' ? `${team.name} / ${t('Files')}${view.id && folderName ? ` / ${folderName}` : ''}`
+    : null
+  useEffect(() => {
+    if (!crumbKey || !crumbLabel) return
+    useRecordLabelStore.getState().setLabel(crumbKey, crumbLabel)
+    return () => useRecordLabelStore.getState().setLabel(crumbKey, null)
+  }, [crumbKey, crumbLabel])
+
+  // A file dropped where nothing accepts it must not make the browser open it and leave the app;
+  // the chat pane (and the files pane) handle the drops they do accept first.
+  const cancelFileDrop = {
+    onDragOver: (e: DragEvent) => { if (e.dataTransfer.types.includes('Files')) e.preventDefault() },
+    onDrop: (e: DragEvent) => { if (e.dataTransfer.types.includes('Files')) e.preventDefault() },
+  }
+
+  let main
+  if ((view.kind === 'channel' || view.kind === 'direct') && view.id) {
+    main = (
+      <ChatPane
+        key={view.id}
+        channelId={view.id}
+        title={direct ? direct.other_user.display_name : channel ? `# ${channel.name}` : ''}
+        members={candidates}
+        canAttach={canAttach}
+        readOnly={view.kind === 'channel' && team?.role === 'guest'}
+        teamId={channel ? teamId : undefined}
+        folderId={channel?.folder_id}
+        role={team?.role}
+        foldersRev={panelRev}
+        onFolderChanged={folderChanged}
+        onFoldersChanged={() => setFoldersRev((n) => n + 1)}
+      />
+    )
+  } else if (view.kind === 'files' && teamId) {
+    // Remounted when the sidebar's folder menu changes a folder, so the listing re-reads.
+    main = <FilesPane key={`${view.id ?? ''}:${foldersRev}`} teamId={teamId} folderId={view.id} role={team?.role} onFoldersChanged={() => setFoldersRev((n) => n + 1)} onFolderName={setFolderName} />
+  } else if (view.kind === 'shared') {
+    main = <SharedPane />
+  } else {
+    main = (
+      <Typography color="text.secondary" sx={{ p: 3 }}>
+        <T text={view.kind === 'direct' ? 'Start a conversation with the + next to Direct messages.' : 'This team has no channel yet.'} />
+      </Typography>
+    )
+  }
+
+  const sidebar = (
+    <Sidebar teamId={teamId} team={team} role={team?.role} foldersRev={foldersRev} members={members} channels={channels} directs={directs} unread={unread} view={view} onChanged={reload} onFoldersChanged={() => { setFoldersRev((n) => n + 1); setPanelRev((n) => n + 1) }} />
+  )
+
+  return (
+    <Box sx={{
+      // Full bleed: cancel the ERP page inset and fill the viewport under the top bar.
+      mx: { xs: `calc(-1 * ${layout.pageInsetPhone})`, sm: `calc(-1 * ${layout.pageInsetX})` },
+      my: { xs: `calc(-1 * ${layout.pageInsetPhone})`, sm: `calc(-1 * ${layout.pageInsetY})` },
+      height: `calc(100dvh - ${TOP_BAR}px)`,
+      display: 'flex',
+      flexDirection: phone ? 'column' : 'row',
+    }} {...cancelFileDrop}>
+      {phone ? (
+        <>
+          <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 1 }}>
+            <Button onClick={() => setDrawer(true)} aria-label={t('Open the sidebar')}>☰ {team?.name ?? t('Teams')}</Button>
+          </Box>
+          <Drawer open={drawer} onClose={() => setDrawer(false)} slotProps={{ paper: { sx: { width: SIDEBAR_WIDTH, top: TOP_BAR, height: `calc(100% - ${TOP_BAR}px)` } } }}>
+            {sidebar}
+          </Drawer>
+        </>
+      ) : (
+        <Box sx={{ width: SIDEBAR_WIDTH, flexShrink: 0, borderRight: 1, borderColor: 'divider' }}>{sidebar}</Box>
+      )}
+      <Box sx={{ flex: 1, minWidth: 0, minHeight: 0 }}>{main}</Box>
+    </Box>
+  )
+}

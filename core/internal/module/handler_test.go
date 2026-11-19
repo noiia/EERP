@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // ── Stubs ─────────────────────────────────────────────────────────────────────
@@ -81,11 +81,10 @@ func serveModules(t *testing.T, h echo.HandlerFunc, method, target, body string,
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 	for k, v := range params {
-		c.SetParamNames(k)
-		c.SetParamValues(v)
+		c.SetPathValues(append(c.PathValues(), echo.PathValue{Name: k, Value: v}))
 	}
 	if err := h(c); err != nil {
-		e.HTTPErrorHandler(err, c)
+		e.HTTPErrorHandler(c, err)
 	}
 	return rec
 }
@@ -112,7 +111,7 @@ func TestModulesList(t *testing.T) {
 			{"id": "contact", "name": "contact", "active": false},
 		}}
 
-		rec := serveModules(t, newHandlerWith(store, &stubModuleRuntime{}).List, http.MethodGet, "/api/v1/modules", "", nil)
+		rec := serveModules(t, NewHandler(store, &stubModuleRuntime{}).List, http.MethodGet, "/api/v1/modules", "", nil)
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
@@ -133,7 +132,7 @@ func TestModulesGet(t *testing.T) {
 	t.Run("returns the module record", func(t *testing.T) {
 		store := &stubModuleStore{found: map[string]any{"id": "crm", "name": "crm", "active": true}}
 
-		rec := serveModules(t, newHandlerWith(store, &stubModuleRuntime{}).Get, http.MethodGet, "/api/v1/modules/crm", "",
+		rec := serveModules(t, NewHandler(store, &stubModuleRuntime{}).Get, http.MethodGet, "/api/v1/modules/crm", "",
 			map[string]string{"id": "crm"})
 
 		if rec.Code != http.StatusOK {
@@ -146,7 +145,7 @@ func TestModulesGet(t *testing.T) {
 
 	t.Run("unknown module is 404", func(t *testing.T) {
 		store := &stubModuleStore{foundErr: ErrModuleNotFound}
-		rec := serveModules(t, newHandlerWith(store, &stubModuleRuntime{}).Get, http.MethodGet, "/api/v1/modules/nope", "",
+		rec := serveModules(t, NewHandler(store, &stubModuleRuntime{}).Get, http.MethodGet, "/api/v1/modules/nope", "",
 			map[string]string{"id": "nope"})
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("status = %d, want 404", rec.Code)
@@ -163,7 +162,7 @@ func TestModulesUpdate(t *testing.T) {
 	t.Run("flips the runtime gate live — no requires_restart", func(t *testing.T) {
 		runtime := &stubModuleRuntime{updated: map[string]any{"id": "crm", "name": "crm", "active": false}}
 
-		rec := serveModules(t, newHandlerWith(&stubModuleStore{}, runtime).Update, http.MethodPut, "/api/v1/modules/crm",
+		rec := serveModules(t, NewHandler(&stubModuleStore{}, runtime).Update, http.MethodPut, "/api/v1/modules/crm",
 			`{"active":false}`, map[string]string{"id": "crm"})
 
 		if rec.Code != http.StatusOK {
@@ -189,7 +188,7 @@ func TestModulesUpdate(t *testing.T) {
 	})
 
 	t.Run("malformed body is 400", func(t *testing.T) {
-		rec := serveModules(t, newHandlerWith(&stubModuleStore{}, &stubModuleRuntime{}).Update, http.MethodPut, "/api/v1/modules/crm",
+		rec := serveModules(t, NewHandler(&stubModuleStore{}, &stubModuleRuntime{}).Update, http.MethodPut, "/api/v1/modules/crm",
 			`not json`, map[string]string{"id": "crm"})
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("status = %d, want 400", rec.Code)
@@ -197,7 +196,7 @@ func TestModulesUpdate(t *testing.T) {
 	})
 
 	t.Run("a rejected field (e.g. app_mode) surfaces as 400 VALIDATION_ERROR", func(t *testing.T) {
-		rec := serveModules(t, newHandlerWith(&stubModuleStore{}, &stubModuleRuntime{}).Update, http.MethodPut, "/api/v1/modules/crm",
+		rec := serveModules(t, NewHandler(&stubModuleStore{}, &stubModuleRuntime{}).Update, http.MethodPut, "/api/v1/modules/crm",
 			`{"app_mode":true}`, map[string]string{"id": "crm"})
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("status = %d, want 400 (body: %s)", rec.Code, rec.Body.String())
@@ -208,7 +207,7 @@ func TestModulesUpdate(t *testing.T) {
 	})
 
 	t.Run("missing active is 400 VALIDATION_ERROR", func(t *testing.T) {
-		rec := serveModules(t, newHandlerWith(&stubModuleStore{}, &stubModuleRuntime{}).Update, http.MethodPut, "/api/v1/modules/crm",
+		rec := serveModules(t, NewHandler(&stubModuleStore{}, &stubModuleRuntime{}).Update, http.MethodPut, "/api/v1/modules/crm",
 			`{}`, map[string]string{"id": "crm"})
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("status = %d, want 400 (body: %s)", rec.Code, rec.Body.String())
@@ -217,7 +216,7 @@ func TestModulesUpdate(t *testing.T) {
 
 	t.Run("appstore self-deactivation surfaces as 400 VALIDATION_ERROR", func(t *testing.T) {
 		runtime := &stubModuleRuntime{updateErr: &ValidationError{Message: "the appstore module cannot deactivate itself."}}
-		rec := serveModules(t, newHandlerWith(&stubModuleStore{}, runtime).Update, http.MethodPut, "/api/v1/modules/appstore",
+		rec := serveModules(t, NewHandler(&stubModuleStore{}, runtime).Update, http.MethodPut, "/api/v1/modules/appstore",
 			`{"active":false}`, map[string]string{"id": "appstore"})
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("status = %d, want 400", rec.Code)
@@ -229,7 +228,7 @@ func TestModulesUpdate(t *testing.T) {
 
 	t.Run("unknown module is 404", func(t *testing.T) {
 		runtime := &stubModuleRuntime{updateErr: ErrModuleNotFound}
-		rec := serveModules(t, newHandlerWith(&stubModuleStore{}, runtime).Update, http.MethodPut, "/api/v1/modules/nope",
+		rec := serveModules(t, NewHandler(&stubModuleStore{}, runtime).Update, http.MethodPut, "/api/v1/modules/nope",
 			`{"active":false}`, map[string]string{"id": "nope"})
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("status = %d, want 404", rec.Code)
@@ -242,7 +241,7 @@ func TestModulesUpdate(t *testing.T) {
 func TestModulesReload(t *testing.T) {
 	t.Run("reloads and returns the updated record", func(t *testing.T) {
 		runtime := &stubModuleRuntime{reloaded: map[string]any{"id": "crm", "name": "crm", "active": true}}
-		rec := serveModules(t, newHandlerWith(&stubModuleStore{}, runtime).Reload, http.MethodPost, "/api/v1/modules/crm/reload",
+		rec := serveModules(t, NewHandler(&stubModuleStore{}, runtime).Reload, http.MethodPost, "/api/v1/modules/crm/reload",
 			"", map[string]string{"id": "crm"})
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
@@ -254,7 +253,7 @@ func TestModulesReload(t *testing.T) {
 
 	t.Run("unknown module is 404", func(t *testing.T) {
 		runtime := &stubModuleRuntime{reloadErr: ErrModuleNotFound}
-		rec := serveModules(t, newHandlerWith(&stubModuleStore{}, runtime).Reload, http.MethodPost, "/api/v1/modules/nope/reload",
+		rec := serveModules(t, NewHandler(&stubModuleStore{}, runtime).Reload, http.MethodPost, "/api/v1/modules/nope/reload",
 			"", map[string]string{"id": "nope"})
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("status = %d, want 404", rec.Code)
@@ -271,7 +270,7 @@ func TestModulesLogs(t *testing.T) {
 		}}
 		runtime.logs[0].CreatedAt = time.Now()
 
-		rec := serveModules(t, newHandlerWith(&stubModuleStore{}, runtime).Logs, http.MethodGet, "/api/v1/modules/crm/logs",
+		rec := serveModules(t, NewHandler(&stubModuleStore{}, runtime).Logs, http.MethodGet, "/api/v1/modules/crm/logs",
 			"", map[string]string{"id": "crm"})
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())

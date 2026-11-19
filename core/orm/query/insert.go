@@ -9,6 +9,8 @@ import (
 	"core/orm/internal/cache"
 	"core/orm/internal/scan"
 	"core/orm/pool/executor"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // InsertBuilder constructs an INSERT query for type T.
@@ -34,12 +36,13 @@ import (
 //	    Returning("*").
 //	    One(ctx, db)
 type InsertBuilder[T any] struct {
-	meta       cache.StructMeta
-	rows       []T
-	returning  []string
-	conflictOn string // column(s) for ON CONFLICT (…)
-	doUpdate   string // SET fragment for DO UPDATE SET …; empty = DO NOTHING
-	doNothing  bool
+	meta          cache.StructMeta
+	rows          []T
+	returning     []string
+	conflictOn    string // column(s) for ON CONFLICT (…)
+	conflictWhere string // partial-index predicate repeated after the target — see OnConflictWhere
+	doUpdate      string // SET fragment for DO UPDATE SET …; empty = DO NOTHING
+	doNothing     bool
 }
 
 // Insert creates an InsertBuilder for one or more values of type T.
@@ -68,7 +71,23 @@ func (b InsertBuilder[T]) OnConflictDoNothing() InsertBuilder[T] {
 //	    OnConflict("id").DoUpdate("status = EXCLUDED.status")
 func (b InsertBuilder[T]) OnConflict(target string) InsertBuilder[T] {
 	b.conflictOn = target
+	b.conflictWhere = ""
 	b.doNothing = false
+	return b
+}
+
+// OnConflictWhere repeats a PARTIAL unique index's own predicate (e.g.
+// "deleted_at IS NULL") after the ON CONFLICT target columns. Postgres can
+// only infer a partial index as the ON CONFLICT arbiter when the INSERT
+// statement's own conflict clause carries that exact predicate — a bare
+// "ON CONFLICT (cols)" against a partial index fails with 42P10 ("no unique
+// or exclusion constraint matching the ON CONFLICT specification") even
+// though the index exists and genuinely is unique. Omit this for a conflict
+// target backed by a full (non-partial) index or constraint, such as a
+// plain primary key — adding it there would make Postgres look for a
+// partial index that doesn't exist, which fails the exact same way.
+func (b InsertBuilder[T]) OnConflictWhere(predicate string) InsertBuilder[T] {
+	b.conflictWhere = predicate
 	return b
 }
 
@@ -85,17 +104,25 @@ func (b InsertBuilder[T]) DoUpdate(setFragment string) InsertBuilder[T] {
 // every row leaves them zero — explicitly set values (data imports) still insert.
 var timestampCols = map[string]bool{"created_at": true, "updated_at": true}
 
-// insertableColumns returns the writable columns minus the zero-valued audit
-// timestamps (see timestampCols). The filter is all-rows-or-nothing because a
-// multi-row VALUES clause needs one consistent column list.
+// insertableColumns returns every column to actually write: every field minus
+// the PK and the audit timestamps (see timestampCols) WHEN every row leaves
+// them zero — both rely on a DB-side DEFAULT (gen_random_uuid(), now()) in
+// that case. An explicitly-set PK still inserts, same as an explicitly-set
+// timestamp already does: idempotent, deterministic-id seeding
+// (INSERT ... ON CONFLICT (id) DO NOTHING, e.g. internal/auth/seed.go) needs
+// to name its own id rather than accept whatever the DB would have generated.
+// The filter is all-rows-or-nothing because a multi-row VALUES clause needs
+// one consistent column list.
 func (b InsertBuilder[T]) insertableColumns() []string {
-	writable := b.meta.WritableColumns()
-	cols := make([]string, 0, len(writable))
-	for _, col := range writable {
-		if timestampCols[col] && b.allRowsZero(col) {
+	cols := make([]string, 0, len(b.meta.Fields))
+	for _, f := range b.meta.Fields {
+		if f.Generated {
 			continue
 		}
-		cols = append(cols, col)
+		if (f.IsPK || timestampCols[f.Column]) && b.allRowsZero(f.Column) {
+			continue
+		}
+		cols = append(cols, f.Column)
 	}
 	return cols
 }
@@ -151,6 +178,10 @@ func (b InsertBuilder[T]) ToSQL() (string, []any) {
 		sb.WriteString(" ON CONFLICT (")
 		sb.WriteString(b.conflictOn)
 		sb.WriteString(")")
+		if b.conflictWhere != "" {
+			sb.WriteString(" WHERE ")
+			sb.WriteString(b.conflictWhere)
+		}
 		if b.doUpdate != "" {
 			sb.WriteString(" DO UPDATE SET ")
 			sb.WriteString(b.doUpdate)
@@ -185,7 +216,12 @@ func (b InsertBuilder[T]) One(ctx context.Context, ex executor.Executor) (T, err
 		return zero, err
 	}
 	if len(results) == 0 {
-		return zero, fmt.Errorf("insert: one: no row returned (missing RETURNING?)")
+		// Wraps pgx.ErrNoRows (same sentinel orm.ErrNotFound aliases) rather
+		// than a bespoke string — a missing RETURNING clause and an
+		// ON CONFLICT DO NOTHING that skipped an existing row both surface
+		// as "no row," and Repository.Upsert relies on errors.Is to tell a
+		// genuine DO NOTHING skip apart from every other failure.
+		return zero, fmt.Errorf("insert: one: no row returned: %w", pgx.ErrNoRows)
 	}
 	return results[0], nil
 }

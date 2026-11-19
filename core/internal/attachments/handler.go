@@ -14,7 +14,7 @@ import (
 	"core/orm"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"go.uber.org/zap"
 )
 
@@ -23,8 +23,8 @@ import (
 // images. Mounted behind jwtMw + permMw: the permission middleware derives
 // attachments:attachments:read|write from the route, and every query is
 // pinned to the caller's tenant. Uploads are multipart and bounded by the
-// server-wide request body limit (request_body_limit) — no extra size cap
-// here, same as pictures.
+// upload route limit (upload_body_limit, default 20M — this route is exempt
+// from request_body_limit) — no extra size cap here, same as pictures.
 //
 // The service invariant is ONE attachment per (table, record, field) anchor
 // — the file-backed boolean contract (field true ⇔ attachment exists) needs
@@ -55,16 +55,29 @@ type attachmentStore interface {
 type Handler struct {
 	store   attachmentStore
 	objects ObjectStore
+	scope   orm.Executor
 }
 
-// NewHandler constructs the attachments Handler from concrete implementations.
-func NewHandler(store *Repository, objects ObjectStore) *Handler {
+// NewHandler constructs the attachments Handler from its dependencies (interfaces, so tests can pass fakes).
+func NewHandler(store attachmentStore, objects ObjectStore) *Handler {
 	return &Handler{store: store, objects: objects}
 }
 
-// newHandlerWith constructs a Handler from interface values (used in tests).
-func newHandlerWith(store attachmentStore, objects ObjectStore) *Handler {
-	return &Handler{store: store, objects: objects}
+// WithRowScope makes the handler answer 404 for anchors the caller's row scope
+// hides (ADR-038). Unset (unit tests with fakes), no anchor check is made.
+func (h *Handler) WithRowScope(db orm.Executor) *Handler {
+	h.scope = db
+	return h
+}
+
+// hidden reports whether the anchor record is invisible to the caller; a
+// scope error is returned as is (a 500 — fail closed, never a 404).
+func (h *Handler) hidden(ctx context.Context, table string, id uuid.UUID) (bool, error) {
+	if h.scope == nil {
+		return false, nil
+	}
+	ok, err := orm.CanSeeRecord(ctx, h.scope, table, id)
+	return !ok && err == nil, err
 }
 
 type attachmentResponse struct {
@@ -90,7 +103,7 @@ func toResponse(a Attachment) attachmentResponse {
 // row flips to it, then the old object is deleted best-effort (an orphaned
 // object is a leak; a row pointing at a missing object would be a lie) —
 // identical sequencing to pictures.Handler.Upload.
-func (h *Handler) Upload(c echo.Context) error {
+func (h *Handler) Upload(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	table := c.FormValue("table_name")
@@ -102,6 +115,12 @@ func (h *Handler) Upload(c echo.Context) error {
 	recordID, err := uuid.Parse(c.FormValue("record_id"))
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "record_id must be a UUID.")
+	}
+
+	if hide, err := h.hidden(c.Request().Context(), table, recordID); err != nil {
+		return fmt.Errorf("attachments: row scope: %w", err)
+	} else if hide {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such record.")
 	}
 
 	fileHeader, err := c.FormFile("file")
@@ -159,10 +178,10 @@ func (h *Handler) Upload(c echo.Context) error {
 // download-triggering Content-Disposition carrying the ORIGINAL filename
 // (pictures.Handler.Get never sets this: a picture renders inline as <img>,
 // an attachment is meant to be saved to disk by name).
-func (h *Handler) Get(c echo.Context) error {
+func (h *Handler) Get(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "id must be a UUID.")
 	}
@@ -172,6 +191,11 @@ func (h *Handler) Get(c echo.Context) error {
 			return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such attachment.")
 		}
 		return fmt.Errorf("attachments: find: %w", err)
+	}
+	if hide, err := h.hidden(c.Request().Context(), attachment.TableName, attachment.RecordID); err != nil {
+		return fmt.Errorf("attachments: row scope: %w", err)
+	} else if hide {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such attachment.")
 	}
 
 	body, contentType, err := h.objects.Get(c.Request().Context(), attachment.ObjectKey)
@@ -190,7 +214,7 @@ func (h *Handler) Get(c echo.Context) error {
 // Find handles GET /api/v1/attachments?table=&record=&field= — resolves the
 // anchor to its attachment metadata (the widget asks "does this field have a
 // file, and under which id/name?"). 404 when the anchor has none.
-func (h *Handler) Find(c echo.Context) error {
+func (h *Handler) Find(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	table := c.QueryParam("table")
@@ -202,6 +226,12 @@ func (h *Handler) Find(c echo.Context) error {
 	recordID, err := uuid.Parse(c.QueryParam("record"))
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "record must be a UUID.")
+	}
+
+	if hide, err := h.hidden(c.Request().Context(), table, recordID); err != nil {
+		return fmt.Errorf("attachments: row scope: %w", err)
+	} else if hide {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such record.")
 	}
 
 	attachment, err := h.store.FindByAnchor(c.Request().Context(), identity.TenantID, table, recordID, field)
@@ -217,10 +247,10 @@ func (h *Handler) Find(c echo.Context) error {
 // Delete handles DELETE /api/v1/attachments/:id. The row goes first (the
 // boolean contract must never see a row without an object), then the object
 // — best-effort: an orphaned object is a storage leak, not an integrity bug.
-func (h *Handler) Delete(c echo.Context) error {
+func (h *Handler) Delete(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "id must be a UUID.")
 	}
@@ -230,6 +260,11 @@ func (h *Handler) Delete(c echo.Context) error {
 			return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such attachment.")
 		}
 		return fmt.Errorf("attachments: find: %w", err)
+	}
+	if hide, err := h.hidden(c.Request().Context(), attachment.TableName, attachment.RecordID); err != nil {
+		return fmt.Errorf("attachments: row scope: %w", err)
+	} else if hide {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such attachment.")
 	}
 
 	if err := h.store.Delete(c.Request().Context(), identity.TenantID, id); err != nil {
@@ -241,7 +276,7 @@ func (h *Handler) Delete(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
-func errorJSON(c echo.Context, status int, code, msg string) error {
+func errorJSON(c *echo.Context, status int, code, msg string) error {
 	return c.JSON(status, map[string]any{
 		"error": map[string]any{
 			"code":       code,

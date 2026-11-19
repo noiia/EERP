@@ -1,9 +1,11 @@
 package orm
 
 import (
+	"fmt"
 	"reflect"
 	"time"
 
+	"core/orm/geo"
 	"core/orm/internal/registry"
 
 	"github.com/google/uuid"
@@ -17,6 +19,9 @@ type MigrationField struct {
 	Nullable bool
 	IsPK     bool
 	SoftDel  bool
+	// Generated columns are computed by Postgres; the owning module's Migrate()
+	// adds them with their expression, so the generic pass must skip them.
+	Generated bool
 	// Index, when true, requests a secondary index on this column.
 	// IndexType is the PostgreSQL index method (btree, hash, gin, …);
 	// empty means btree.
@@ -73,14 +78,21 @@ func MigrationFieldsForTable(tableName string) ([]MigrationField, bool) {
 		return nil, false
 	}
 
+	// Schema-registered and extension columns may have no Go type (or a
+	// non-pointer one) yet be declared nullable: honor the API field's flag too.
+	declaredNullable := make(map[string]bool, len(meta.Fields))
+	for _, f := range meta.Fields {
+		declaredNullable[f.Column] = f.Nullable
+	}
 	fields := make([]MigrationField, len(meta.StructMeta.Fields))
 	for i, f := range meta.StructMeta.Fields {
 		fields[i] = MigrationField{
 			Column:    f.Column,
 			SQLType:   reflectTypeToSQL(f.Type),
-			Nullable:  f.Type != nil && f.Type.Kind() == reflect.Ptr,
+			Nullable:  (f.Type != nil && f.Type.Kind() == reflect.Pointer) || declaredNullable[f.Column],
 			IsPK:      f.IsPK,
 			SoftDel:   f.SoftDel,
+			Generated: f.Generated,
 			Index:     f.Index,
 			IndexType: f.IndexType,
 		}
@@ -93,14 +105,18 @@ func reflectTypeToSQL(t reflect.Type) string {
 	if t == nil {
 		return "TEXT"
 	}
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	switch t {
-	case reflect.TypeOf(uuid.UUID{}):
+	case reflect.TypeFor[uuid.UUID]():
 		return "UUID"
-	case reflect.TypeOf(time.Time{}):
+	case reflect.TypeFor[time.Time]():
 		return "TIMESTAMPTZ"
+	case reflect.TypeFor[geo.Point]():
+		return fmt.Sprintf("geography(Point,%d)", geo.SRID)
+	case reflect.TypeFor[geo.Shape]():
+		return fmt.Sprintf("geography(Geometry,%d)", geo.SRID)
 	}
 	switch t.Kind() {
 	case reflect.String:

@@ -1,0 +1,859 @@
+'use client'
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { flushSync } from 'react-dom'
+import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
+import CircularProgress from '@mui/material/CircularProgress'
+import IconButton from '@mui/material/IconButton'
+import Menu from '@mui/material/Menu'
+import MenuItem from '@mui/material/MenuItem'
+import Popover from '@mui/material/Popover'
+import Stack from '@mui/material/Stack'
+import Typography from '@mui/material/Typography'
+import { ThemeProvider, useTheme } from '@mui/material/styles'
+import {
+  Background,
+  Controls,
+  getNodesBounds,
+  Position,
+  ReactFlow,
+  type Connection,
+  type Edge,
+  type EdgeChange,
+  type Node,
+  type NodeChange,
+  type NodeTypes,
+  type ReactFlowInstance,
+  useStore,
+} from '@xyflow/react'
+import { serializeError, toApiError, type SerializedError } from '../../api/errors'
+import type { EntityListOptions } from '../../api/list-options'
+import { useT } from '../../i18n/translate'
+import { ErrorAlert } from '../error-alert'
+import { useFillHeight, usePhone } from '../use-phone'
+import { byPrefixAndName, FontAwesomeIcon } from '../icons'
+import { RelationOpsProvider, useRelationOps, type DiagramNote, type RelationOps, type RelationRecord, type ViewLayout } from '../relation-ops'
+import type { HasId } from '../stores'
+import { freeSpot, segmentHitsRect, separateBoxes, type Point, type Rect } from './collide'
+import { historyKey, type UndoHistory } from './history'
+import { DeliverableBox } from './deliverable-box'
+import { ObsBox } from './obs-box'
+import { PbsBox } from './pbs-box'
+import { compactTheme, ForceDetail, LabelBox, NOTE_BOX_SIZE, NOTE_LIMIT, NOTE_LINK_LIMIT, NoteBox, TASK_BOX_SIZE, TaskBox, type NoteBoxData } from './task-box'
+
+// The canvas WBS and PERT share: React Flow plus the user's own saved arrangement
+// (RelationOps.getViewLayout/saveViewLayout, optional and fail-open). Saved boxes keep
+// their spot, the others take autoLayout()'s, moved clear of the saved ones; a dropped
+// box lands on the nearest free spot and the whole arrangement is saved 500 ms after
+// the last drop. Nodes default to the `task` type (TaskBox). Shift+click adds a box to the
+// selection, Shift+drag on the pane draws a selection rectangle (React Flow's own keys), and
+// dragging a selected box moves the whole selection. With `notes`, the user also adds
+// free-text note boxes, saved in the same layout and linked to boxes by dashed lines.
+
+export const DIAGRAM_RECORD_CAP = 2000
+/** The server's limit on saved positions (and folded ids) per layout. */
+export const LAYOUT_POSITION_LIMIT = 5000
+const PAGE_SIZE = 200
+const SAVE_DELAY_MS = 500
+// Full screen: the history entry's marker, and the wait for React Flow to see its new size.
+const FULLSCREEN_KEY = 'eerpDiagramFullscreen'
+const FIT_DELAY_MS = 100
+const TOUCH = { minWidth: 40, minHeight: 40 }
+const isTyping = (t: EventTarget | null) =>
+  t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))
+
+/** Every record matching `serverOptions` (paged until a short page, never trusting
+ * `total`), up to DIAGRAM_RECORD_CAP; `capped` when a probe finds more. Without
+ * `serverOptions` or a bound `listPage`, the seeded `initialData`. `loading` only
+ * until these filters' first read: a `reload` swaps the rows in place, so the canvas
+ * (zoom, selection) stays mounted after an edit. */
+export function useDiagramRecords<T extends HasId>(
+  entity: string,
+  serverOptions: EntityListOptions | undefined,
+  initialData: T[],
+): { records: T[]; capped: boolean; loading: boolean; error: string | null; reload: () => void } {
+  const listPage = useRelationOps()?.listPage
+  const key = serverOptions && listPage ? JSON.stringify(serverOptions) : null
+  const [state, setState] = useState<{ key: string; records: T[] | null; capped: boolean } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [reloads, setReloads] = useState(0)
+  useEffect(() => {
+    if (key == null || !listPage) return
+    const opts = JSON.parse(key) as EntityListOptions
+    const scoped: EntityListOptions = { ...opts, order: opts.order ?? 'id', pageSize: PAGE_SIZE }
+    let cancelled = false
+    const load = async () => {
+      const rows: T[] = []
+      for (let page = 1; ; page++) {
+        const res = await listPage(entity, { ...scoped, page })
+        rows.push(...(res.records as unknown as T[]))
+        if (res.records.length < PAGE_SIZE) return { records: rows, capped: false }
+        if (rows.length >= DIAGRAM_RECORD_CAP) {
+          // One probe row past the cap: exactly DIAGRAM_RECORD_CAP matches isn't "more".
+          const probe = await listPage(entity, { ...scoped, page: DIAGRAM_RECORD_CAP + 1, pageSize: 1 })
+          return { records: rows, capped: probe.records.length > 0 }
+        }
+      }
+    }
+    load()
+      .then((r) => {
+        if (cancelled) return
+        setError(null)
+        setState({ ...r, key })
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return
+        setError(toApiError(e).message)
+        // A failed first read shows the error over the seeded rows, not a spinner forever.
+        setState((s) => (s?.key === key ? s : { key, records: null, capped: false }))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [key, listPage, entity, reloads])
+  return {
+    records: key == null ? initialData : (state?.records ?? initialData),
+    capped: key != null && !!state?.capped,
+    loading: key != null && state?.key !== key,
+    error: key == null ? null : error,
+    reload: () => setReloads((n) => n + 1),
+  }
+}
+
+/** What a renderer shows instead of the canvas when useDiagramRecords is capped. */
+export function DiagramCapNotice() {
+  const t = useT()
+  return (
+    <Typography color="text.secondary" sx={{ p: 2 }}>
+      {t('More than {n} records match — narrow the filters to draw the diagram').replace('{n}', String(DIAGRAM_RECORD_CAP))}
+    </Typography>
+  )
+}
+
+/** What a renderer shows while useDiagramRecords is still reading. */
+export function DiagramLoading() {
+  return (
+    <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+      <CircularProgress size={24} />
+    </Box>
+  )
+}
+
+/** The positions to save: every known one, the drawn ones kept first when over `limit`
+ * (a folded branch or a narrower filter keeps its boxes' spots for later). */
+export function trimPositions(positions: Record<string, Point>, drawn: Set<string>, limit = LAYOUT_POSITION_LIMIT): Record<string, Point> {
+  const ids = Object.keys(positions)
+  if (ids.length <= limit) return positions
+  const kept = [...ids.filter((id) => drawn.has(id)), ...ids.filter((id) => !drawn.has(id))].slice(0, limit)
+  return Object.fromEntries(kept.map((id) => [id, positions[id]]))
+}
+
+// The selection after React Flow's select changes.
+function toggled(prev: Set<string>, picks: { id: string; selected: boolean }[]): Set<string> {
+  const next = new Set(prev)
+  for (const c of picks) {
+    if (c.selected) next.add(c.id)
+    else next.delete(c.id)
+  }
+  return next
+}
+
+/** How to use the canvas: the tips that apply to what this canvas allows. */
+function DiagramHelp({ mode, links, drop, insert, history, notes }: { mode: 'wbs' | 'pert' | 'obs' | 'pbs'; links: boolean; drop: boolean; insert: boolean; history: boolean; notes: boolean }) {
+  const t = useT()
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+  const shared = mode === 'obs' || mode === 'pbs'
+  const tips = [
+    t('Scroll to zoom, drag the background to move around.'),
+    shared
+      ? t('Drag a box to move it: the chart is shared, and only the project manager can change it.')
+      : t('Drag a box to move it: your arrangement is saved for you only.'),
+    t('Shift+click or Shift+drag on the background selects several boxes; drag one to move them all.'),
+    t('Double-click a box to open its record. Zoomed out, boxes show only their title.'),
+    shared && t("Add boxes from the toolbar; drag from a box's dot to another to put it under that one."),
+    links && !shared && (mode === 'pert'
+      ? t('Drag from the dot on the right of a box to another box to add a dependency.')
+      : t('Drag from the dot under a box to another box to make it its parent.')),
+    links && t('Click a link to select it, then press Delete to remove it.'),
+    drop && t('Drop a box onto another to move it under that one.'),
+    insert && t('Drop a box with no links onto a line to insert it there.'),
+    history && t('Ctrl+Z undoes your last change, Ctrl+Y redoes it.'),
+    notes && t('Add note adds a text box only you see; drag from its dot to a box to link them.'),
+    t('Re-arrange places every box again; Fit view shows the whole diagram.'),
+  ].filter((x): x is string => !!x)
+  return (
+    <>
+      <IconButton size="small" aria-label={t('How to use this diagram')} onClick={(e) => setAnchor(e.currentTarget)}>
+        <FontAwesomeIcon icon={byPrefixAndName.fas['circle-info']} />
+      </IconButton>
+      <Popover open={!!anchor} anchorEl={anchor} onClose={() => setAnchor(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}>
+        <Box component="ul" sx={{ m: 0, p: 2, pl: 4, maxWidth: 420 }}>
+          {tips.map((tip) => (
+            <Typography key={tip} component="li" variant="body2" sx={{ mb: 0.5 }}>{tip}</Typography>
+          ))}
+        </Box>
+      </Popover>
+    </>
+  )
+}
+
+// Connector dots keep at least HANDLE_SCREEN_PX on screen however far the view is zoomed
+// out, so links can still be drawn from a zoomed-out overview (never under HANDLE_MIN_PX).
+export const HANDLE_SCREEN_PX = 12
+const HANDLE_MIN_PX = 8
+export const handleSize = (zoom: number) => Math.max(HANDLE_MIN_PX, HANDLE_SCREEN_PX / zoom)
+
+/** Sets `--handle-size` on the canvas box from the zoom; re-renders only itself. */
+function HandleScale({ target }: { target: RefObject<HTMLDivElement | null> }) {
+  const zoom = useStore((s) => s.transform[2])
+  useEffect(() => {
+    target.current?.style.setProperty('--handle-size', `${handleSize(zoom)}px`)
+  }, [zoom, target])
+  return null
+}
+
+function BoxOps({ ops, children }: { ops: RelationOps | null; children: ReactNode }) {
+  return ops ? <RelationOpsProvider ops={ops}>{children}</RelationOpsProvider> : <>{children}</>
+}
+
+/** RelationOps whose `get` is cached per entity:id (in-flight promises shared, failures
+ * forgotten): every box showing the same many2one resolves its label with one read. */
+function useCachedGet(ops: RelationOps | null): RelationOps | null {
+  return useMemo(() => {
+    if (!ops) return null
+    const cache = new Map<string, Promise<RelationRecord>>()
+    const get = (entity: string, id: string) => {
+      const key = `${entity}:${id}`
+      let p = cache.get(key)
+      if (!p) {
+        p = ops.get(entity, id)
+        p.catch(() => cache.delete(key))
+        cache.set(key, p)
+      }
+      return p
+    }
+    return { ...ops, get }
+  }, [ops])
+}
+
+export interface DiagramCanvasProps {
+  entity: string
+  mode: 'wbs' | 'pert' | 'obs' | 'pbs'
+  title: string
+  /** Positions are ignored: the canvas places them. */
+  nodes: Node[]
+  edges: Edge[]
+  /** Called for unsaved boxes and by Re-arrange. */
+  autoLayout: () => Record<string, Point>
+  folded?: string[]
+  onFoldedChange?: (folded: string[]) => void
+  onConnect?: (c: Connection) => void
+  onEdgesDelete?: (e: Edge[]) => void
+  /** An edge end dragged onto another box (only `reconnectable` edges). */
+  onReconnect?: (old: Edge, c: Connection) => void
+  /** WBS re-parent: the box under the dropped one, and every box's top-left (the dropped
+   * one where it was let go). `false` (now or once resolved) puts the box back where it
+   * was before the drag. */
+  onNodeDrop?: (id: string, overId: string | null, at: Record<string, Point>) => boolean | void | Promise<boolean | void>
+  /** A single box let go across a line (`edges` only, never its own): insert it there.
+   * While dragged over one, that line is highlighted with a "+". Takes precedence over
+   * onNodeDrop. `canInsert` (default: any) picks the boxes and lines it applies to. */
+  onInsert?: (id: string, edge: Edge) => void
+  canInsert?: (id: string, edge: Edge) => boolean
+  legend: { color: string; label: string }[]
+  /** Toolbar content; as a function it gets `centerSpot`: the free top-left nearest the
+   * middle of the view for a box of that size. */
+  toolbarExtra?: ReactNode | ((centerSpot: (size: { w: number; h: number }) => Point) => ReactNode)
+  /** Offer "Add note": the user's own text boxes, linkable to any box. */
+  notes?: boolean
+  /** Controlled: these are the fixed positions (no layout read or save); the caller stores
+   * drops reported to `onMove`. */
+  positions?: Record<string, Point>
+  /** Boxes dropped (one or a selection) with their free spots. `false` (now or once resolved)
+   * refuses: they go back where they were. */
+  onMove?: (moved: Record<string, Point>) => boolean | void | Promise<boolean | void>
+  /** Boxes don't drag. */
+  readOnly?: boolean
+  /** Undo/redo: box moves are recorded in it, Ctrl+Z / Ctrl+Y and toolbar buttons drive it. */
+  history?: UndoHistory
+  /** Extra, non-interactive nodes (the WBS deliverables footer): the caller positions them
+   * from the FINAL placed boxes on every render (never stored), and they stay out of the
+   * saved layout, the collision pass, the drag/move and insert paths and the history. */
+  extraNodes?: (placed: Record<string, Point>) => Node[]
+}
+
+const nodeTypes: NodeTypes = { task: TaskBox, label: LabelBox, note: NoteBox, obs: ObsBox, pbs: PbsBox, deliverable: DeliverableBox }
+const NOTE_EDGE = 'note-link:'
+// No notes is no key: a layout without notes saves as it always did.
+const savedNotes = (notes: DiagramNote[]) => (notes.length ? notes : undefined)
+// Measured size, else the node's declared one (a WBS group root is shorter), else a task box.
+const size = (n?: Node) => ({
+  w: n?.measured?.width ?? n?.width ?? TASK_BOX_SIZE.w,
+  h: n?.measured?.height ?? n?.height ?? TASK_BOX_SIZE.h,
+})
+
+export function DiagramCanvas(props: DiagramCanvasProps) {
+  // Another entity or mode is another layout: start over (unmounting flushes a pending save).
+  return <Canvas key={`${props.entity}:${props.mode}`} {...props} />
+}
+
+function Canvas(props: DiagramCanvasProps) {
+  const { entity, mode, title, nodes, edges, autoLayout, folded = [], onFoldedChange, onNodeDrop, legend } = props
+  const t = useT()
+  const outer = useTheme()
+  const ops = useRelationOps()
+  const boxOps = useCachedGet(ops)
+  const compact = useMemo(() => compactTheme(outer), [outer])
+  // Controlled positions never touch the per-user layout.
+  const layoutMode = mode === 'obs' || mode === 'pbs' ? undefined : mode
+  const getViewLayout = props.positions || !layoutMode ? undefined : ops?.getViewLayout
+  const saveViewLayout = props.positions || !layoutMode ? undefined : ops?.saveViewLayout
+  const [loaded, setLoaded] = useState(!getViewLayout)
+  // Fixed positions: loaded, dropped or re-arranged. Ids not drawn now (folded, filtered
+  // out) keep theirs and are saved with the rest.
+  const [ownPositions, setPositions] = useState<Record<string, Point>>({})
+  const positions = props.positions ?? ownPositions
+  // Kept (and saved back) even where they aren't drawn: they belong to the saved layout.
+  const [notes, setNotes] = useState<DiagramNote[]>([])
+  const [live, setLive] = useState<Record<string, Point>>({})
+  const [sizes, setSizes] = useState<Record<string, { width: number; height: number }>>({})
+  // Edges are controlled: React Flow's Delete key only targets edges passed in as selected.
+  const [selectedEdges, setSelectedEdges] = useState<Set<string>>(new Set())
+  // Nodes are controlled too: a selection only shows (and drags together) once passed back.
+  const [selectedNodes, setSelectedNodes] = useState<Set<string>>(new Set())
+  const [saveError, setSaveError] = useState<SerializedError | null>(null)
+  const [exportError, setExportError] = useState<SerializedError | null>(null)
+  const [exporting, setExporting] = useState(false)
+  const phone = usePhone()
+  // CSS only on the same element: no remount, so unsaved notes and positions stay.
+  const [fullscreen, setFullscreen] = useState(false)
+  const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
+  const fitTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const container = useRef<HTMLDivElement>(null)
+  const phoneHeight = useFillHeight(container, phone && !fullscreen)
+  const instance = useRef<ReactFlowInstance | null>(null)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Folds: the saved ones (kept as-is when the parent doesn't manage folds), the prop's
+  // last value, and the loaded value until the parent has echoed it back once.
+  const loadedFolded = useRef<string[]>([])
+  const prevFolded = useRef(JSON.stringify(folded))
+  const echo = useRef<string | null>(null)
+
+  // Read through refs: the props are new functions on every parent render.
+  const autoRef = useRef(autoLayout)
+  const foldedChangeRef = useRef(onFoldedChange)
+  useEffect(() => {
+    autoRef.current = autoLayout
+    foldedChangeRef.current = onFoldedChange
+  })
+
+  useEffect(() => {
+    if (!getViewLayout || !layoutMode) return
+    let cancelled = false
+    getViewLayout(entity, layoutMode)
+      .then((layout) => {
+        if (cancelled) return
+        setPositions(layout.positions)
+        setNotes(layout.notes ?? [])
+        loadedFolded.current = layout.folded
+        echo.current = JSON.stringify(layout.folded)
+        foldedChangeRef.current?.(layout.folded)
+      })
+      .catch(() => {}) // fail-open: an unreadable layout is the empty one
+      .finally(() => {
+        if (!cancelled) setLoaded(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [entity, mode, getViewLayout])
+
+  // Note callbacks run on user events, after the helpers below are defined.
+  const noteNodes: Node[] = props.notes
+    ? notes.map((n) => ({
+        id: n.id,
+        type: 'note',
+        position: { x: 0, y: 0 },
+        width: NOTE_BOX_SIZE.w,
+        height: NOTE_BOX_SIZE.h,
+        data: {
+          text: n.text,
+          onText: (text: string) => changeNote(n.id, (x) => ({ ...x, text })),
+          onDelete: () => deleteNote(n.id),
+        } satisfies NoteBoxData,
+      }))
+    : []
+  const noteIds = new Set(noteNodes.map((n) => n.id))
+  const all = [...nodes, ...noteNodes]
+  const ids = all.map((n) => n.id)
+  const idsKey = ids.join('\n')
+  const placed = useMemo(() => {
+    const auto = autoRef.current()
+    return separateBoxes(
+      all.map((n) => {
+        const p = positions[n.id] ?? auto[n.id] ?? { x: 0, y: 0 }
+        const { w, h } = size({ ...n, measured: undefined })
+        return { id: n.id, ...p, w, h, fixed: n.id in positions }
+      }),
+    )
+  }, [idsKey, positions])
+
+  const savedFolded = onFoldedChange ? folded : loadedFolded.current
+  const drawn = useMemo(() => new Set(ids), [idsKey])
+  const toSave = (all: Record<string, Point>) => trimPositions(all, drawn)
+  const latest = useRef({ positions, placed, drawn, folded: savedFolded, notes })
+  useEffect(() => {
+    latest.current = { positions, placed, drawn, folded: savedFolded, notes }
+  })
+
+  const save = (layout: ViewLayout) => {
+    if (!saveViewLayout || !layoutMode) return
+    saveViewLayout(entity, layoutMode, layout).then(
+      () => setSaveError(null),
+      (e: unknown) => setSaveError(serializeError(toApiError(e))),
+    )
+  }
+  const flush = () => {
+    timer.current = null
+    const l = latest.current
+    save({ positions: trimPositions({ ...l.positions, ...l.placed }, l.drawn), folded: l.folded, notes: savedNotes(l.notes) })
+  }
+  const scheduleSave = () => {
+    if (!saveViewLayout) return
+    if (timer.current) clearTimeout(timer.current)
+    timer.current = setTimeout(flush, SAVE_DELAY_MS)
+  }
+
+  const changeNote = (id: string, f: (n: DiagramNote) => DiagramNote) => {
+    setNotes((ns) => ns.map((n) => (n.id === id ? f(n) : n)))
+    scheduleSave()
+  }
+  const deleteNote = (id: string) => {
+    setNotes((ns) => ns.filter((n) => n.id !== id))
+    setPositions((p) => Object.fromEntries(Object.entries(p).filter(([k]) => k !== id)))
+    scheduleSave()
+  }
+  // The middle of what the user is looking at, on the nearest free spot.
+  const centerSpot = ({ w, h }: { w: number; h: number }) => {
+    const box = container.current?.getBoundingClientRect()
+    const mid = box && instance.current
+      ? instance.current.screenToFlowPosition({ x: box.left + box.width / 2, y: box.top + box.height / 2 })
+      : { x: 0, y: 0 }
+    return freeSpot({ x: mid.x - w / 2, y: mid.y - h / 2, w, h }, ids.map((i) => ({ ...placed[i], ...sized(i) })))
+  }
+  const addNote = () => {
+    const id = `note-${crypto.randomUUID()}`
+    const spot = centerSpot(NOTE_BOX_SIZE)
+    setNotes((ns) => [...ns, { id, text: '', links: [] }])
+    setPositions((p) => ({ ...p, ...placed, [id]: spot }))
+    scheduleSave()
+  }
+
+  const flushRef = useRef(flush)
+  useEffect(() => {
+    flushRef.current = flush
+  })
+  // Leaving with a save pending: send it now rather than drop the user's last move.
+  useEffect(() => () => {
+    if (!timer.current) return
+    clearTimeout(timer.current)
+    flushRef.current()
+  }, [])
+
+  const showFullscreen = (on: boolean) => {
+    setFullscreen(on)
+    if (fitTimer.current) clearTimeout(fitTimer.current)
+    fitTimer.current = setTimeout(() => instance.current?.fitView(), FIT_DELAY_MS)
+  }
+  useEffect(() => () => {
+    if (fitTimer.current) clearTimeout(fitTimer.current)
+  }, [])
+  // Full screen owns one history entry: Back leaves full screen, not the page. Escape too,
+  // unless typing or something else (a menu, an editor) took it.
+  useEffect(() => {
+    if (!fullscreen) return
+    const token = `${Date.now()}-${Math.random()}` // randomUUID throws outside a secure context (http://LAN-IP)
+    window.history.pushState({ ...window.history.state, [FULLSCREEN_KEY]: token }, '')
+    let popped = false
+    const onPop = () => {
+      popped = true
+      showFullscreen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented && !isTyping(e.target)) showFullscreen(false)
+    }
+    window.addEventListener('popstate', onPop)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('popstate', onPop)
+      window.removeEventListener('keydown', onKey)
+      // Left by the button, Escape or unmount: consume our entry, unless Back already did
+      // or the page has moved on since (going back then would undo that navigation).
+      if (!popped && (window.history.state as Record<string, unknown> | null)?.[FULLSCREEN_KEY] === token) window.history.back()
+    }
+  }, [fullscreen])
+
+  // A fold change by the user is part of the layout; the parent echoing the loaded folds isn't.
+  const foldedNow = JSON.stringify(folded)
+  useEffect(() => {
+    if (foldedNow === prevFolded.current) return
+    prevFolded.current = foldedNow
+    const isEcho = foldedNow === echo.current
+    echo.current = null
+    if (loaded && !isEcho) scheduleSave()
+  }, [foldedNow, loaded])
+
+  const byId = new Map(all.map((n) => [n.id, n]))
+  const sized = (id: string) => (sizes[id] ? { w: sizes[id].width, h: sizes[id].height } : size(byId.get(id)))
+  const vertical = mode === 'wbs'
+  // A drag frame re-renders only the canvas: every other box keeps its node object, so
+  // React Flow skips it (2000 boxes would otherwise all re-render per frame).
+  const built = useRef(new Map<string, { src: Node; position: Point; size?: { width: number; height: number }; selected: boolean; node: Node }>())
+  const bodyNodes: Node[] = all.map((n) => {
+    const position = live[n.id] ?? placed[n.id]
+    const selected = selectedNodes.has(n.id)
+    const prev = built.current.get(n.id)
+    if (prev && prev.src === n && prev.position === position && prev.size === sizes[n.id] && prev.selected === selected) return prev.node
+    const node: Node = {
+      ...n,
+      type: n.type ?? 'task',
+      position,
+      deletable: false,
+      selected,
+      sourcePosition: vertical ? Position.Bottom : Position.Right,
+      // A renderer may pick the side a box is entered from (WBS stacked children: the left).
+      targetPosition: n.targetPosition ?? (vertical ? Position.Top : Position.Left),
+      ...(sizes[n.id] ? { measured: sizes[n.id] } : {}),
+    }
+    built.current.set(n.id, { src: n, position, size: sizes[n.id], selected, node })
+    return node
+  })
+  // The extra nodes (the WBS deliverables footer) are positioned by the caller from the
+  // placed boxes above: they never drag, select, connect or get saved, and exports still
+  // see them (they are in the node list getNodesBounds measures).
+  const rfNodes: Node[] = [
+    ...bodyNodes,
+    ...(props.extraNodes
+      ? props.extraNodes(placed).map((n) => ({
+          ...n,
+          draggable: false,
+          selectable: false,
+          connectable: false,
+          deletable: false,
+          selected: false,
+          sourcePosition: vertical ? Position.Bottom : Position.Right,
+          targetPosition: vertical ? Position.Top : Position.Left,
+        }))
+      : []),
+  ]
+
+  // The line a box at `rect` would be inserted into: the first it crosses, each line taken
+  // straight from the source's out side to the target's in side (right → left in PERT,
+  // bottom → top otherwise).
+  const [insertEdge, setInsertEdge] = useState<string | null>(null)
+  // The box under the center of `rect` (one being dropped onto another).
+  const boxUnder = (id: string, rect: Rect) => {
+    const cx = rect.x + rect.w / 2
+    const cy = rect.y + rect.h / 2
+    return ids.find((o) => {
+      if (o === id) return false
+      const r = { ...placed[o], ...sized(o) }
+      return cx >= r.x && cx <= r.x + r.w && cy >= r.y && cy <= r.y + r.h
+    })
+  }
+  // Never while over a box: that's a drop onto it (onNodeDrop).
+  const insertTarget = (id: string, rect: Rect): Edge | undefined => {
+    if (!props.onInsert || noteIds.has(id) || boxUnder(id, rect)) return undefined
+    const box = (n: string) => ({ ...placed[n], ...sized(n) })
+    const out = (r: Rect) => (mode !== 'pert' ? { x: r.x + r.w / 2, y: r.y + r.h } : { x: r.x + r.w, y: r.y + r.h / 2 })
+    const into = (r: Rect) => (mode !== 'pert' ? { x: r.x + r.w / 2, y: r.y } : { x: r.x, y: r.y + r.h / 2 })
+    return edges.find(
+      (e) =>
+        e.source !== id && e.target !== id && placed[e.source] && placed[e.target] &&
+        (props.canInsert?.(id, e) ?? true) &&
+        segmentHitsRect(out(box(e.source)), into(box(e.target)), rect),
+    )
+  }
+
+  const onNodesChange = (changes: NodeChange[]) => {
+    const moves = changes.flatMap((c) => (c.type === 'position' && c.position ? [[c.id, c.position] as const] : []))
+    if (moves.length) setLive((l) => ({ ...l, ...Object.fromEntries(moves) }))
+    const dragging = changes.some((c) => c.type === 'position' && c.dragging)
+    if (moves.length === 1 && dragging && props.onInsert) {
+      const [id, p] = moves[0]
+      setInsertEdge(insertTarget(id, { ...p, ...sized(id) })?.id ?? null)
+    }
+    const measured = changes.flatMap((c) => (c.type === 'dimensions' && c.dimensions ? [[c.id, c.dimensions] as const] : []))
+    if (measured.length) setSizes((m) => ({ ...m, ...Object.fromEntries(measured) }))
+    const picks = changes.filter((c) => c.type === 'select')
+    if (picks.length) setSelectedNodes((prev) => toggled(prev, picks))
+  }
+
+  // Controlled positions come back from the caller, so a refused move needs no undo here.
+  const reportMove = (onMove: NonNullable<DiagramCanvasProps['onMove']>, moved: Record<string, Point>, undo: (ok: boolean | void) => void) => {
+    const res = onMove(moved)
+    if (res instanceof Promise) void res.then(undo, () => undo(false))
+    else undo(res)
+  }
+
+  // Moves replay through the latest onMove (controlled positions) and the layout save.
+  const onMoveRef = useRef(props.onMove)
+  useEffect(() => {
+    onMoveRef.current = props.onMove
+  })
+  const applyMove = (to: Record<string, Point>) => {
+    setPositions((p) => ({ ...p, ...to }))
+    setLive({})
+    scheduleSave()
+    const res = onMoveRef.current?.(to)
+    if (res instanceof Promise) void res.catch(() => {})
+  }
+  const recordMove = (from: Record<string, Point>, to: Record<string, Point>) =>
+    props.history?.push({ undo: () => applyMove(from), redo: () => applyMove(to) })
+
+  const history = props.history
+  useEffect(() => {
+    if (!history) return
+    const onKey = (e: KeyboardEvent) => {
+      const k = historyKey(e)
+      if (!k) return
+      e.preventDefault()
+      void (k === 'undo' ? history.undo() : history.redo())
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [history])
+
+  const onNodeDragStop = (_: unknown, node: Node, dragged: Node[] = [node]) => {
+    setInsertEdge(null)
+    // A selection moved together: only the layout changes (no re-parent), each box on the
+    // free spot nearest where it was let go, clear of the others and of the boxes placed before it.
+    if (dragged.length > 1) {
+      const moved = new Set(dragged.map((n) => n.id))
+      const taken: Rect[] = ids.filter((id) => !moved.has(id)).map((id) => ({ ...placed[id], ...sized(id) }))
+      const next = { ...positions, ...placed }
+      for (const n of dragged) {
+        const spot = freeSpot({ ...n.position, ...sized(n.id) }, taken)
+        next[n.id] = spot
+        taken.push({ ...spot, ...sized(n.id) })
+      }
+      setPositions(next)
+      setLive({})
+      scheduleSave()
+      if (props.onMove) reportMove(props.onMove, Object.fromEntries(dragged.map((n) => [n.id, next[n.id]])), () => {})
+      recordMove(Object.fromEntries(dragged.map((n) => [n.id, placed[n.id]])), Object.fromEntries(dragged.map((n) => [n.id, next[n.id]])))
+      return
+    }
+    const rect: Rect = { ...node.position, ...sized(node.id) }
+    const others = ids.filter((id) => id !== node.id).map((id) => ({ id, ...placed[id], ...sized(id) }))
+    const before = placed[node.id]
+    const putBack = (ok: boolean | void) => {
+      if (ok !== false || !before) return
+      setPositions((p) => ({ ...p, [node.id]: before }))
+      scheduleSave()
+    }
+    const spot = freeSpot(rect, others)
+    setPositions({ ...positions, ...placed, [node.id]: spot })
+    if (before) recordMove({ [node.id]: before }, { [node.id]: spot })
+    if (props.onMove) reportMove(props.onMove, { [node.id]: spot }, putBack)
+    const hit = insertTarget(node.id, rect)
+    if (hit) props.onInsert!(node.id, hit)
+    else if (onNodeDrop && !noteIds.has(node.id)) {
+      const res = onNodeDrop(node.id, boxUnder(node.id, rect) ?? null, { ...placed, [node.id]: rect })
+      if (res instanceof Promise) void res.then(putBack, () => putBack(false))
+      else putBack(res)
+    }
+    setLive({})
+    scheduleSave()
+  }
+
+  const rearrange = () => {
+    const auto = autoRef.current()
+    // Only the drawn boxes are re-arranged; hidden ones and notes keep their spot.
+    const next = { ...positions, ...placed, ...Object.fromEntries(nodes.map((n) => [n.id, auto[n.id] ?? { x: 0, y: 0 }])) }
+    setPositions(next)
+    setLive({})
+    if (props.onMove) {
+      reportMove(props.onMove, Object.fromEntries(nodes.map((n) => [n.id, next[n.id]])), () => {})
+      return
+    }
+    if (timer.current) clearTimeout(timer.current)
+    timer.current = null
+    save({ positions: toSave(next), folded: savedFolded, notes: savedNotes(notes) })
+  }
+
+  const onEdgesChange = (changes: EdgeChange[]) => {
+    const picks = changes.filter((c) => c.type === 'select')
+    if (picks.length) setSelectedEdges((prev) => toggled(prev, picks))
+  }
+  const noteEdges: Edge[] = noteNodes.flatMap((n) =>
+    notes.find((x) => x.id === n.id)!.links
+      .filter((id) => drawn.has(id) && !noteIds.has(id))
+      .map((id) => ({ id: `${NOTE_EDGE}${n.id}>${id}`, source: n.id, target: id, data: { note: n.id, box: id }, style: { strokeDasharray: '4 4' } })),
+  )
+  const accent = outer.palette.primary.main
+  const rfEdges = [...edges, ...noteEdges].map((e) => {
+    const sel = selectedEdges.has(e.id) ? { ...e, selected: true } : e
+    if (e.id !== insertEdge) return sel
+    return {
+      ...sel,
+      className: 'insert-target',
+      label: '+',
+      labelStyle: { fill: outer.palette.primary.contrastText, fontSize: 28, fontWeight: 700 },
+      labelBgStyle: { fill: accent },
+      labelBgPadding: [10, 2] as [number, number],
+      labelBgBorderRadius: 20,
+      markerEnd: e.markerEnd ? { ...(e.markerEnd as object), color: accent } : undefined,
+      style: { ...e.style, stroke: accent, strokeWidth: 3 },
+    } as Edge
+  })
+
+  // A link with a note on one end belongs to the note; box-to-box ones go to the renderer.
+  const onConnect = (c: Connection) => {
+    const fromNote = noteIds.has(c.source)
+    if (!fromNote && !noteIds.has(c.target)) return props.onConnect?.(c)
+    if (fromNote === noteIds.has(c.target)) return
+    const [note, box] = fromNote ? [c.source, c.target] : [c.target, c.source]
+    changeNote(note, (n) => (n.links.includes(box) || n.links.length >= NOTE_LINK_LIMIT ? n : { ...n, links: [...n.links, box] }))
+  }
+  const onEdgesDelete = (deleted: Edge[]) => {
+    const isNote = (e: Edge) => e.id.startsWith(NOTE_EDGE)
+    for (const e of deleted.filter(isNote)) {
+      const { note, box } = e.data as { note: string; box: string }
+      changeNote(note, (n) => ({ ...n, links: n.links.filter((id) => id !== box) }))
+    }
+    const rest = deleted.filter((e) => !isNote(e))
+    if (rest.length) props.onEdgesDelete?.(rest)
+  }
+
+  const exportAs = async (kind: 'png' | 'pdf') => {
+    const viewport = container.current?.querySelector<HTMLElement>('.react-flow__viewport')
+    if (!viewport) return
+    setExportError(null)
+    // Full boxes in the image even when zoomed out: drawn before the capture starts.
+    flushSync(() => setExporting(true))
+    try {
+      // Export boxes grow to their content: let React Flow re-measure them before bounding.
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+      const bounds = getNodesBounds(instance.current?.getNodes() ?? rfNodes)
+      // html-to-image and jspdf load on the first export, not with the diagram.
+      const { exportPdf, exportPng } = await import('./export')
+      // The diagram's own background: a dark theme's light text stays readable in the image.
+      const background = outer.palette.background.paper
+      if (kind === 'png') await exportPng(viewport, bounds, title, background)
+      else await exportPdf(viewport, bounds, { title, date: new Date(), legend, background }, title)
+    } catch (e: unknown) {
+      setExportError(serializeError(toApiError(e)))
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const fullscreenLabel = fullscreen ? t('Exit full screen') : t('Full screen')
+  const closeMore = () => setMoreAnchor(null)
+  const help = <DiagramHelp mode={mode} links={!!props.onConnect} drop={!!onNodeDrop} insert={!!props.onInsert} history={!!props.history} notes={!!props.notes} />
+  const addNoteButton = props.notes ? <Button size="small" onClick={addNote} disabled={notes.length >= NOTE_LIMIT}>{t('Add note')}</Button> : null
+  const legendItems = legend.map((l) => (
+    <Stack key={l.label} direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+      <Box aria-hidden sx={{ width: 12, height: 12, borderRadius: 0.5, bgcolor: l.color }} />
+      <Typography variant="caption" color="text.secondary">{l.label}</Typography>
+    </Stack>
+  ))
+  const extra = typeof props.toolbarExtra === 'function' ? props.toolbarExtra(centerSpot) : props.toolbarExtra
+
+  return (
+    <Box
+      data-testid="diagram-canvas"
+      sx={fullscreen ? { position: 'fixed', inset: 0, zIndex: (th) => th.zIndex.drawer + 2, bgcolor: 'background.default', height: '100dvh', display: 'flex', flexDirection: 'column', p: 1 } : undefined}
+    >
+      <ErrorAlert error={saveError ?? exportError} />
+      <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: phone ? 'nowrap' : 'wrap', alignItems: 'center', mb: 1 }}>
+        {phone ? null : help}
+        {phone || props.readOnly ? null : <Button size="small" onClick={rearrange}>{t('Re-arrange')}</Button>}
+        {phone ? null : <Button size="small" onClick={() => void exportAs('png')}>{t('Export PNG')}</Button>}
+        {phone ? null : <Button size="small" onClick={() => void exportAs('pdf')}>{t('Export PDF')}</Button>}
+        <Button size="small" onClick={() => instance.current?.fitView()} sx={phone ? TOUCH : undefined}>{t('Fit view')}</Button>
+        {props.history ? (
+          <>
+            <IconButton size="small" aria-label={t('Undo')} title={t('Undo') + ' (Ctrl+Z)'} disabled={!props.history.canUndo} onClick={() => void props.history?.undo()} sx={phone ? TOUCH : undefined}>
+              <FontAwesomeIcon icon={byPrefixAndName.fas['arrow-rotate-left']} />
+            </IconButton>
+            <IconButton size="small" aria-label={t('Redo')} title={t('Redo') + ' (Ctrl+Y)'} disabled={!props.history.canRedo} onClick={() => void props.history?.redo()} sx={phone ? TOUCH : undefined}>
+              <FontAwesomeIcon icon={byPrefixAndName.fas['arrow-rotate-right']} />
+            </IconButton>
+          </>
+        ) : null}
+        <IconButton size="small" aria-label={fullscreenLabel} title={fullscreenLabel} onClick={() => showFullscreen(!fullscreen)} sx={phone ? TOUCH : undefined}>
+          <FontAwesomeIcon icon={byPrefixAndName.fas[fullscreen ? 'compress' : 'expand']} />
+        </IconButton>
+        {phone ? null : addNoteButton}
+        {phone ? null : legendItems}
+        {phone ? null : extra}
+        {phone ? (
+          <>
+            <IconButton size="small" aria-label={t('More')} onClick={(e) => setMoreAnchor(e.currentTarget)} sx={TOUCH}>
+              <FontAwesomeIcon icon={byPrefixAndName.fas['ellipsis-vertical']} />
+            </IconButton>
+            <Menu open={!!moreAnchor} anchorEl={moreAnchor} onClose={closeMore}>
+              {props.readOnly ? null : <MenuItem onClick={() => { closeMore(); rearrange() }}>{t('Re-arrange')}</MenuItem>}
+              <MenuItem onClick={() => { closeMore(); void exportAs('png') }}>{t('Export PNG')}</MenuItem>
+              <MenuItem onClick={() => { closeMore(); void exportAs('pdf') }}>{t('Export PDF')}</MenuItem>
+              {props.notes ? <MenuItem disabled={notes.length >= NOTE_LIMIT} onClick={() => { closeMore(); addNote() }}>{t('Add note')}</MenuItem> : null}
+              <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', alignItems: 'center', px: 2, py: 1, maxWidth: 320 }}>
+                {help}
+                {legendItems}
+                {extra ? <Box onClick={closeMore}>{extra}</Box> : null}
+              </Stack>
+            </Menu>
+          </>
+        ) : null}
+      </Stack>
+      <Box
+        ref={container}
+        sx={{
+          ...(fullscreen ? { flex: 1, minHeight: 0 } : { height: phoneHeight ?? '70vh' }),
+          border: 1,
+          borderColor: 'divider',
+          borderRadius: 1,
+          '& .react-flow__handle': { width: 'var(--handle-size, 8px)', height: 'var(--handle-size, 8px)', minWidth: 0, minHeight: 0 },
+          '&[data-exporting] .react-flow__handle': { width: 5, height: 5 },
+        }}
+        data-exporting={exporting || undefined}
+      >
+        {loaded ? (
+          <BoxOps ops={boxOps}>
+          <ThemeProvider theme={compact}>
+          <ForceDetail.Provider value={exporting}>
+          <ReactFlow
+            nodes={rfNodes}
+            edges={rfEdges}
+            onEdgesChange={onEdgesChange}
+            nodeTypes={nodeTypes}
+            onNodesChange={onNodesChange}
+            onNodeDragStop={onNodeDragStop}
+            onConnect={props.onConnect || props.notes ? onConnect : undefined}
+            onEdgesDelete={props.onEdgesDelete || props.notes ? onEdgesDelete : undefined}
+            nodesConnectable={!props.readOnly && (!!props.onConnect || !!props.notes)}
+            nodesDraggable={!props.readOnly}
+            selectionKeyCode="Shift"
+            multiSelectionKeyCode="Shift"
+            onReconnect={props.onReconnect}
+            edgesReconnectable={false}
+            onInit={(i) => {
+              instance.current = i
+            }}
+            minZoom={0.1}
+            fitView
+          >
+            <Background />
+            <Controls showInteractive={false} />
+            <HandleScale target={container} />
+          </ReactFlow>
+          </ForceDetail.Provider>
+          </ThemeProvider>
+          </BoxOps>
+        ) : null}
+      </Box>
+    </Box>
+  )
+}

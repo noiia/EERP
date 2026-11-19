@@ -9,6 +9,7 @@ import {
   type DraftRecord,
 } from './behaviors'
 import { requiredMissing, type ViewDescriptor } from './descriptor'
+import { useHasLinksStore } from './required-relation-store'
 
 // Per-view client stores. Each is SEEDED with server-fetched initialData and never
 // fetches on mount — the server owns data + caching, the client owns interaction
@@ -29,6 +30,21 @@ export interface EntityActions<T extends HasId> {
   create: (body: Partial<T>) => Promise<T>
   update: (id: string, body: Partial<T>) => Promise<T>
   remove?: (id: string) => Promise<void>
+  /** Undoes a `remove()` — optional, and only ever meaningful alongside
+   * `remove` (a host that binds one binds both; see
+   * `apps/shell/app/[...module]/actions.ts`). The built-in Delete
+   * affordance (`form-actions-menu.tsx`/`list-selection.tsx`) commits the
+   * delete immediately and uses this from the undo toast's `onRecover` to
+   * actually reverse it — see their own doc comments for why: a DEFERRED
+   * commit (delete only on the toast's timeout) never survives a page
+   * refresh/navigation that drops the pending timer, silently leaving the
+   * record undeleted server-side while the UI already moved on. */
+  restore?: (id: string) => Promise<T>
+  /** A server-side workflow step on one record: `POST /{entity}/{id}/{action}`
+   * (the host's generic Server Action), revalidating the entity and every
+   * `revalidate` tag. Resolves to Go's answer. Optional — header buttons'
+   * `runAction` is undefined without it. */
+  action?: (id: string, action: string, body?: unknown, revalidate?: string[]) => Promise<unknown>
 }
 
 // --- entity store (list + selection) ---
@@ -121,13 +137,18 @@ export function createFormStore<T extends HasId>(
       // currently VISIBLE fields — Phase 2) blocks commit client-side, the
       // same validation Go's generic handler runs server-side, surfaced
       // through the same error slot the renderer already displays.
-      const missing = requiredMissing(descriptor, draft as Record<string, unknown>)
+      const missing = requiredMissing(
+        descriptor,
+        draft as Record<string, unknown>,
+        (fieldName) => useHasLinksStore.getState().hasLinks[fieldName],
+      )
       if (missing.length > 0) {
         set({
           error: new ApiError({
             code: 'VALIDATION_ERROR',
             message: `Missing required field(s): ${missing.join(', ')}`,
             status: 0,
+            fields: missing,
           }),
         })
         return null

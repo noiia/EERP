@@ -8,13 +8,15 @@ import (
 	"net/http"
 	"regexp"
 	"sort"
+	"strconv"
+	"strings"
 
 	"core/internal/auth"
 	"core/internal/company"
 	"core/orm"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // SourceLocale is the reserved preferred_locale value that forces the source
@@ -82,19 +84,20 @@ type companyResolver interface {
 // identity scopes every query to the caller), /settings/* mounts behind the
 // permission middleware as well (deriving settings:i18n:write for PUT /settings/i18n).
 type Handler struct {
-	users     userPreferenceStore
-	store     settingStore
-	companies companyResolver
+	users       userPreferenceStore
+	store       settingStore
+	companies   companyResolver
+	environment string
 }
 
-// NewHandler constructs a settings Handler from concrete implementations.
-func NewHandler(users *auth.UserRepository, store *Repository, companies *company.Repository) *Handler {
-	return &Handler{users: users, store: store, companies: companies}
-}
-
-// newHandlerWith constructs a Handler from interface values (used in tests).
-func newHandlerWith(users userPreferenceStore, store settingStore, companies companyResolver) *Handler {
-	return &Handler{users: users, store: store, companies: companies}
+// NewHandler constructs a settings Handler from its dependencies (interfaces, so tests can pass fakes).
+// environment is types.Config.Environment ("development"/"production"), echoed
+// back on GetMyPreferences so the frontend (which never reads the backend
+// config file at runtime — core-front/CLAUDE.md's BFF boundary) can gate
+// dev-only affordances like the demo-seed tool off the SAME source of truth
+// the backend itself boots from, instead of its own separate env var.
+func NewHandler(users userPreferenceStore, store settingStore, companies companyResolver, environment string) *Handler {
+	return &Handler{users: users, store: store, companies: companies, environment: environment}
 }
 
 // ── Response / request types ──────────────────────────────────────────────────
@@ -113,6 +116,9 @@ type preferencesResponse struct {
 	// frontend's built-in default. Rides along with the preferences load so
 	// one round-trip seeds every client-side format mirror.
 	NumberFormat *numberFormat `json:"number_format"`
+	// DateFormat: the workspace short date format (DateFormatKey). null =
+	// the frontend's locale default.
+	DateFormat *string `json:"date_format"`
 	// ActiveCompany: the caller's current company (multi-company) — never
 	// null once resolved, since ResolveActive always bootstraps one. Rides
 	// along here so the top bar's company switcher needs no separate fetch.
@@ -121,6 +127,15 @@ type preferencesResponse struct {
 	// AccountsUsernameAtFormatKey). Rides along here, same reasoning as
 	// NumberFormat, so any `text/username` widget needs no separate fetch.
 	UsernameAtFormat bool `json:"username_at_format"`
+	// Environment: this deployment's types.Config.Environment
+	// ("development"/"production") — see NewHandler's own doc comment.
+	Environment string `json:"environment"`
+	// UnitSystem: the active company's unit system (Settings → Units), so
+	// distances (geo widgets, list Distance column) display in km or mi
+	// without a settings:units:read grant.
+	UnitSystem string `json:"unit_system"`
+	// HasAvatar: the caller has a profile picture (users.avatar).
+	HasAvatar bool `json:"has_avatar"`
 }
 
 // activeCompanyRef is the minimal company shape callers need to render a
@@ -154,7 +169,7 @@ var (
 // GetMyPreferences handles GET /api/v1/me/preferences. It returns the caller's
 // display-language preference alongside the tenant default so one round-trip
 // resolves the effective interface language.
-func (h *Handler) GetMyPreferences(c echo.Context) error {
+func (h *Handler) GetMyPreferences(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	user, err := h.users.FindByID(c.Request().Context(), identity.UserID)
@@ -180,6 +195,8 @@ func (h *Handler) GetMyPreferences(c echo.Context) error {
 		Email:           user.Email,
 		PreferredLocale: user.PreferredLocale,
 		ActiveCompany:   &activeCompanyRef{ID: active.ID, Name: active.Name, Currency: active.Currency},
+		Environment:     h.environment,
+		HasAvatar:       user.Avatar != nil && *user.Avatar,
 	}
 	if ok && defaultLocale != "" {
 		resp.DefaultLocale = &defaultLocale
@@ -198,6 +215,14 @@ func (h *Handler) GetMyPreferences(c echo.Context) error {
 		}
 	}
 
+	dateFormat, ok, err := h.store.Get(c.Request().Context(), identity.TenantID, active.ID, DateFormatKey)
+	if err != nil {
+		return fmt.Errorf("preferences: read date format: %w", err)
+	}
+	if ok && DateFormats[dateFormat] {
+		resp.DateFormat = &dateFormat
+	}
+
 	rawAccounts, ok, err := h.store.Get(c.Request().Context(), identity.TenantID, active.ID, AccountsUsernameAtFormatKey)
 	if err != nil {
 		return fmt.Errorf("preferences: read accounts settings: %w", err)
@@ -210,12 +235,18 @@ func (h *Handler) GetMyPreferences(c echo.Context) error {
 			resp.UsernameAtFormat = accounts.UsernameAtFormat
 		}
 	}
+
+	unitSystem, err := resolveUnitSystem(c.Request().Context(), h.store, h.companies, identity.TenantID, identity.UserID)
+	if err != nil {
+		return fmt.Errorf("preferences: unit system: %w", err)
+	}
+	resp.UnitSystem = unitSystem
 	return c.JSON(http.StatusOK, resp)
 }
 
 // PutMyPreferences handles PUT /api/v1/me/preferences. The caller updates only
 // their own record — the user id comes from the token, never the body.
-func (h *Handler) PutMyPreferences(c echo.Context) error {
+func (h *Handler) PutMyPreferences(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	var req struct {
@@ -263,7 +294,7 @@ func (h *Handler) PutMyPreferences(c echo.Context) error {
 // PutI18nSettings handles PUT /api/v1/settings/i18n — the tenant-wide default
 // interface language. Mounted behind the permission middleware, which derives
 // settings:i18n:write from the route.
-func (h *Handler) PutI18nSettings(c echo.Context) error {
+func (h *Handler) PutI18nSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	var req struct {
@@ -297,7 +328,7 @@ func (h *Handler) PutI18nSettings(c echo.Context) error {
 // PutFormatSettings handles PUT /api/v1/settings/format — the tenant-wide
 // number display format. Mounted behind the permission middleware, which
 // derives settings:format:write from the route.
-func (h *Handler) PutFormatSettings(c echo.Context) error {
+func (h *Handler) PutFormatSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	var req numberFormat
@@ -345,6 +376,10 @@ type viewFieldsConfig struct {
 	// override (inherit the module's own default, or disabled if it declared
 	// none); non-nil forces Graph on or off regardless of that default.
 	EnableGraphs *bool `json:"enable_graphs"`
+	// GanttStartField/GanttEndField name the date fields a Gantt bar spans;
+	// Gantt mode needs both to resolve (override or module default).
+	GanttStartField *string `json:"gantt_start_field"`
+	GanttEndField   *string `json:"gantt_end_field"`
 }
 
 // GetViewFieldsSettings handles GET /api/v1/settings/views/:entity/fields —
@@ -355,7 +390,7 @@ type viewFieldsConfig struct {
 // nulls with the entity's own ViewDescriptor.viewModeDefaults (if any), Go
 // never seeing that descriptor itself. Mounted behind the permission
 // middleware, which derives settings:views:read.
-func (h *Handler) GetViewFieldsSettings(c echo.Context) error {
+func (h *Handler) GetViewFieldsSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	entity := c.Param("entity")
@@ -385,7 +420,7 @@ func (h *Handler) GetViewFieldsSettings(c echo.Context) error {
 // PutViewFieldsSettings handles PUT /api/v1/settings/views/:entity/fields.
 // Mounted behind the permission middleware, which derives settings:views:write
 // from the route.
-func (h *Handler) PutViewFieldsSettings(c echo.Context) error {
+func (h *Handler) PutViewFieldsSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	entity := c.Param("entity")
@@ -401,9 +436,15 @@ func (h *Handler) PutViewFieldsSettings(c echo.Context) error {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR",
 			"kanban_status_field must be a lowercase snake_case field name.")
 	}
-	if req.CalendarDateField != nil && !fieldNamePattern.MatchString(*req.CalendarDateField) {
-		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR",
-			"calendar_date_field must be a lowercase snake_case field name.")
+	for name, field := range map[string]*string{
+		"calendar_date_field": req.CalendarDateField,
+		"gantt_start_field":   req.GanttStartField,
+		"gantt_end_field":     req.GanttEndField,
+	} {
+		if field != nil && !fieldNamePattern.MatchString(*field) {
+			return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR",
+				name+" must be a lowercase snake_case field name.")
+		}
 	}
 
 	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)
@@ -437,7 +478,7 @@ type chatterVisibility struct {
 // frontend merges this with the entity's own ViewDescriptor.showChatter, Go
 // never seeing that descriptor itself. Mounted behind the permission
 // middleware, which derives settings:views:read.
-func (h *Handler) GetChatterSettings(c echo.Context) error {
+func (h *Handler) GetChatterSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	entity := c.Param("entity")
@@ -467,7 +508,7 @@ func (h *Handler) GetChatterSettings(c echo.Context) error {
 // PutChatterSettings handles PUT /api/v1/settings/views/:entity/chatter.
 // Mounted behind the permission middleware, which derives
 // settings:views:write from the route.
-func (h *Handler) PutChatterSettings(c echo.Context) error {
+func (h *Handler) PutChatterSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	entity := c.Param("entity")
@@ -491,6 +532,118 @@ func (h *Handler) PutChatterSettings(c echo.Context) error {
 	}
 	if err := h.store.Set(c.Request().Context(), identity.TenantID, active.ID, ViewChatterKey(entity), string(value)); err != nil {
 		return fmt.Errorf("settings: set chatter visibility for %s: %w", entity, err)
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+// statusBarConfig is both the stored value of a ViewStatusBarKey(entity)
+// setting and the request/response body of GET|PUT
+// /settings/views/:entity/status_bar. A nil Field or Steps means "no
+// workspace override" for that part. Go never sees the descriptor, so it only
+// checks the shape — the frontend's resolveStatusBar drops a field the form
+// doesn't have and steps the field doesn't offer.
+type statusBarConfig struct {
+	Field *string  `json:"field"`
+	Steps []string `json:"steps"`
+}
+
+// maxStatusBarSteps bounds a stored step list — a breadcrumb past a few
+// dozen chips is unusable anyway.
+const maxStatusBarSteps = 50
+
+// validate normalizes an empty field or step list to "no override" and
+// rejects a malformed one, naming the problem.
+func (s *statusBarConfig) validate() error {
+	if s.Field != nil && *s.Field == "" {
+		s.Field = nil
+	}
+	if s.Field != nil && !entitySlugPattern.MatchString(*s.Field) {
+		return errors.New("field must be a lowercase snake_case column name")
+	}
+	if len(s.Steps) == 0 {
+		s.Steps = nil
+		return nil
+	}
+	if len(s.Steps) > maxStatusBarSteps {
+		return fmt.Errorf("at most %d steps", maxStatusBarSteps)
+	}
+	seen := make(map[string]bool, len(s.Steps))
+	for _, step := range s.Steps {
+		if step == "" || len(step) > 100 {
+			return errors.New("each step must be 1 to 100 characters")
+		}
+		if seen[step] {
+			return fmt.Errorf("step %q is listed twice", step)
+		}
+		seen[step] = true
+	}
+	return nil
+}
+
+// GetStatusBarSettings handles GET /api/v1/settings/views/:entity/status_bar —
+// the workspace's override of entity's form status breadcrumb. An
+// unconfigured entity returns {"field":null,"steps":null}, not a 404.
+// Mounted behind the permission middleware, which derives
+// settings:views:read.
+func (h *Handler) GetStatusBarSettings(c *echo.Context) error {
+	identity := auth.MustIdentity(c.Request().Context())
+
+	entity := c.Param("entity")
+	if !entitySlugPattern.MatchString(entity) {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "entity must be a lowercase snake_case identifier.")
+	}
+
+	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)
+	if err != nil {
+		return fmt.Errorf("settings: resolve active company: %w", err)
+	}
+
+	raw, ok, err := h.store.Get(c.Request().Context(), identity.TenantID, active.ID, ViewStatusBarKey(entity))
+	if err != nil {
+		return fmt.Errorf("settings: get status bar for %s: %w", entity, err)
+	}
+
+	var resp statusBarConfig
+	if ok && raw != "" {
+		// An unparsable or no-longer-valid stored value degrades to "no
+		// override" rather than failing the read.
+		if json.Unmarshal([]byte(raw), &resp) != nil || resp.validate() != nil {
+			resp = statusBarConfig{}
+		}
+	}
+	return c.JSON(http.StatusOK, resp)
+}
+
+// PutStatusBarSettings handles PUT /api/v1/settings/views/:entity/status_bar.
+// Mounted behind the permission middleware, which derives
+// settings:views:write from the route.
+func (h *Handler) PutStatusBarSettings(c *echo.Context) error {
+	identity := auth.MustIdentity(c.Request().Context())
+
+	entity := c.Param("entity")
+	if !entitySlugPattern.MatchString(entity) {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "entity must be a lowercase snake_case identifier.")
+	}
+
+	var req statusBarConfig
+	if err := c.Bind(&req); err != nil {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
+	}
+	if err := req.validate(); err != nil {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+	}
+
+	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)
+	if err != nil {
+		return fmt.Errorf("settings: resolve active company: %w", err)
+	}
+
+	value, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("settings: marshal status bar for %s: %w", entity, err)
+	}
+	if err := h.store.Set(c.Request().Context(), identity.TenantID, active.ID, ViewStatusBarKey(entity), string(value)); err != nil {
+		return fmt.Errorf("settings: set status bar for %s: %w", entity, err)
 	}
 	return c.NoContent(http.StatusNoContent)
 }
@@ -555,7 +708,7 @@ func validateGraphLayout(layout graphLayout) error {
 // An unconfigured entity returns an empty tile list, not a 404: a blank
 // canvas is a normal state. Mounted behind the permission middleware, which
 // derives settings:views:read.
-func (h *Handler) GetGraphLayoutSettings(c echo.Context) error {
+func (h *Handler) GetGraphLayoutSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	entity := c.Param("entity")
@@ -591,7 +744,7 @@ func (h *Handler) GetGraphLayoutSettings(c echo.Context) error {
 // PutGraphLayoutSettings handles PUT /api/v1/settings/views/:entity/graph.
 // Mounted behind the permission middleware, which derives
 // settings:views:write from the route.
-func (h *Handler) PutGraphLayoutSettings(c echo.Context) error {
+func (h *Handler) PutGraphLayoutSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	entity := c.Param("entity")
@@ -668,7 +821,7 @@ func pictureSizeKeyFor(module string) string {
 // returns {"size": null}, not a 404: "inheriting Base" (or, for Base itself,
 // "using the frontend's hardcoded default") is a normal state. Mounted behind
 // the permission middleware, which derives settings:apps:read from the route.
-func (h *Handler) GetPictureSizeSettings(c echo.Context) error {
+func (h *Handler) GetPictureSizeSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	module := c.Param("module")
@@ -707,7 +860,7 @@ func (h *Handler) GetPictureSizeSettings(c echo.Context) error {
 // itself can revert to the frontend's hardcoded default) with no separate
 // delete endpoint. Mounted behind the permission middleware, which derives
 // settings:apps:write from the route.
-func (h *Handler) PutPictureSizeSettings(c echo.Context) error {
+func (h *Handler) PutPictureSizeSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	module := c.Param("module")
@@ -761,7 +914,7 @@ type reportsLayout struct {
 // Absent returns empty strings, not a 404: no letterhead configured yet is a
 // normal state. Mounted behind the permission middleware, which derives
 // settings:reports:read from the route.
-func (h *Handler) GetReportsLayoutSettings(c echo.Context) error {
+func (h *Handler) GetReportsLayoutSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)
@@ -786,7 +939,7 @@ func (h *Handler) GetReportsLayoutSettings(c echo.Context) error {
 // PutReportsLayoutSettings handles PUT /api/v1/settings/reports/layout.
 // Mounted behind the permission middleware, which derives
 // settings:reports:write from the route.
-func (h *Handler) PutReportsLayoutSettings(c echo.Context) error {
+func (h *Handler) PutReportsLayoutSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	var req reportsLayout
@@ -828,7 +981,7 @@ type accountsSettings struct {
 // doc comment). Absent returns false, not a 404: an unconfigured workspace
 // keeps rendering usernames the original way. Mounted behind the permission
 // middleware, which derives settings:accounts:read from the route.
-func (h *Handler) GetAccountsSettings(c echo.Context) error {
+func (h *Handler) GetAccountsSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)
@@ -852,7 +1005,7 @@ func (h *Handler) GetAccountsSettings(c echo.Context) error {
 // PutAccountsSettings handles PUT /api/v1/settings/accounts. Mounted behind
 // the permission middleware, which derives settings:accounts:write from the
 // route.
-func (h *Handler) PutAccountsSettings(c echo.Context) error {
+func (h *Handler) PutAccountsSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	var req accountsSettings
@@ -894,9 +1047,33 @@ type viewCatalogEntry struct {
 // "Create a new view" affordance gets a plain 404 through the normal error
 // pipeline rather than a crash). Mounted behind the permission middleware,
 // which derives views:views:read from the route.
-func (h *Handler) GetViewCatalog(c echo.Context) error {
+//
+// Honors search[name]= and page_size= — the SAME two query params the
+// generic CRUD list endpoint reads for every other many2one's
+// RelationSearchWidget (core-front's ApiClient.appendListParams). This isn't
+// the generic CRUD surface (a route prefix is a bare string, not a real
+// table row), so it can't reuse Repository/checkColumn — it just re-applies
+// the same two params by hand over the in-memory prefix list. Without this,
+// typing into this one field's autocomplete did nothing: every other
+// query param was silently ignored and the full, unfiltered catalog came
+// back every time.
+func (h *Handler) GetViewCatalog(c *echo.Context) error {
 	prefixes := orm.ExposedRoutePrefixes()
 	sort.Strings(prefixes)
+
+	if q := strings.ToLower(strings.TrimSpace(c.QueryParam("search[name]"))); q != "" {
+		filtered := prefixes[:0:0]
+		for _, p := range prefixes {
+			if strings.Contains(strings.ToLower(p), q) {
+				filtered = append(filtered, p)
+			}
+		}
+		prefixes = filtered
+	}
+	if size, err := strconv.Atoi(c.QueryParam("page_size")); err == nil && size > 0 && size < len(prefixes) {
+		prefixes = prefixes[:size]
+	}
+
 	data := make([]viewCatalogEntry, 0, len(prefixes))
 	for _, p := range prefixes {
 		data = append(data, viewCatalogEntry{ID: p, Name: p})
@@ -915,7 +1092,7 @@ type taxSettings struct {
 // TaxPriceModeExcluded, not a 404: an unconfigured workspace keeps computing
 // totals the original way. Mounted behind the permission middleware, which
 // derives settings:tax:read from the route.
-func (h *Handler) GetTaxSettings(c echo.Context) error {
+func (h *Handler) GetTaxSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	included, err := resolveTaxIncluded(c.Request().Context(), h.store, h.companies, identity.TenantID, identity.UserID)
@@ -931,7 +1108,7 @@ func (h *Handler) GetTaxSettings(c echo.Context) error {
 
 // PutTaxSettings handles PUT /api/v1/settings/tax. Mounted behind the
 // permission middleware, which derives settings:tax:write from the route.
-func (h *Handler) PutTaxSettings(c echo.Context) error {
+func (h *Handler) PutTaxSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	var req taxSettings
@@ -959,7 +1136,7 @@ func (h *Handler) PutTaxSettings(c echo.Context) error {
 // (not *Handler) so ResolveTaxIncluded below can reuse it for callers
 // outside this package (sale/propertymanagement's own tax computation,
 // which needs the exact same effective value this package's own GET handler
-// resolves) without either module depending on auth's echo.Context plumbing.
+// resolves) without either module depending on auth's *echo.Context plumbing.
 func resolveTaxIncluded(ctx context.Context, store settingStore, companies companyResolver, tenantID, userID uuid.UUID) (bool, error) {
 	active, err := companies.ResolveActive(ctx, tenantID, userID)
 	if err != nil {
@@ -977,6 +1154,79 @@ func resolveTaxIncluded(ctx context.Context, store settingStore, companies compa
 // package's unexported interfaces.
 func ResolveTaxIncluded(ctx context.Context, store *Repository, companies *company.Repository, tenantID, userID uuid.UUID) (bool, error) {
 	return resolveTaxIncluded(ctx, store, companies, tenantID, userID)
+}
+
+// unitSettings is both the stored value of UnitSystemKey and the
+// request/response body of GET|PUT /settings/units.
+type unitSettings struct {
+	System string `json:"system"`
+}
+
+// GetUnitSettings handles GET /api/v1/settings/units — the workspace's
+// default unit system (see UnitSystemKey's doc comment). Absent returns
+// UnitSystemMetric, not a 404: an unconfigured workspace defaults to metric.
+// Mounted behind the permission middleware, which derives settings:units:read
+// from the route.
+func (h *Handler) GetUnitSettings(c *echo.Context) error {
+	identity := auth.MustIdentity(c.Request().Context())
+
+	system, err := resolveUnitSystem(c.Request().Context(), h.store, h.companies, identity.TenantID, identity.UserID)
+	if err != nil {
+		return fmt.Errorf("settings: get unit system: %w", err)
+	}
+	return c.JSON(http.StatusOK, unitSettings{System: system})
+}
+
+// PutUnitSettings handles PUT /api/v1/settings/units. Mounted behind the
+// permission middleware, which derives settings:units:write from the route.
+func (h *Handler) PutUnitSettings(c *echo.Context) error {
+	identity := auth.MustIdentity(c.Request().Context())
+
+	var req unitSettings
+	if err := c.Bind(&req); err != nil {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
+	}
+	if req.System != UnitSystemMetric && req.System != UnitSystemImperial {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR",
+			fmt.Sprintf("system must be %q or %q", UnitSystemMetric, UnitSystemImperial))
+	}
+
+	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)
+	if err != nil {
+		return fmt.Errorf("settings: resolve active company: %w", err)
+	}
+	if err := h.store.Set(c.Request().Context(), identity.TenantID, active.ID, UnitSystemKey, req.System); err != nil {
+		return fmt.Errorf("settings: set unit system: %w", err)
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+// resolveUnitSystem reports the workspace's active company's default unit
+// system (Settings -> Global settings -> Units) — UnitSystemMetric when
+// unset. Takes interfaces (not *Handler) so ResolveUnitSystem below can
+// reuse it for callers outside this package (propertymanagement's own
+// default-UOM pick), same split resolveTaxIncluded/ResolveTaxIncluded
+// already establish.
+func resolveUnitSystem(ctx context.Context, store settingStore, companies companyResolver, tenantID, userID uuid.UUID) (string, error) {
+	active, err := companies.ResolveActive(ctx, tenantID, userID)
+	if err != nil {
+		return "", err
+	}
+	raw, ok, err := store.Get(ctx, tenantID, active.ID, UnitSystemKey)
+	if err != nil {
+		return "", err
+	}
+	if ok && raw == UnitSystemImperial {
+		return UnitSystemImperial, nil
+	}
+	return UnitSystemMetric, nil
+}
+
+// ResolveUnitSystem is resolveUnitSystem's exported twin, taking concrete
+// types so propertymanagement can call it without importing this package's
+// unexported interfaces.
+func ResolveUnitSystem(ctx context.Context, store *Repository, companies *company.Repository, tenantID, userID uuid.UUID) (string, error) {
+	return resolveUnitSystem(ctx, store, companies, tenantID, userID)
 }
 
 // osmConnector is both the stored value of OSMConnectorKey and the
@@ -997,7 +1247,7 @@ const osmConnectorMaxLen = 500
 // zero value (enabled: false), not a 404: no connector configured yet is a
 // normal state. Mounted behind the permission middleware, which derives
 // settings:integrations:read from the route.
-func (h *Handler) GetOSMSettings(c echo.Context) error {
+func (h *Handler) GetOSMSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	active, err := h.companies.ResolveActive(c.Request().Context(), identity.TenantID, identity.UserID)
@@ -1022,7 +1272,7 @@ func (h *Handler) GetOSMSettings(c echo.Context) error {
 // PutOSMSettings handles PUT /api/v1/settings/integrations/osm. Mounted
 // behind the permission middleware, which derives settings:integrations:write
 // from the route.
-func (h *Handler) PutOSMSettings(c echo.Context) error {
+func (h *Handler) PutOSMSettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	var req osmConnector
@@ -1064,10 +1314,10 @@ func (h *Handler) PutOSMSettings(c echo.Context) error {
 // creating a company already requires. Both companies must belong to the
 // caller's own tenant (the same cross-tenant-probe defense PutMyPreferences
 // applies to active_company_id).
-func (h *Handler) CloneCompanySettings(c echo.Context) error {
+func (h *Handler) CloneCompanySettings(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
-	sourceID, err := uuid.Parse(c.Param("id"))
+	sourceID, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "id must be a UUID.")
 	}
@@ -1099,7 +1349,7 @@ func (h *Handler) CloneCompanySettings(c echo.Context) error {
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-func errorJSON(c echo.Context, status int, code, msg string) error {
+func errorJSON(c *echo.Context, status int, code, msg string) error {
 	return c.JSON(status, map[string]any{
 		"error": map[string]any{
 			"code":       code,

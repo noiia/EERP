@@ -30,10 +30,9 @@ import (
 // point once the filter is actually run as a query.
 type SavedFilter struct {
 	model.BaseModel
-	TenantID uuid.UUID `db:"tenant_id,index"`
-	UserID   uuid.UUID `db:"user_id,index"` // creator; always set, even when Shared
-	Entity   string    `db:"entity,index"`
-	Name     string    `db:"name"`
-	Shared   bool      `db:"shared"` // false = private (owner-only), true = tenant-wide
-	Config   string    `db:"config"`
+	UserID uuid.UUID `db:"user_id,index"` // creator; always set, even when Shared
+	Entity string    `db:"entity,index"`
+	Name   string    `db:"name"`
+	Shared bool      `db:"shared"` // false = private (owner-only), true = tenant-wide
+	Config string    `db:"config"`
 }

@@ -1,3 +1,4 @@
+import { hasPermission } from '../auth/permissions'
 import { buildBehaviorPlan } from '../views/behaviors'
 import {
   normalizeLayout,
@@ -10,7 +11,12 @@ import {
 import { headerMenuRegistry, type HeaderMenu } from '../views/header-menu-registry'
 import { validateHeaderButtons } from '../views/header-button-actions'
 import { validateMenuActions } from '../views/menu-actions'
-import { validateReportDescriptor, type ReportDescriptor } from '../views/report-descriptor'
+import {
+  defaultReport,
+  resolveReports,
+  validateReportDescriptor,
+  type ReportDescriptor,
+} from '../views/report-descriptor'
 import { applyExtension, type ViewExtension } from './extensions'
 
 // The frontend module contract + registry. A module contributes DESCRIPTORS ONLY:
@@ -183,7 +189,10 @@ export class ModuleRegistry {
   // registration. Reports resolve by NAME, not path — a report has no
   // App Router route of its own to match against, only the print route's
   // :name param — so this is a separate map, not folded into resolvedRoutes.
-  private readonly resolvedReports = new Map<string, ReportDescriptor>()
+  // Holds the reports as declared (plus the built-in defaultReport every
+  // report extends); inheritance is flattened by buildReportRegistry, so a
+  // report may extend one a later-registered module ships.
+  private readonly resolvedReports = new Map<string, ReportDescriptor>([[defaultReport.name, defaultReport]])
 
   register(module: FrontModule, options: RegisterOptions = {}): this {
     // Idempotent by module name: the server manifest and the client manifest
@@ -216,10 +225,11 @@ export class ModuleRegistry {
     }
 
     // Reports validate and register independently of routes/extends — they
-    // have no path to match, no layout-tree merge, no extension mechanism
-    // (v1 scope, docs/roadmaps/pdf-reports.md Phase 2).
+    // have no path to match and no layout-tree merge; their own inheritance
+    // (ReportDescriptor.extends) is flattened by buildReportRegistry.
     for (const report of module.reports ?? []) {
       try {
+        if (report.name === defaultReport.name) throw new Error(`"${report.name}" is the built-in base report`)
         validateReportDescriptor(report)
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e)
@@ -290,12 +300,14 @@ export class ModuleRegistry {
   }
 
   /**
-   * The report name -> ReportDescriptor map, resolved at registration time —
-   * the print route reads this the same way the catch-all reads
-   * buildRegistry(), keyed by ReportDescriptor.name instead of a path.
+   * The report name -> ReportDescriptor map, inheritance flattened
+   * (resolveReports: every report carries its parents' chrome, page format
+   * and layout) — the print route reads this the same way the catch-all
+   * reads buildRegistry(), keyed by ReportDescriptor.name instead of a path.
+   * Abstract bases are in it too; the print route refuses to print them.
    */
   buildReportRegistry(): Map<string, ReportDescriptor> {
-    return new Map(this.resolvedReports)
+    return resolveReports(this.resolvedReports.values())
   }
 
   /**
@@ -304,10 +316,22 @@ export class ModuleRegistry {
    * with no `:param` segment. A form route like '/crm/contacts/:id' needs an id, so it
    * is not a menu entry; the list/tree view that links to it is. Preserves registration
    * order; non-app modules and modules left with no navigable route are omitted (their
-   * routes stay reachable — they just get no tile). The landing page renders this
-   * (permission-filtered) as the menu.
+   * routes stay reachable — they just get no tile).
+   *
+   * `callerPermissions`, when given, filters BOTH levels: a route the caller's
+   * permissions don't cover (`hasPermission`) is dropped from the module's route
+   * list, and a module left with zero routes after that gets no tile at all — the
+   * whole point being a role with no rights anywhere in a module shouldn't see its
+   * icon on the landing menu. A route with no declared `permission` is always kept
+   * (same fail-open posture header-menu-bar.tsx's `permittedEntries` already takes
+   * for the per-app dropdown) — omitting it was never a gate. Omitting
+   * `callerPermissions` entirely keeps the old unfiltered behavior (every route from
+   * every app-mode module), which no caller in this codebase uses anymore but keeps
+   * the method callable from a context with no identity to hand it. This is display
+   * gating only: the catch-all route's own server-side guard re-authorizes every
+   * click regardless of what made it onto this list.
    */
-  menu(): MenuModule[] {
+  menu(callerPermissions?: string[]): MenuModule[] {
     const result: MenuModule[] = []
     for (const { module, appMode, icon, displayName } of this.entries) {
       if (!appMode) continue
@@ -318,10 +342,12 @@ export class ModuleRegistry {
         // since the module declared it. Falls back to the declared one in
         // the (unreachable in practice) case a path was never resolved.
         const resolved = this.resolvedRoutes.get(route.path)
+        const permission = resolved?.permission ?? route.permission
+        if (callerPermissions && permission && !hasPermission(callerPermissions, permission)) continue
         routes.push({
           path: route.path,
           descriptor: resolved?.descriptor ?? route.descriptor,
-          permission: resolved?.permission ?? route.permission,
+          permission,
         })
       }
       if (routes.length > 0) result.push({ name: module.name, routes, icon, displayName })
@@ -362,7 +388,7 @@ export class ModuleRegistry {
         menus.push({
           name: route.path,
           label,
-          entries: [{ kind: 'line', label, path: route.path, permission }],
+          entries: [{ kind: 'line', label, path: route.path + (resolved.navQuery ?? ''), permission }],
         })
         autoNames.add(route.path)
       }
@@ -434,6 +460,27 @@ export class ModuleRegistry {
   }
 
   /**
+   * The module that registers a route over `entity`, or null — "which app
+   * owns this entity," derived purely from what's already registered (no
+   * server round-trip, no hardcoded module/entity mapping). First match
+   * wins, same rule as formDescriptorFor/formPathFor. Used by
+   * relation-widgets.tsx's multi-select create wizard
+   * (`widgetOptions.multiCreate.groupByModule`) to let an admin filter a
+   * picker's rows down to "everything one app owns" — e.g. the Role form's
+   * Views table grouping the view catalog by which installed app each view
+   * belongs to, entirely client-side.
+   */
+  moduleForEntity(entity: string): { name: string; displayName?: string } | null {
+    for (const { module, displayName } of this.entries) {
+      for (const route of module.routes) {
+        const resolved = this.resolvedRoutes.get(route.path)?.descriptor ?? route.descriptor
+        if (resolved.entity === entity) return { name: module.name, displayName }
+      }
+    }
+    return null
+  }
+
+  /**
    * The first registered report over an entity, or null — same "first wins,
    * null if none" shape as formDescriptorFor. The catch-all's form route uses
    * this to decide whether to render an Export-to-PDF action: an entity with
@@ -441,8 +488,8 @@ export class ModuleRegistry {
    * Create button.
    */
   reportForEntity(entity: string): ReportDescriptor | null {
-    for (const report of this.resolvedReports.values()) {
-      if (report.entity === entity) return report
+    for (const report of this.buildReportRegistry().values()) {
+      if (!report.abstract && report.entity === entity) return report
     }
     return null
   }

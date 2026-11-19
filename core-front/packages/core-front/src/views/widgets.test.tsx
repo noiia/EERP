@@ -238,6 +238,40 @@ describe('number/percent', () => {
   })
 })
 
+describe('number/duration', () => {
+  const field: FieldDescriptor = { name: 'slot', label: 'Slot length', type: 'number', widget: 'duration' }
+
+  it('splits minutes into hours and minutes with a clock icon', () => {
+    const { view } = renderWidget(field, 90)
+    expect(screen.getByLabelText('Hours')).toHaveValue(1)
+    expect(screen.getByLabelText('Minutes')).toHaveValue(30)
+    expect(view.container.querySelector('svg')).not.toBeNull()
+  })
+
+  it('emits total minutes when hours change', () => {
+    const { onChange } = renderWidget(field, 90)
+    fireEvent.change(screen.getByLabelText('Hours'), { target: { value: '2' } })
+    expect(onChange).toHaveBeenCalledWith(150)
+  })
+
+  it('clamps minutes to 59', () => {
+    const { onChange } = renderWidget(field, 60)
+    fireEvent.change(screen.getByLabelText('Minutes'), { target: { value: '75' } })
+    expect(onChange).toHaveBeenCalledWith(119)
+  })
+
+  it('emits null once both inputs are emptied', () => {
+    const { onChange } = renderWidget(field, 30)
+    fireEvent.change(screen.getByLabelText('Minutes'), { target: { value: '' } })
+    expect(onChange).toHaveBeenCalledWith(null)
+  })
+
+  it('renders text when disabled', () => {
+    renderWidget(field, 90, { disabled: true })
+    expect(screen.getByText('1 h 30 min')).toBeInTheDocument()
+  })
+})
+
 describe('number/stars', () => {
   it('defaults to 3 stars with half-step granularity', () => {
     const { onChange } = renderWidget(
@@ -257,6 +291,15 @@ describe('number/stars', () => {
       2,
     )
     expect(screen.getByLabelText('5 Stars')).toBeInTheDocument()
+  })
+})
+
+describe('boolean/stars', () => {
+  it('is one star toggling the boolean (a priority flag)', () => {
+    const { onChange } = renderWidget({ name: 'priority', label: 'Priority', type: 'boolean', widget: 'stars' }, false)
+    expect(screen.queryByLabelText('2 Stars')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText('1 Star'))
+    expect(onChange).toHaveBeenCalledWith(true)
   })
 })
 
@@ -314,11 +357,46 @@ describe('selection', () => {
     }
   })
 
+  it('shows an option\'s declared label while keeping its raw value', () => {
+    const labelled = { ...statusField, selection: { options: ['no_estimate'], labels: { no_estimate: 'No estimate on linked tasks' } } }
+    renderWidget(labelled, 'no_estimate')
+    expect(screen.getByLabelText('Status')).toHaveTextContent('No estimate on linked tasks')
+  })
+
   it('picking an option emits its raw (untranslated) value', () => {
     const { onChange } = renderWidget(statusField, 'incoming')
     fireEvent.mouseDown(screen.getByLabelText('Status'))
     fireEvent.click(screen.getByRole('option', { name: 'won' }))
     expect(onChange).toHaveBeenCalledWith('won')
+  })
+})
+
+describe('selection/radio', () => {
+  const kindField: FieldDescriptor = {
+    name: 'kind',
+    label: 'Type',
+    type: 'selection',
+    widget: 'radio',
+    selection: { options: ['company', 'contact'] },
+  }
+
+  it('shows every option as a radio, the value checked, and picks on click', () => {
+    const { onChange } = renderWidget(kindField, 'contact')
+    expect(screen.getByRole('radio', { name: 'contact' })).toBeChecked()
+    expect(screen.getByRole('radio', { name: 'company' })).not.toBeChecked()
+    fireEvent.click(screen.getByRole('radio', { name: 'company' }))
+    expect(onChange).toHaveBeenCalledWith('company')
+  })
+
+  it("is a radio group named by the field label, in a text field's box", () => {
+    const { view } = renderWidget(kindField, 'contact')
+    expect(screen.getByRole('radiogroup', { name: 'Type' })).toBeInTheDocument()
+    expect(view.container.querySelector('.MuiOutlinedInput-root')).not.toBeNull()
+  })
+
+  it('checks nothing for a value outside the list', () => {
+    renderWidget(kindField, 'other')
+    expect(screen.getAllByRole('radio').every((r) => !(r as HTMLInputElement).checked)).toBe(true)
   })
 })
 
@@ -485,5 +563,18 @@ describe('hideLabel', () => {
   it('without hideLabel, the label renders as usual (regression)', () => {
     renderWidget({ name: 'name', label: 'Name', type: 'text' }, 'Ada')
     expect(screen.getByLabelText('Name')).toBeInTheDocument()
+  })
+})
+
+describe('date/datetime', () => {
+  it('round-trips an instant through local time and clears to null', () => {
+    const iso = '2026-10-05T07:30:00.000Z'
+    const { onChange } = renderWidget({ name: 'starts_at', label: 'Start', type: 'date', widget: 'datetime' }, iso)
+    const input = screen.getByLabelText('Start') as HTMLInputElement
+    expect(new Date(input.value).toISOString()).toBe(iso) // local wall clock, no zone
+    fireEvent.change(input, { target: { value: '2026-10-06T09:15' } })
+    expect(onChange).toHaveBeenLastCalledWith(new Date('2026-10-06T09:15').toISOString())
+    fireEvent.change(input, { target: { value: '' } })
+    expect(onChange).toHaveBeenLastCalledWith(null)
   })
 })

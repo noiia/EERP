@@ -1,0 +1,19 @@
+{
+    "active": true,
+    "type": "go",
+    "name": "website",
+    "display_name": "Website",
+    "version": "0.0.1",
+    "author": "",
+    "description": "Public website: pages, published data",
+    "depends": [],
+    "static_files": {
+        "views": [
+            "WebsiteViews.ts"
+        ]
+    },
+    "is_service": false,
+    "auto_install": false,
+    "app_mode": true,
+    "menu_icon": "globe"
+}

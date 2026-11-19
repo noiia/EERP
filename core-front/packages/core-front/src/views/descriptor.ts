@@ -8,6 +8,14 @@ import type { ViewModeDefaults } from '../api/view-fields'
 
 export type ViewType = 'form' | 'tree' | 'dashboard' | 'catalog'
 
+/** A dashboard tile linking to a page instead of counting a list. */
+export interface DashboardLink {
+  title: string
+  description?: string
+  icon?: string
+  path: string
+}
+
 export type FieldType =
   | 'text'
   | 'number'
@@ -17,6 +25,15 @@ export type FieldType =
   | 'selection'
   | 'totals'
   | 'address'
+  | 'geo'
+  | 'distance'
+
+/** A GeoJSON geometry object as the API speaks it ([lon, lat] order). */
+export type GeoJSONGeometry =
+  | { type: 'Point'; coordinates: [number, number] }
+  | { type: 'LineString'; coordinates: [number, number][] }
+  | { type: 'Polygon'; coordinates: [number, number][][] }
+  | { type: 'MultiPolygon'; coordinates: [number, number][][][] }
 
 /**
  * Descriptors cross the RSC boundary as props, so everything in them — widget
@@ -79,16 +96,24 @@ export type JsonValue =
  * (`buildBehaviorPlan`'s `unstored` computation, `behaviors.ts`) — the field
  * itself has no column of its own to write, same "computes/writes through
  * something else" posture `type: 'totals'` already has.
+ * type/geo is a PostGIS geography column, GeoJSON in the draft (ADR-029):
+ * 'point' a draggable marker on a map (+ address search, "Locate from
+ * address" via widgetOptions.address), 'shape' a polygon editor. type/distance
+ * (widget 'meters', always store:false) asks Go for the distance between two
+ * geo values — widgetOptions {from, to}, each {entity, id?, field}, id naming
+ * the draft field holding the record id (omitted = this record).
  */
 export const FIELD_WIDGETS: Record<FieldType, readonly string[]> = {
-  text: ['simple', 'long', 'phone', 'table', 'color', 'url', 'password', 'username'],
-  number: ['float', 'int', 'percent', 'stars', 'phone', 'monetary'],
-  boolean: ['switch', 'picture', 'signature', 'file'],
-  date: ['simple'],
-  relation: ['search', 'tags', 'list', 'carousel', 'summary'],
+  text: ['simple', 'long', 'phone', 'table', 'color', 'url', 'password', 'username', 'user-presence', 'html', 'mindmap'],
+  number: ['float', 'int', 'percent', 'stars', 'duration', 'phone', 'monetary'],
+  boolean: ['switch', 'picture', 'signature', 'file', 'stars'],
+  date: ['simple', 'datetime'],
+  relation: ['search', 'tags', 'list', 'carousel', 'summary', 'colortags'],
   address: ['form'],
-  selection: ['select', 'linked'],
+  selection: ['select', 'linked', 'radio'],
   totals: ['recap'],
+  geo: ['point', 'shape'],
+  distance: ['meters'],
 }
 
 export type RelationKind = 'many2one' | 'one2many' | 'many2many'
@@ -116,7 +141,8 @@ export const RELATION_KIND_WIDGETS: Record<RelationKind, string> = {
 const RELATION_KIND_WIDGET_OVERRIDES: Record<RelationKind, readonly string[]> = {
   many2one: ['summary'],
   one2many: ['carousel'],
-  many2many: [],
+  // Chips with a color dot over related records carrying a color (colortags-widget).
+  many2many: ['colortags'],
 }
 
 /**
@@ -131,6 +157,12 @@ export interface RelationDescriptor {
   labelField?: string
   /** one2many: the FK column ON THE RELATED entity that points back at this record. */
   inverseField?: string
+  /**
+   * one2many by zone, instead of `inverseField`: rows of `entity` whose
+   * `field` point lies inside THIS record's `zone` shape (Go `inside[]`).
+   * Read-only by nature — no FK to preset on a create.
+   */
+  inside?: { field: string; zone: string }
   /** many2many: the junction entity holding one row per link. */
   via?: string
   /**
@@ -148,6 +180,26 @@ export interface RelationDescriptor {
    * always: opt-in, not a behavior change for existing declarations.
    */
   formPath?: string
+  /**
+   * many2one/many2many only: a static `filter[col]=value` scope (the SAME
+   * exact-match param the generic list endpoint's own `filter[]` accepts)
+   * applied to every search/prefill/wizard read of the related entity — the
+   * server-side counterpart to "only offer records matching this," rather
+   * than a client-side post-filter that would still let a typed search find
+   * a row outside the intended scope. E.g. propertymanagement's `uom_id`
+   * picker: `{ type: 'surface' }` so only surface UOMs (m², ft², ...) are
+   * ever offered, not the full piece/length/weight/volume/custom catalog.
+   * Omitted (every relation field before this existed) means unscoped,
+   * unchanged.
+   */
+  filter?: Record<string, string>
+  /**
+   * many2one only: a scope read from THIS record's draft, as `{ <related
+   * column>: <own field name> }` — merged over `filter`, e.g. a task's
+   * `stage_id` offering only its own project's stages (`{ project_id:
+   * 'project_id' }`). A column whose own field is empty is left out.
+   */
+  filterFields?: Record<string, string>
 }
 
 /**
@@ -159,6 +211,8 @@ export interface RelationDescriptor {
  */
 export interface SelectionDescriptor {
   options: string[]
+  /** Display msgid per option (the plain select only); an option without one is translated as itself. */
+  labels?: Record<string, string>
 }
 
 // ── declarative field states (docs/roadmaps/view-customization.md, Phase 2) ───
@@ -169,13 +223,17 @@ export interface SelectionDescriptor {
 // [('status','=','lead')]}"/>` becomes `states: { visible: { field: 'status',
 // op: 'ne', value: 'lead' } }`.
 
-export type ConditionOp = 'eq' | 'ne' | 'in' | 'set' | 'unset'
+export type ConditionOp = 'eq' | 'ne' | 'in' | 'set' | 'unset' | 'before_now' | 'after_now'
 
 /** A single comparison against another field's value in the same record/draft. */
 export interface FieldCondition {
   field: string
   op: ConditionOp
-  /** Required for 'eq'/'ne'/'in' (an array for 'in'); ignored for 'set'/'unset'. */
+  /** Required for 'eq'/'ne'/'in' (an array for 'in'); ignored for 'set'/'unset'.
+   * For 'before_now'/'after_now' (a date field compared with the current time):
+   * an optional offset in minutes added to now — `{ field: 'starts_at', op:
+   * 'before_now', value: 60 }` holds from one hour before starts_at on.
+   * Evaluated at render time; the form doesn't re-render as the clock moves. */
   value?: JsonValue
 }
 
@@ -362,8 +420,8 @@ function resolveRelationWidget(field: FieldDescriptor): string {
         `"${rel.kind}" (allowed: "${allowed}")`,
     )
   }
-  if (rel.kind === 'one2many' && !rel.inverseField) {
-    throw new Error(`field "${field.name}": one2many relations require inverseField`)
+  if (rel.kind === 'one2many' && !rel.inverseField && !rel.inside) {
+    throw new Error(`field "${field.name}": one2many relations require inverseField or inside`)
   }
   if (rel.kind === 'many2many' && !rel.via) {
     throw new Error(`field "${field.name}": many2many relations require via (junction entity)`)
@@ -436,15 +494,22 @@ export function validateCatalogDescriptor<T>(descriptor: ViewDescriptor<T>): voi
  */
 export function validateSearchDescriptor<T>(descriptor: ViewDescriptor<T>): void {
   if (descriptor.viewType !== 'tree' || !descriptor.search) return
-  const { liveFields, filterableFields, groupableFields } = descriptor.search
+  const { liveFields, filterableFields, groupableFields, filterOnlyFields } = descriptor.search
   const fieldNames = new Set(descriptor.fields.map((f) => f.name))
+  for (const f of filterOnlyFields ?? []) {
+    if (fieldNames.has(f.name)) throw new Error(`search.filterOnlyFields "${f.name}" repeats a field of this view`)
+    if (f.type === 'relation' && !f.relation) throw new Error(`search.filterOnlyFields "${f.name}" needs a relation block`)
+  }
+  const filterNames = new Set([...fieldNames, ...(filterOnlyFields ?? []).map((f) => f.name)])
   const checkNamed = (key: string, name: string): void => {
     if (!fieldNames.has(name)) {
       throw new Error(`search.${key} "${name}" is not declared in this view's fields`)
     }
   }
   for (const entry of liveFields ?? []) checkNamed('liveFields', entry.field)
-  for (const name of filterableFields ?? []) checkNamed('filterableFields', name)
+  for (const name of filterableFields ?? []) {
+    if (!filterNames.has(name)) throw new Error(`search.filterableFields "${name}" is not declared in this view's fields`)
+  }
   for (const name of groupableFields ?? []) checkNamed('groupableFields', name)
 }
 
@@ -490,6 +555,8 @@ export function fieldZeroDefault(field: FieldDescriptor): JsonValue {
     case 'relation':
     case 'totals':
     case 'address':
+    case 'geo':
+    case 'distance':
       return null
   }
 }
@@ -561,6 +628,14 @@ export function evaluateCondition(cond: Condition, record: Record<string, unknow
       return !isUnset(value)
     case 'unset':
       return isUnset(value)
+    case 'before_now':
+    case 'after_now': {
+      // An unset or unparseable date is "off" either way, never a crash.
+      const at = typeof value === 'string' && value !== '' ? Date.parse(value) : NaN
+      if (Number.isNaN(at)) return false
+      const ref = Date.now() + (typeof cond.value === 'number' ? cond.value : 0) * 60_000
+      return cond.op === 'before_now' ? at < ref : at > ref
+    }
   }
 }
 
@@ -597,22 +672,44 @@ export function isFieldVisible(
  * is unset — among fields that are currently VISIBLE (isFieldVisible). A
  * hidden field never blocks: the user has no way to fill in what they can't
  * see, so a required condition on an invisible field is inert by design
- * (mirrors Odoo). Virtual relations (o2m/m2m) are skipped — they have no
- * column on this record, so "required" has no meaning for them. Used by the
- * form store to block commit.
+ * (mirrors Odoo). One2many and eager (non-deferred) many2many fields are
+ * skipped — they write immediately on interaction and carry nothing in the
+ * draft to check. A DEFERRED many2many (relation-widgets.tsx's
+ * `widgetOptions.deferred`) is the one virtual-relation case checkable here.
+ * For a brand-new record (`draft.id == null`) its staged diff (duck-typed
+ * below to avoid importing the widget layer from the descriptor layer) is
+ * complete truth on its own. For an EXISTING record, the pre-existing links
+ * live only in the widget's own resolved state, never surfaced to the draft
+ * — `hasDeferredLinks`, when given, is consulted instead (the form store's
+ * commit() wires it to required-relation-store.ts's live widget-reported
+ * signal); `undefined` (no report registered — hidden field, RelationOps not
+ * mounted, or a race with the widget's own async fetch) fails OPEN rather
+ * than risk blocking a valid save. Omitting the callback entirely (e.g. in a
+ * unit test) reproduces the old new-record-only behavior. Used by the form
+ * store to block commit.
  */
 export function requiredMissing<T>(
   descriptor: ViewDescriptor<T>,
   draft: Record<string, unknown>,
+  hasDeferredLinks?: (fieldName: string) => boolean | undefined,
 ): string[] {
   const missing: string[] = []
   for (const field of descriptor.fields) {
-    if (isVirtualRelation(field)) continue
     if (!isFieldVisible(field, draft)) continue
     const required =
       field.required === true ||
       (field.states?.required ? evaluateCondition(field.states.required, draft) : false)
     if (!required) continue
+    if (isVirtualRelation(field)) {
+      if (field.relation?.kind !== 'many2many' || field.widgetOptions?.deferred !== true) continue
+      if (draft.id == null) {
+        const pending = draft[field.name] as { toLink?: unknown[] } | undefined
+        if (!pending?.toLink?.length) missing.push(field.name)
+        continue
+      }
+      if (hasDeferredLinks?.(field.name) === false) missing.push(field.name)
+      continue
+    }
     if (isUnset(draft[field.name])) missing.push(field.name)
   }
   return missing
@@ -657,6 +754,43 @@ export interface LayoutContainerNode {
    * relation wizard's narrow dialog). JSON-only, like every other hint here.
    */
   columns?: number
+  /**
+   * Rendering hint, `columns` only: relative widths (CSS `fr` units) for
+   * an UNEVEN split instead of `columns`' own default even one — "resizable"
+   * in the sense a module DECLARES the ratio it wants (`[2, 1]` for a
+   * 2:1 split), the same "developer picks the shape, JSON-only" contract
+   * every hint in this DSL already follows, not a live end-user drag
+   * handle (this engine has exactly one of those, the chatter panel's own
+   * hand-rolled divider — a bespoke, single-purpose piece of chrome, not a
+   * general layout primitive; nothing here reaches for that pattern).
+   * Length MUST match `columns` — a mismatch falls back to the even split
+   * rather than guessing which ratio was meant.
+   */
+  columnWidths?: number[]
+  /**
+   * Rendering hint, `columns` only: the container-query breakpoint (px)
+   * below which the grid collapses to one column, overriding the default
+   * `layout.formTwoColumnMinWidth` (640px). That default is calibrated for
+   * a TOP-LEVEL form body's own 2-column split — a `columns` group NESTED
+   * inside an already-halved column needs a much smaller width to ever
+   * activate (two short fields side by side fit in a couple hundred px;
+   * waiting for that nested container to reach 640px on its own would need
+   * the whole form to be well over a thousand px wide first). JSON-only,
+   * like every other hint here.
+   */
+  minWidth?: number
+  /**
+   * Rendering hint: a top margin (rem), for the one case `columns`/`kind`
+   * can't express — visually lining a container up against a ROW inside a
+   * sibling composite widget the layout tree has no leaf for (e.g. `type:
+   * 'address'`'s own zip-code/city row, which AddressWidget renders
+   * internally — there is no `address_zip_code` field node to anchor a
+   * `row`/`group` against). A calibrated approximation tied to that
+   * widget's OWN current spacing, not a structural binding — it drifts if
+   * AddressWidget's own rows/gaps change size. JSON-only, like every other
+   * hint here.
+   */
+  offsetTop?: number
   children: LayoutNode[]
 }
 
@@ -907,6 +1041,18 @@ export interface MenuActionNode {
   /** A name registered via `registerMenuAction` for this SAME descriptor's
    * entity — validated at registration (validateMenuActions), not at click. */
   action: string
+  /**
+   * Parity with `HeaderButtonDescriptor.states.readOnly` — the SAME
+   * `Condition` DSL, reevaluated against the CURRENT DRAFT on every render.
+   * Renders the item DISABLED (never unmounted) when it holds, for a menu
+   * action that's a workflow step rather than a one-off (e.g.
+   * propertymanagement's "Generate Rent Receipt", moved from a header
+   * button into this menu but still needing to stay visible-but-unclickable
+   * once already run this month). No `visible` counterpart — unlike a
+   * header button, a menu action isn't meant to change its OWN label/slot
+   * across a workflow, just its clickability.
+   */
+  states?: { readOnly?: Condition }
 }
 
 export interface MenuSubmenuNode {
@@ -940,13 +1086,13 @@ export interface CatalogDescriptor {
  * ranges -> gt[col]/gte[col]/lt[col]/lte[col]. A "between" is just a gte
  * condition and an lte condition on the same field — no separate operator.
  */
-export type FilterOperator = 'eq' | 'contains' | 'in' | 'gt' | 'gte' | 'lt' | 'lte'
+export type FilterOperator = 'eq' | 'contains' | 'in' | 'gt' | 'gte' | 'lt' | 'lte' | 'near' | 'inside' | 'covers'
 
 /** One structured filter row in the search bar's Filters section. */
 export interface FilterCondition {
   field: string
   op: FilterOperator
-  /** eq/contains/gt/gte/lt/lte. */
+  /** eq/contains/gt/gte/lt/lte; near: "lon,lat" or "lon,lat,meters"; inside: "table:id:column"; covers: "lon,lat". */
   value?: string
   /** in only. */
   values?: string[]
@@ -978,23 +1124,38 @@ export interface SearchDescriptor {
   filterableFields?: string[]
   /** Omitted ⇒ every selection/relation/boolean field is groupable. */
   groupableFields?: string[]
+  /**
+   * Fields offered as filters only, never as list columns — e.g. a many2many
+   * the list can't show (a task's assignees). Its filter is sent as
+   * `filter[<name>]=<id>`, which the entity's own list handler must resolve
+   * (the generic list knows only columns). Names must not repeat `fields`.
+   */
+  filterOnlyFields?: FieldDescriptor[]
 }
 
 /**
- * `viewType: 'form'`'s built-in read-only status breadcrumb — names a
- * declared `type: 'selection'` field as the status source; the breadcrumb's
- * own steps are that field's `selection.options`, in declaration order (no
- * separately-declared step list — the field already owns that order, the
- * same "don't re-declare what a field already states" spirit
- * `viewModeDefaults.kanbanStatusField` follows for Kanban's columns). The
- * current step is the field's live value; earlier options read as done,
- * later ones as upcoming. Purely a DISPLAY of the field's value — never
- * interactive, never a second way to edit it — validated at registration
- * (validateStatusBarDescriptor): the named field must exist and be
- * `type: 'selection'`.
+ * `viewType: 'form'`'s built-in status breadcrumb — names a declared
+ * `type: 'selection'` field as the status source; by default the steps are
+ * that field's own `selection.options`, in declaration order (no separately
+ * declared step list — the same "don't re-declare what a field already
+ * states" spirit `viewModeDefaults.kanbanStatusField` follows). An admin may
+ * override the field and the steps per entity from Settings -> Apps ->
+ * :module (`api/status-bar-config.ts`, resolveStatusBar). The current step is
+ * the field's live value; earlier steps read as done, later ones as upcoming.
+ * Validated at registration (validateStatusBarDescriptor): the named field
+ * must exist and be `type: 'selection'`.
  */
 export interface StatusBarDescriptor {
   field: string
+  /**
+   * The breadcrumb IS the field's widget: clicking a step sets the field and
+   * saves the record (an unsaved new record only gets the draft value), and
+   * the field leaves the form body. Needs `<entity>:<entity>:write`; a
+   * read-only field (`readOnly`, `states.readOnly`) keeps the breadcrumb a
+   * plain display. Omitted ⇒ display only, the field keeps its own widget in
+   * the body (sale's invoices/quotes).
+   */
+  editable?: boolean
 }
 
 /**
@@ -1061,6 +1222,14 @@ export interface ViewDescriptor<T = Record<string, unknown>> {
    */
   formPath?: string
   /**
+   * Graph view only: the child entity whose rows a "dated" calculated field is
+   * computed over (e.g. a property's parent rent receipts) — `link` is the FK
+   * column on that entity pointing at this one. Declared on the descriptor the
+   * Graph view renders (the list one), NOT on a form relation field: the list
+   * descriptor doesn't carry the form's relation fields.
+   */
+  graphDatedRows?: { entity: string; link: string }
+  /**
    * Permission required to CREATE records (e.g. 'crm:contacts:write'). When both
    * this and formPath are set, tree/dashboard views show a Create button opening
    * an empty form — only for sessions whose role-derived permissions grant it.
@@ -1109,12 +1278,21 @@ export interface ViewDescriptor<T = Record<string, unknown>> {
    */
   listFilter?: EntityListOptions
   /**
-   * For `viewType: 'form'` only: the built-in read-only status breadcrumb
+   * For `viewType: 'form'` only: the built-in status breadcrumb
    * (see StatusBarDescriptor). Omitted ⇒ no breadcrumb renders — opt-in,
    * unlike Save/Reset/the options menu, since not every form has a
    * meaningful status field.
    */
   statusBar?: StatusBarDescriptor
+  /**
+   * For `viewType: 'form'` only: an API path (relative to `/api/v1`, e.g.
+   * `/settings/warehouse`) whose JSON object becomes the form's context —
+   * read server-side by the loader, and testable by any field condition as
+   * `context.<key>` (form-context.tsx), never part of the record. An
+   * unreadable endpoint gives an empty context (conditions on it read as
+   * unset).
+   */
+  formContext?: string
   /**
    * For `viewType: 'form'` only: the header-button-container (see
    * HeaderButtonDescriptor) — real workflow buttons in the top toolbar, right
@@ -1144,6 +1322,15 @@ export interface ViewDescriptor<T = Record<string, unknown>> {
    */
   navLabel?: string
   /**
+   * For `viewType: 'tree'`/`'catalog'`/`'dashboard'` only: a query string
+   * (`?…`) appended to this route's links — its top-bar header menu line and,
+   * for a module's first route, its app tile. The way to give a list a
+   * REMOVABLE default filter: a `filter[<field>]=<value>` here seeds the
+   * search bar (unlike `listFilter`, which the user can't take off), e.g.
+   * the Project app hiding archived projects (`?filter[active]=true`).
+   */
+  navQuery?: string
+  /**
    * For `viewType: 'tree'`/`'catalog'`/`'dashboard'` only: excludes this
    * route from `ModuleRegistry.headerMenus()`'s auto-generated top-bar
    * button — for a view a module wants reachable only through a hand-placed
@@ -1152,6 +1339,13 @@ export interface ViewDescriptor<T = Record<string, unknown>> {
    * every qualifying route.
    */
   hideFromTopBar?: boolean
+  /**
+   * For `viewType: 'dashboard'` only: extra tiles after the count tiles, each
+   * opening a hand-built page of the module (e.g. the Website app's workflow
+   * map). `title`/`description` are msgids; `icon` is a `byPrefixAndName.fas`
+   * name (it must be in `views/icons.ts`); `path` is module-relative.
+   */
+  dashboardLinks?: DashboardLink[]
   /** Phantom marker so T flows through to the derived store/renderer. */
   readonly __record?: T
 }

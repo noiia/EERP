@@ -9,7 +9,7 @@ import (
 	"core/orm"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // defaultHistoryRetentionYears seeds a freshly-created cron's own retention
@@ -35,7 +35,7 @@ func NewHandler(repo *orm.Repository[cron.Cron]) *Handler {
 }
 
 // Create handles POST /api/v1/cron.
-func (h *Handler) Create(c echo.Context) error {
+func (h *Handler) Create(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	var body cron.Cron
@@ -65,10 +65,10 @@ func (h *Handler) Create(c echo.Context) error {
 // ExecutionDate/RunAsUserID/HistoryRetentionYears always take the body's
 // value verbatim — nil-ing them out is a legitimate edit (clearing a
 // schedule or a run-as user), so there is no "0 means unchanged" for them.
-func (h *Handler) Update(c echo.Context) error {
+func (h *Handler) Update(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "invalid id format")
 	}
@@ -137,7 +137,7 @@ func toColumnMap(repo *orm.Repository[cron.Cron], entity cron.Cron) map[string]a
 	return out
 }
 
-func errorJSON(c echo.Context, status int, code, msg string) error {
+func errorJSON(c *echo.Context, status int, code, msg string) error {
 	return c.JSON(status, map[string]any{
 		"error": map[string]any{
 			"code":       code,

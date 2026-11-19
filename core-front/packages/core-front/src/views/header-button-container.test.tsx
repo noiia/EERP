@@ -144,8 +144,11 @@ describe('HeaderButtonContainer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
 
     await waitFor(() => expect(received).not.toBeNull())
-    expect(received).toMatchObject({ entity: 'quote', recordId: 'r1', draft: { status: 'draft' }, relationOps: ops })
+    expect(received).toMatchObject({ entity: 'quote', recordId: 'r1', draft: { status: 'draft' } })
     expect(typeof received!.setFieldAndCommit).toBe('function')
+    // The provider wraps each op (ActionError unwrapping) — calls still reach the host's.
+    received!.relationOps!.list('contact')
+    expect(ops.list).toHaveBeenCalledWith('contact')
   })
 
   it('a handler calling setFieldAndCommit patches and commits via the passed-in callback', async () => {

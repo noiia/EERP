@@ -1,0 +1,1363 @@
+// Package app wires the backend: config validation, the database, the module
+// registry, every HTTP route and the background jobs. cmd/app only parses
+// flags, loads the config and calls Build + Run, so the whole wiring is
+// exercised by a test (app_test.go boots it against the test database and
+// drives real routes).
+package app
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"sync/atomic"
+	"time"
+
+	"core/internal/attachments"
+	"core/internal/auth"
+	"core/internal/auth/providers"
+	"core/internal/chatter"
+	"core/internal/common"
+	"core/internal/company"
+	"core/internal/cron"
+	"core/internal/dbmanage"
+	"core/internal/devseed"
+	geoapi "core/internal/geo"
+	"core/internal/graphfield"
+	"core/internal/mail"
+	"core/internal/mcpbridge"
+	authmw "core/internal/middleware"
+	"core/internal/module"
+	"core/internal/notebook"
+	"core/internal/notify"
+	"core/internal/payment"
+	"core/internal/pictures"
+	"core/internal/presence"
+	"core/internal/reports"
+	"core/internal/savedfilter"
+	"core/internal/searchindex"
+	"core/internal/settings"
+	"core/internal/teams"
+	"core/internal/types"
+	"core/internal/version"
+	"core/internal/website"
+	_ "core/modules/all"
+	authmodule "core/modules/auth"
+	contactmodule "core/modules/contact"
+	"core/modules/crminheritdemo"
+	cronmodule "core/modules/cron"
+	eventmodule "core/modules/event"
+	paymentstripe "core/modules/payment_stripe"
+	projectmodule "core/modules/project"
+	"core/modules/propertymanagement"
+	"core/modules/sale"
+	"core/modules/warehouse"
+	websitemodule "core/modules/website"
+	"core/orm"
+	"core/orm/access"
+	ormserver "core/orm/server"
+
+	"github.com/bytecodealliance/wasmtime-go/v50"
+	"github.com/google/uuid"
+	"github.com/labstack/echo/v5"
+	"github.com/nats-io/nats.go"
+	"go.uber.org/zap"
+)
+
+// App is the fully wired backend.
+type App struct {
+	cfg         *types.Config
+	configPath  string // dbmanage persists database switches back into it
+	db          *orm.App
+	engine      *wasmtime.Engine
+	linker      *wasmtime.Linker
+	server      *ormserver.Server
+	userRepo    *auth.UserRepository
+	permRepo    *auth.PermissionRepository
+	presenceHub *presence.Hub
+	notify      *notify.Service
+	startedAt   time.Time       // when Build began: activities created before it are from a previous process
+	cache       *orm.QueryCache // nil when redis_url is unset/unreachable
+	extAuth     *providers.Handler
+	rates       *website.LiveRates // the site's live exchange rates, refreshed by Run
+}
+
+// Build validates cfg (relative paths already resolved — types.Config.ResolvePaths),
+// creates the configured database if missing, opens the pool, boots every module,
+// seeds the default admin (and, in development, demo data) and mounts every route.
+// It does not listen yet: call Run. configPath is the config file's own path.
+func Build(ctx context.Context, cfg *types.Config, configPath string, debug bool) (*App, error) {
+	buildStart := time.Now()
+	configContent := cfg
+
+	// Refuse to start with an insecure signing key. Named literals below are
+	// values that have actually shipped as committed "defaults" in this repo's
+	// history (docs/security/pentest-2026-09-24.md finding 1) — rejecting them
+	// by name, not just by weak length, closes the exact hole a stale clone
+	// would otherwise reopen.
+	switch {
+	case configContent.MasterPassword == "" || configContent.MasterPassword == "change-me-in-production":
+		return nil, errors.New("master_key is empty or set to the insecure default — set a strong secret in the config before starting")
+	case configContent.MasterPassword == "ueioiehsiuehfs":
+		return nil, errors.New("master_key is set to a value previously committed to this repo's history — it must be treated as compromised; generate a new secret")
+	case len(configContent.MasterPassword) < 32:
+		return nil, errors.New("master_key is too short to be a real signing secret (need 32+ bytes) — generate one with e.g. `openssl rand -base64 48`")
+	}
+
+	// Same posture for the DB credential — the ORM connects with whatever's
+	// here, so a weak/default value is a straight DB compromise for anyone who
+	// reaches the db port (see the pentest report's Finding 3).
+	switch {
+	case configContent.DbPassword == "" || configContent.DbPassword == "change-me-in-production":
+		return nil, errors.New("db_password is empty or set to the insecure default — set a strong secret in the config before starting")
+	case configContent.DbPassword == "postgres":
+		return nil, errors.New("db_password is set to a value previously committed to this repo's history — it must be treated as compromised; generate a new secret")
+	}
+
+	if err := mail.ValidateConfig(configContent); err != nil {
+		return nil, err
+	}
+	if err := mcpbridge.ValidateConfig(configContent); err != nil {
+		return nil, err
+	}
+	for _, w := range mail.ConfigWarnings(configContent) {
+		common.Logger.Warn("mail: " + w)
+	}
+
+	// "environment" drives two behaviors (types.Config's own doc comment): demo
+	// seeding only ever runs in development, and a freshly-seeded default admin
+	// is only forced to change its password in production. No silent default —
+	// an unset/misspelled value is exactly the kind of mistake that should fail
+	// loud at boot rather than quietly landing on whichever behavior "".
+	if configContent.Environment != "development" && configContent.Environment != "production" {
+		return nil, fmt.Errorf(`environment must be "development" or "production", got %q`, configContent.Environment)
+	}
+
+	// api.yaml now carries only cosmetic API-surface overrides; security-critical
+	// exclusions live in code (WithExcludeFields / WithExcluded). Even so, if a path
+	// is configured the file MUST load cleanly — a missing or malformed override file
+	// is a misconfiguration, so we fail closed rather than silently drop overrides.
+	if configContent.ApiConfigPath != "" {
+		if err := orm.LoadAPIConfig(configContent.ApiConfigPath); err != nil {
+			return nil, fmt.Errorf("load api config %s: %w", configContent.ApiConfigPath, err)
+		}
+	}
+
+	// The database named in the config must exist before orm.New below can
+	// connect to it at all — Postgres refuses a connection to a database
+	// that isn't there. Creating it here (empty; module.Registry.Boot +
+	// auth.SeedDevAdmin just below still do all real schema provisioning,
+	// unconditionally, exactly as for any other empty database) is what
+	// lets a fresh deployment, or an existing one simply pointed at a
+	// different db_name, boot straight into a usable state instead of
+	// refusing to start. An already-existing database is left untouched.
+	if err := dbmanage.EnsureDatabaseExists(ctx, configContent); err != nil {
+		return nil, fmt.Errorf("Error ensuring configured database exists: %w", err)
+	}
+
+	dbConf := configContent.PoolConfig(configContent.DSN())
+	dbConf.Debug = debug
+	if err := dbConf.Validate(); err != nil {
+		return nil, fmt.Errorf("validate db config: %w", err)
+	}
+	app, err := orm.New(dbConf, common.Logger)
+	if err != nil {
+		return nil, fmt.Errorf("open db pool: %w", err)
+	}
+
+	engine := wasmtime.NewEngine()
+	linker := wasmtime.NewLinker(engine)
+	if err := linker.DefineWasi(); err != nil {
+		_ = app.Close()
+		return nil, fmt.Errorf("define WASI: %w", err)
+	}
+	if err := linker.FuncWrap("host", "log", func(ptr int32, len int32) {
+		common.Logger.Info("📦 WASM LOG CALLED")
+	}); err != nil {
+		_ = app.Close()
+		return nil, fmt.Errorf("wrap host log: %w", err)
+	}
+
+	// moduleRuntime replaces the old one-shot LoadModules/LoadGoModules pair:
+	// it loads EVERY discovered module (WASM and Go, active or not) and keeps
+	// enough live state (which module owns which table, and whether it's
+	// currently active) to gate requests and flip modules on/off with no
+	// restart — see internal/module/runtime.go.
+	moduleRuntime := module.NewRegistry(engine, linker, app.DB, configContent.ModuleRoot)
+	for _, err := range moduleRuntime.Boot(ctx) {
+		common.Logger.Error("❌ Error loading module", zap.Error(err))
+	}
+
+	// Always seed the default admin so login works on a brand-new database, in every
+	// mode — no config flag to miss. Idempotent (ON CONFLICT (id) DO NOTHING on a fixed
+	// id): once the credential is changed through the app, re-running this on later
+	// boots never overwrites it. In production this ALSO seeds the account with
+	// must_change_password=true (SeedDevAdmin's own doc comment), which
+	// PermissionMiddleware then enforces — the account exists and can log in, but
+	// can't touch anything else until the password is changed, so "change it
+	// immediately" is enforced instead of just requested. Development mode skips
+	// that gate entirely (the same convenience seed_demo_data below assumes).
+	if err := auth.SeedDevAdmin(ctx, app.DB, configContent.Environment); err != nil {
+		common.Logger.Error("❌ seed default admin failed", zap.Error(err))
+	} else {
+		common.Logger.Warn("⚠️  default admin available — change its password immediately", zap.String("email", auth.DevAdminEmail))
+	}
+	// The notification catalog syncs per tenant with a user — on a fresh
+	// database the admin above is the first one, seeded after the modules
+	// migrated, so sync again to give its tenant (and admin role) the catalog.
+	if err := notify.NewRepository(app.DB).SyncCatalog(ctx); err != nil {
+		common.Logger.Warn("notify: sync catalog after admin seed", zap.Error(err))
+	}
+
+	// DEV ONLY: demo Property Management data (a property, its equipment/history,
+	// a tenant, a generated rent receipt) so the module isn't empty out of the box.
+	// Gated on environment now too (not just the flag) — a "production"-mode boot
+	// never seeds fake data no matter how seed_demo_data is set.
+	if configContent.Environment == "development" && configContent.SeedDemoData {
+		if err := propertymanagement.SeedDemoData(ctx, app.DB); err != nil {
+			common.Logger.Error("❌ seed property management demo data failed", zap.Error(err))
+		} else {
+			common.Logger.Warn("⚠️  seeded DEV property management demo data")
+		}
+	}
+
+	// Optional Redis read cache (ADR-022). Enabled after boot + seeding so
+	// SetQueryCache's own invalidation also covers this boot's migrations.
+	qc := openQueryCache(ctx, configContent)
+	app.DB.SetQueryCache(qc)
+
+	a := &App{cfg: configContent, configPath: configPath, db: app, engine: engine, linker: linker, cache: qc, startedAt: buildStart, rates: website.NewLiveRates(website.ECBDailyURL)}
+	if err := a.mountRoutes(moduleRuntime); err != nil {
+		_ = app.Close()
+		return nil, err
+	}
+	return a, nil
+}
+
+// Handler is the HTTP handler serving every route (tests use it directly; Run
+// serves it on the configured address).
+func (a *App) Handler() http.Handler { return a.server.Echo() }
+
+// Close releases the DB pool.
+func (a *App) Close() {
+	_ = a.cache.Close()
+	_ = a.db.Close()
+}
+
+// openQueryCache connects the optional Redis read cache. Redis is never
+// required: unset → nil, unreachable → logged and nil, so the app always boots.
+func openQueryCache(ctx context.Context, cfg *types.Config) *orm.QueryCache {
+	if cfg.RedisURL == "" {
+		return nil
+	}
+	qc, err := orm.NewQueryCache(ctx, cfg.RedisURL, time.Duration(cfg.RedisTTLSeconds)*time.Second)
+	if err != nil {
+		common.Logger.Warn("⚠️  redis_url set but Redis is unreachable — running without the read cache", zap.Error(err))
+		return nil
+	}
+	// Runtime Redis failures fall through to Postgres; log at most once a
+	// minute so an outage doesn't flood the log.
+	var lastLog atomic.Int64
+	qc.OnError = func(err error) {
+		now := time.Now().Unix()
+		if last := lastLog.Load(); now-last >= 60 && lastLog.CompareAndSwap(last, now) {
+			common.Logger.Warn("redis read cache error — serving from Postgres", zap.Error(err))
+		}
+	}
+	common.Logger.Info("read cache: redis enabled")
+	return qc
+}
+
+// mountRoutes builds the server and mounts every route group.
+func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
+	configContent, app, engine, linker := a.cfg, a.db, a.engine, a.linker
+	var err error
+	ctx := context.Background()
+
+	// ── Auth layer ────────────────────────────────────────────────────────────
+	tokenSvc := auth.NewTokenService(configContent)
+	refreshStore := auth.NewRefreshStore(app.DB)
+	userRepo := auth.NewUserRepository(app.DB)
+	// A website signup also creates its contact (contact.website = true), in the
+	// same transaction; bookings made from that account link to it.
+	userRepo.OnWebsiteSignup = func(ctx context.Context, tx *orm.Tx, u auth.Users) error {
+		_, err := contactmodule.CreateWebsiteContact(ctx, tx, u.TenantID, contactmodule.WebsiteContact{
+			Name: u.Name, Surname: u.Surname, Email: u.Email, Phone: u.Phone})
+		return err
+	}
+	permRepo := auth.NewPermissionRepository(app.DB)
+	// The Project app's row scopes need it to tell project admins (ADR-038).
+	projectmodule.SetPermissions(permRepo)
+	authHandler := auth.NewHandler(userRepo, tokenSvc, refreshStore, permRepo)
+
+	jwtMw := authmw.JWTMiddleware(tokenSvc)
+	permMw := authmw.PermissionMiddleware(permRepo)
+
+	// The database restore upload (internal/dbmanage) gets its own cap, matching
+	// infra/nginx/nginx.conf's client_max_body_size on /api/v1/database-management/.
+	const (
+		dbRestorePath      = "/api/v1/database-management/databases/restore"
+		dbRestoreBodyLimit = "2G"
+	)
+
+	// ── Build server ──────────────────────────────────────────────────────────
+	// Bind on PublicAddress (e.g. 0.0.0.0); clients reach the API at BackendBaseURL
+	// (BackendHost[:BackendPort]/api/BackendVersion) — that's what the frontend uses.
+	srvCfg := ormserver.Config{
+		Addr:         fmt.Sprintf("%s:%d", configContent.PublicAddress, configContent.BackendPort),
+		AllowOrigins: configContent.AllowedOrigins,
+		BodyLimit:    configContent.RequestBodyLimit,
+		// File uploads get their own, larger cap (uploadLimit below) instead of
+		// raising request_body_limit for every JSON route.
+		// /api/v1/teams/channels holds only the chat message routes and /api/v1/teams/<id>/files
+		// the team file routes; their body-reading routes get uploadLimit.
+		BodyLimitExempt: []string{"/api/v1/pictures", "/api/v1/attachments", "/api/v1/teams/channels", "/api/v1/teams/*/files", dbRestorePath},
+	}
+	uploadLimit := ormserver.BodyLimit(configContent.UploadBodyLimitOrDefault())
+	if len(configContent.AllowedOrigins) == 0 {
+		common.Logger.Warn("⚠️  allowed_origins not set — CORS defaults to \"*\"; set it to the frontend origin(s) in production")
+	}
+	srv := ormserver.New(app, srvCfg)
+	common.Logger.Info("backend API base", zap.String("url", configContent.BackendBaseURL()))
+
+	// Public auth routes — no JWT/permission middleware, but rate-limited per IP to
+	// blunt credential brute-forcing.
+	authGroup := srv.Echo().Group("/api/v1/auth", ormserver.AuthRateLimiter(configContent.AuthRateLimitPerMinute))
+	authGroup.POST("/login", authHandler.Login)
+	authGroup.POST("/refresh", authHandler.Refresh)
+	authGroup.POST("/logout", authHandler.Logout)
+
+	// ── Settings / preferences ────────────────────────────────────────────────
+	companyRepo := company.NewRepository(app.DB)
+	settingsHandler := settings.NewHandler(userRepo, settings.NewRepository(app.DB), companyRepo, configContent.Environment)
+
+	// Self-service routes: JWT only, no permission middleware. The identity in the
+	// token scopes every query to the caller's own record, so granting a dedicated
+	// permission would gate users out of their own preferences.
+	meGroup := srv.Echo().Group("/api/v1/me", jwtMw)
+	meGroup.GET("/preferences", settingsHandler.GetMyPreferences)
+	meGroup.PUT("/preferences", settingsHandler.PutMyPreferences)
+	viewLayouts := settings.NewViewLayoutHandler(app.DB)
+	meGroup.GET("/view_layout/:entity/:mode", viewLayouts.Get)
+	meGroup.PUT("/view_layout/:entity/:mode", viewLayouts.Put)
+	// Staff calendar feed (modules/event/feeds.go): the caller's own secret link.
+	eventFeeds := eventmodule.NewFeedHandler(app.DB, userRepo, permRepo)
+	meGroup.GET("/event_feed", eventFeeds.GetMine)
+	meGroup.POST("/event_feed", eventFeeds.Create)
+	meGroup.DELETE("/event_feed", eventFeeds.Delete)
+	// The feed itself: no session (calendar apps can't log in) — the token is the
+	// credential, and the owner's permission is re-checked on every fetch.
+	srv.Echo().GET("/api/v1/calendar/:file", eventFeeds.Feed, ormserver.AuthRateLimiter(configContent.AuthRateLimitPerMinute))
+
+	// Tenant-wide settings: JWT + permission middleware (PUT /settings/i18n
+	// derives settings:i18n:write, PUT /settings/format settings:format:write,
+	// GET|PUT /settings/views/:entity/fields, .../graph, and .../chatter all
+	// derive settings:views:read|write — the Kanban/Calendar field config and
+	// Graph tile layout from docs/roadmaps/list-view-modes.md, plus the form
+	// chatter panel's visibility override (core-front/CLAUDE.md's "Form
+	// chatter panel" row)).
+	settingsGroup := srv.Echo().Group("/api/v1/settings", jwtMw, permMw)
+	settingsGroup.PUT("/i18n", settingsHandler.PutI18nSettings)
+	settingsGroup.PUT("/format", settingsHandler.PutFormatSettings)
+	settingsGroup.PUT("/format/date", settingsHandler.PutDateFormatSettings)
+	settingsGroup.GET("/views/:entity/fields", settingsHandler.GetViewFieldsSettings)
+	settingsGroup.PUT("/views/:entity/fields", settingsHandler.PutViewFieldsSettings)
+	settingsGroup.GET("/views/:entity/graph", settingsHandler.GetGraphLayoutSettings)
+	settingsGroup.PUT("/views/:entity/graph", settingsHandler.PutGraphLayoutSettings)
+	settingsGroup.GET("/views/:entity/chatter", settingsHandler.GetChatterSettings)
+	settingsGroup.PUT("/views/:entity/chatter", settingsHandler.PutChatterSettings)
+	settingsGroup.GET("/views/:entity/status_bar", settingsHandler.GetStatusBarSettings)
+	settingsGroup.PUT("/views/:entity/status_bar", settingsHandler.PutStatusBarSettings)
+	settingsGroup.GET("/apps/:module/picture-size", settingsHandler.GetPictureSizeSettings)
+	settingsGroup.PUT("/apps/:module/picture-size", settingsHandler.PutPictureSizeSettings)
+	settingsGroup.GET("/reports/layout", settingsHandler.GetReportsLayoutSettings)
+	settingsGroup.PUT("/reports/layout", settingsHandler.PutReportsLayoutSettings)
+	settingsGroup.GET("/integrations/osm", settingsHandler.GetOSMSettings)
+	settingsGroup.PUT("/integrations/osm", settingsHandler.PutOSMSettings)
+	settingsGroup.GET("/tax", settingsHandler.GetTaxSettings)
+	settingsGroup.PUT("/tax", settingsHandler.PutTaxSettings)
+	settingsGroup.GET("/units", settingsHandler.GetUnitSettings)
+	settingsGroup.PUT("/units", settingsHandler.PutUnitSettings)
+	// Online payment (internal/payment, ADR-028): a provider counts only while
+	// its module is active; Stripe's keys are edited here (settings:integrations:*).
+	payment.SetActiveCheck(moduleRuntime.IsActive)
+	orm.SetTableActiveCheck(moduleRuntime.IsTableActive)
+	stripe := paymentstripe.Use(settings.NewRepository(app.DB))
+	settingsGroup.GET("/integrations/stripe", stripe.GetSettings(moduleRuntime.IsActive))
+	settingsGroup.PUT("/integrations/stripe", stripe.PutSettings)
+	// Email templates (internal/mail, ADR-027): settings:mail_templates:*, route-derived.
+	mailTemplates := mail.NewTemplateHandler(app.DB)
+	settingsGroup.GET("/mail_templates", mailTemplates.List)
+	settingsGroup.PUT("/mail_templates/:key/:locale", mailTemplates.Put)
+	settingsGroup.DELETE("/mail_templates/:key/:locale", mailTemplates.Delete)
+	settingsGroup.GET("/accounts", settingsHandler.GetAccountsSettings)
+	settingsGroup.PUT("/accounts", settingsHandler.PutAccountsSettings)
+
+	// Website published data (ADR-024): settings:website:read|write, route-derived.
+	siteTenant, err := website.ResolveTenant(ctx, app.DB, configContent.WebsiteTenantID)
+	if err != nil {
+		common.Logger.Warn("public website routes disabled", zap.Error(err))
+	}
+
+	// External ERP sign-in (ADR-030): LDAP / OIDC + the login screen's methods.
+	secretBox, err := providers.NewSecretBox(configContent.MasterPassword)
+	if err != nil {
+		return fmt.Errorf("auth secrets: %w", err)
+	}
+	roleRepo := auth.NewRoleRepository(app.DB)
+	var ldapPhotos providers.PhotoSyncer // LDAP photos → avatars; needs object storage
+	if pictures.S3Configured(configContent) {
+		photoObjects, err := pictures.NewS3Store(configContent)
+		if err != nil {
+			return fmt.Errorf("Error building S3 object store: %w", err)
+		}
+		photoRepo := pictures.NewRepository(app.DB)
+		ldapPhotos = providers.NewPhotoSync(photoRepo, photoObjects, photoRepo)
+	}
+	a.extAuth = providers.NewHandler(providers.Deps{
+		Store:  providers.NewStore(settings.NewRepository(app.DB), secretBox),
+		Tenant: siteTenant,
+		Roles: func(ctx context.Context, tenant uuid.UUID) (map[uuid.UUID]bool, error) {
+			list, err := roleRepo.ListByTenant(ctx, tenant)
+			if err != nil {
+				return nil, err
+			}
+			out := make(map[uuid.UUID]bool, len(list))
+			for _, r := range list {
+				out[r.ID] = true
+			}
+			return out, nil
+		},
+		Directory:   providers.LDAPDirectory{},
+		OIDC:        providers.NewOIDCClient(nil),
+		Provisioner: providers.NewProvisioner(app.DB),
+		Photos:      ldapPhotos,
+		Sessions:    authHandler,
+		Logger:      common.Logger,
+	})
+	authGroup.GET("/methods", a.extAuth.PublicMethods)
+	authGroup.POST("/ldap/login", a.extAuth.LDAPLogin)
+	authGroup.GET("/oidc/providers/:id/authorize", a.extAuth.OIDCAuthorize)
+	authGroup.POST("/oidc/providers/:id/exchange", a.extAuth.OIDCExchange)
+	settingsGroup.GET("/auth", a.extAuth.GetSettings)
+	settingsGroup.PUT("/auth", a.extAuth.PutSettings)
+	settingsGroup.POST("/auth/test", a.extAuth.TestSettings)
+	siteStore := settings.NewRepository(app.DB)
+	publisher := website.NewPublisher(siteStore, siteTenant)
+	routing := website.NewRoutingHandler(siteStore, siteTenant)
+	settingsGroup.GET("/website/routing", routing.Get)
+	settingsGroup.PUT("/website/routing", routing.Put)
+	settingsGroup.GET("/website/public", publisher.GetPublished)
+	settingsGroup.PUT("/website/public/:table", publisher.PutPublished)
+	// Legal notice, security.txt and robots.txt (same settings:website:* permissions).
+	siteFiles := website.NewSiteFilesHandler(siteStore, siteTenant)
+	settingsGroup.GET("/website/legal", siteFiles.GetLegal)
+	settingsGroup.PUT("/website/legal", siteFiles.PutLegal)
+	settingsGroup.GET("/website/security", siteFiles.GetSecurity)
+	settingsGroup.PUT("/website/security", siteFiles.PutSecurity)
+	settingsGroup.GET("/website/robots", siteFiles.GetRobots)
+	settingsGroup.PUT("/website/robots", siteFiles.PutRobots)
+	// Website forms (ADR-033): the tables/columns a Form block may write.
+	siteForms := website.NewFormHandler(app.DB, siteTenant, moduleRuntime.IsTableActive, userRepo)
+	settingsGroup.GET("/website/form_targets", siteForms.FormTargets)
+	// Positions of the Website app's workflow map boxes, shared by the team.
+	workflowLayout := website.NewWorkflowLayoutHandler(siteStore)
+	settingsGroup.GET("/website/workflow_layout", workflowLayout.Get)
+	settingsGroup.PUT("/website/workflow_layout", workflowLayout.Put)
+	// Site language & currency defaults, offered currencies and rate overrides.
+	siteLocalization := website.NewLocalizationHandler(siteStore, siteTenant, siteCompany(app.DB), a.rates)
+	settingsGroup.GET("/website/localization", siteLocalization.Get)
+	settingsGroup.PUT("/website/localization", siteLocalization.Put)
+
+	// Company (multi-company): POST /company/:id/clone-settings copies every
+	// setting from company :id (the source) to target_company_id — a new
+	// company's create flow calls this once, right after creating the row,
+	// before switching into it. Permission derives to company:company:write
+	// from the route shape — the same permission creating a company itself
+	// needs, no custom check required.
+	companyGroup := srv.Echo().Group("/api/v1/company", jwtMw, permMw)
+	companyGroup.POST("/:id/clone-settings", settingsHandler.CloneCompanySettings)
+
+	// ── Pictures ──────────────────────────────────────────────────────────────
+	// Dedicated binary-content endpoints (the picture table is off the generic
+	// CRUD surface). Mounted only when the config carries an object store —
+	// without s3_* the feature is absent, not broken. The permission middleware
+	// derives pictures:pictures:read|write|delete from the routes.
+	var publicPictures ormserver.PictureServer
+	var seedPictures devseed.SampleStore // the dev seed's sample pictures; nil without s3_*
+	if pictures.S3Configured(configContent) {
+		objects, err := pictures.NewS3Store(configContent)
+		if err != nil {
+			return fmt.Errorf("Error building S3 object store: %w", err)
+		}
+		seedPictures = objects
+		picRepo := pictures.NewRepository(app.DB)
+		publicPictures = func(c *echo.Context, table string, recordID uuid.UUID, field string) error {
+			ctx := c.Request().Context()
+			tenant, _ := access.TenantFromContext(ctx)
+			p, err := picRepo.FindByAnchor(ctx, tenant, table, recordID, field)
+			if errors.Is(err, orm.ErrNotFound) {
+				return echo.NewHTTPError(http.StatusNotFound, "not found")
+			}
+			if err != nil {
+				return err
+			}
+			body, ctype, err := objects.Get(ctx, p.ObjectKey)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = body.Close() }()
+			if p.Mime != "" {
+				ctype = p.Mime
+			}
+			c.Response().Header().Set("Cache-Control", "public, max-age=300")
+			return c.Stream(http.StatusOK, ctype, body)
+		}
+		picturesHandler := pictures.NewHandler(picRepo, objects).WithRowScope(app.DB)
+		picturesGroup := srv.Echo().Group("/api/v1/pictures", uploadLimit, jwtMw, permMw)
+		picturesGroup.POST("", picturesHandler.Upload)
+		picturesGroup.GET("", picturesHandler.Find)
+		picturesGroup.GET("/:id", picturesHandler.Get)
+		picturesGroup.DELETE("/:id", picturesHandler.Delete)
+		// A colleague's avatar (users.avatar anchor): JWT only, like notifications —
+		// any staff user may see it; the handler pins the tenant and staff kind.
+		srv.Echo().GET("/api/v1/avatars/:user", pictures.NewAvatarHandler(picRepo, objects, userRepo).Get, jwtMw)
+	} else {
+		common.Logger.Warn("⚠️  s3_* not configured — picture endpoints disabled")
+	}
+
+	// ── Attachments ───────────────────────────────────────────────────────────
+	// Dedicated arbitrary-file endpoints (internal/attachments — the non-image
+	// sibling of pictures above: boolean/file fields, e.g. property_management's
+	// "billing of buy" and rent-receipt PDFs). Same S3 config/gate as pictures
+	// (a second pictures.NewS3Store call, its own client instance — the object
+	// store layer is provider-agnostic, reused verbatim rather than duplicated).
+	// The permission middleware derives attachments:attachments:read|write|delete
+	// from the routes.
+	if pictures.S3Configured(configContent) {
+		attachmentObjects, err := pictures.NewS3Store(configContent)
+		if err != nil {
+			return fmt.Errorf("Error building S3 object store for attachments: %w", err)
+		}
+		attachmentsHandler := attachments.NewHandler(attachments.NewRepository(app.DB), attachmentObjects).WithRowScope(app.DB)
+		attachmentsGroup := srv.Echo().Group("/api/v1/attachments", uploadLimit, jwtMw, permMw)
+		attachmentsGroup.POST("", attachmentsHandler.Upload)
+		attachmentsGroup.GET("", attachmentsHandler.Find)
+		attachmentsGroup.GET("/:id", attachmentsHandler.Get)
+		attachmentsGroup.DELETE("/:id", attachmentsHandler.Delete)
+	} else {
+		common.Logger.Warn("⚠️  s3_* not configured — attachment endpoints disabled")
+	}
+
+	// ── Reports (PDF generation) ─────────────────────────────────────────────
+	// Dedicated report-generation endpoints (docs/adr/ADR-010, docs/roadmaps/
+	// pdf-reports.md) — mounted only when both an object store (s3_*, shared
+	// with pictures) and a way to reach a renderer (pdf_service_url or
+	// nats_url, Phase 5) plus frontend_base_url are configured; absent
+	// either, the feature is simply not mounted, same posture as pictures'
+	// own s3_* gate. GeneratePDF is deliberately NOT behind permMw (see its
+	// own doc comment); DownloadPDF is, since it's a flat route.
+	// One NATS connection for everything core asks other services over the bus
+	// (report renders, version probes). RetryOnFailedConnect: a transient NATS
+	// outage at boot (e.g. the nats container is still starting) must not crash
+	// the whole API server for features that degrade gracefully — Connect returns
+	// immediately, reconnecting in the background; a request attempted before
+	// the first successful connect just fails that one request.
+	var nc *nats.Conn
+	if configContent.NatsURL != "" {
+		nc, err = nats.Connect(configContent.NatsURL,
+			nats.RetryOnFailedConnect(true),
+			nats.MaxReconnects(-1),
+		)
+		if err != nil {
+			return fmt.Errorf("Error connecting to NATS: %w", err)
+		}
+	}
+
+	// ── Versions ──────────────────────────────────────────────────────────────
+	// Which build of each service is running, for the Settings dashboard
+	// (internal/version). Register a new service here with its probe.
+	versions := version.NewRegistry()
+	switch {
+	case nc != nil:
+		versions.Register(version.Service{Name: "pdf-service", Label: "PDF worker", Probe: version.NATSProbe(nc, "pdf-service")})
+	case configContent.PDFServiceURL != "":
+		versions.Register(version.Service{
+			Name: "pdf-service", Label: "PDF worker",
+			Probe: version.HTTPProbe(&http.Client{}, configContent.PDFServiceURL),
+		})
+	}
+	srv.Echo().GET("/api/v1/versions", versions.Handler, jwtMw)
+
+	// Set when report generation is configured; sale's quote/invoice Send
+	// attaches the rendered PDF through it.
+	var reportsHandler *reports.Handler
+	if pictures.S3Configured(configContent) && reports.Configured(configContent) {
+		reportsObjects, err := pictures.NewS3Store(configContent)
+		if err != nil {
+			return fmt.Errorf("Error building S3 object store for reports: %w", err)
+		}
+
+		// NATS wins if BOTH are set — nats_url is only ever set deliberately
+		// (to actually get multi-worker scaling), so it names real intent;
+		// pdf_service_url stays the zero-extra-infra default otherwise.
+		var pdfRenderer reports.PDFRenderer
+		if nc != nil {
+			pdfRenderer = reports.NewNATSPDFRenderer(nc, 25*time.Second)
+			common.Logger.Info("reports: rendering via NATS", zap.String("nats_url", configContent.NatsURL))
+		} else {
+			pdfRenderer = reports.NewHTTPPDFRenderer(configContent.PDFServiceURL)
+		}
+
+		reportsHandler = reports.NewHandler(
+			pdfRenderer,
+			reportsObjects,
+			tokenSvc,
+			permRepo,
+			configContent.FrontendBaseURL,
+		)
+		reportsGroup := srv.Echo().Group("/api/v1/reports", jwtMw)
+		reportsGroup.POST("/:name/:id/pdf", reportsHandler.GeneratePDF)
+		reportsGroup.GET("/pdf", reportsHandler.DownloadPDF, permMw)
+	} else {
+		common.Logger.Warn("⚠️  s3_* / pdf_service_url|nats_url / frontend_base_url not configured — report generation disabled")
+	}
+
+	// ── Notebook pages ────────────────────────────────────────────────────────
+	// Runtime, per-record notebook pages (docs/roadmaps/responsive-displays.md,
+	// Phase 5) — the third category ADR-007 names alongside descriptor structure
+	// and workspace app_settings. Dedicated, tenant-pinned endpoints off the
+	// generic CRUD surface, mirroring the picture service's shape minus the
+	// object-storage leg (page content is text, stored in the row). No external
+	// dependency to gate on, so — unlike pictures — this mounts unconditionally.
+	// The permission middleware derives notebook_pages:notebook_pages:read|write|delete
+	// from the route.
+	notebookHandler := notebook.NewHandler(notebook.NewRepository(app.DB)).WithRowScope(app.DB)
+	notebookGroup := srv.Echo().Group("/api/v1/notebook_pages", jwtMw, permMw)
+	notebookGroup.GET("", notebookHandler.List)
+	notebookGroup.POST("", notebookHandler.Create)
+	notebookGroup.PUT("/:id", notebookHandler.Update)
+	notebookGroup.DELETE("/:id", notebookHandler.Delete)
+
+	// ── Saved filters ─────────────────────────────────────────────────────────
+	// Named search-bar filter combinations (docs/adr/ADR-014-search-filter-bar.md),
+	// private or shared per row. Dedicated, tenant-pinned endpoints off the
+	// generic CRUD surface — "private OR shared" visibility and the owner-only
+	// rename/delete check can't be expressed by a bare column-whitelist handler.
+	// The permission middleware derives saved_filters:saved_filters:read|write|delete
+	// from the route (a flat route with no literal second segment, so this is
+	// safe — see the ADR for the /distinct query-param decision this mirrors).
+	savedFilterHandler := savedfilter.NewHandler(savedfilter.NewRepository(app.DB))
+	savedFilterGroup := srv.Echo().Group("/api/v1/saved_filters", jwtMw, permMw)
+	savedFilterGroup.GET("", savedFilterHandler.List)
+	savedFilterGroup.POST("", savedFilterHandler.Create)
+	savedFilterGroup.PUT("/:id", savedFilterHandler.Update)
+	savedFilterGroup.DELETE("/:id", savedFilterHandler.Delete)
+
+	// Mail outbox admin (internal/mail): mail_outbox:mail_outbox:read|write, route-derived.
+	mailHandler := mail.NewHandler(app.DB)
+	mailGroup := srv.Echo().Group("/api/v1/mail_outbox", jwtMw, permMw)
+	mailGroup.GET("", mailHandler.List)
+	mailGroup.POST("/:id/retry", mailHandler.Retry)
+
+	// ── Graph calculated fields ───────────────────────────────────────────────
+	// Chart-only formula fields created from the Graph view, role-gated per row.
+	// Dedicated tenant-pinned endpoints; permissions graph_fields:graph_fields:*
+	// derive from the route. DELETE is a real hard delete.
+	graphFieldHandler := graphfield.NewHandler(graphfield.NewRepository(app.DB))
+	graphFieldGroup := srv.Echo().Group("/api/v1/graph_fields", jwtMw, permMw)
+	graphFieldGroup.GET("", graphFieldHandler.List)
+	graphFieldGroup.POST("", graphFieldHandler.Create)
+	graphFieldGroup.PUT("/:id", graphFieldHandler.Update)
+	graphFieldGroup.DELETE("/:id", graphFieldHandler.Delete)
+
+	// ── Notifications ─────────────────────────────────────────────────────────
+	// Global activities + personal notifications (docs/adr/ADR-031-notifications.md),
+	// delivered live over the presence socket (its hub is created here, before
+	// any producer) to exactly the users allowed to see each one: notify
+	// computes the audience, the hub only routes. JWT only — both routes act
+	// on the caller's own feed, never another user's.
+	presenceHub := presence.NewHub()
+	notifySvc := notify.NewService(notify.NewRepository(app.DB), presenceHub)
+	a.notify = notifySvc
+	notifyHandler := notify.NewHandler(notifySvc)
+	srv.Echo().GET("/api/v1/notifications", notifyHandler.List, jwtMw)
+	srv.Echo().POST("/api/v1/notifications/read", notifyHandler.MarkRead, jwtMw)
+
+	// ── Developer demo data ──────────────────────────────────────────────────
+	// Settings → Developer's "full" volume (~100k rows per business table, set-
+	// based SQL). Refuses outside environment "development" and runs once per
+	// tenant; permission dev_seed:dev_seed:write derives from the route.
+	devSeedHandler := devseed.NewHandler(app.DB, seedPictures, a.cfg.Environment, notifySvc)
+	srv.Echo().POST("/api/v1/dev_seed", devSeedHandler.Seed, jwtMw, permMw)
+	srv.Echo().GET("/api/v1/dev_seed", devSeedHandler.Groups, jwtMw, permMw)
+
+	// ── Chatter ───────────────────────────────────────────────────────────────
+	// A record's activity feed: user-authored messages plus the frontend's own
+	// summary of a form edit, both posted the same way (Kind "message"/"log") —
+	// dedicated, tenant-pinned endpoints off the generic CRUD surface, mirroring
+	// the notebook pages' shape. Append-only (no PUT/DELETE — an activity log
+	// reads wrong if entries can change after the fact). No external dependency
+	// to gate on, so this mounts unconditionally. The permission middleware
+	// derives chatter_messages:chatter_messages:read|write from the route.
+	chatterHandler := chatter.NewHandler(chatter.NewRepository(app.DB), userRepo).WithRowScope(app.DB)
+	chatterGroup := srv.Echo().Group("/api/v1/chatter_messages", jwtMw, permMw)
+	chatterGroup.GET("", chatterHandler.List)
+	chatterGroup.POST("", chatterHandler.Create)
+
+	// ── Teams ─────────────────────────────────────────────────────────────────
+	// Teams, members, channels, chat and the staff directory: role checks live in the
+	// handlers (a non-member gets a 404), so only JWT + the module's active gate
+	// here. Object storage is optional (nil without s3_*).
+	var teamsObjects pictures.ObjectStore
+	if pictures.S3Configured(configContent) {
+		if teamsObjects, err = pictures.NewS3Store(configContent); err != nil {
+			return fmt.Errorf("Error building S3 object store for teams: %w", err)
+		}
+	}
+	teamsHandler := teams.NewHandler(teams.NewRepository(app.DB), userRepo, presenceHub, notifySvc, teamsObjects)
+	teams.Mount(srv.Echo().Group("/api/v1/teams", jwtMw, teams.ActiveGate(moduleRuntime.IsActive)), teamsHandler, uploadLimit)
+
+	// ── Presence ──────────────────────────────────────────────────────────────
+	// Live user status (online/absent/offline/busy/do_not_disturb) over a
+	// WebSocket, docs/adr/ADR-019-user-presence-websocket.md. A native
+	// WebSocket handshake can't carry a custom Authorization header, so this
+	// group uses JWTOrCookieMiddleware instead of the plain jwtMw everywhere
+	// else — it falls back to the SAME httpOnly session cookie the Next BFF
+	// already sets (core-front's session-cookies.ts ACCESS_COOKIE, "eerp_access"
+	// — the two sides can't share a literal across the language boundary, so
+	// this is the single Go-side source of truth for that name) when there's
+	// no Bearer header, which is only ever true for a same-origin browser
+	// request. Every other route keeps requiring a real Bearer header. The
+	// snapshot read and the WebSocket upgrade share ONE route (dispatched on
+	// the Upgrade header inside Handler.Get). NOT behind permMw: presence is
+	// app-shell chrome every authenticated user needs (the top-bar status
+	// bubble, on every page), not gated business data, and PUT only ever
+	// touches the caller's OWN row — there's no admin-only subset to protect
+	// here the way modules' PUT/reload are. A role with zero role_permissions
+	// grants (any freshly created custom role, admin_handler.go's CreateRole)
+	// must still get this like every other identity.
+	presenceHandler := presence.NewHandler(presence.NewRepository(app.DB), presenceHub)
+	presenceAuthMw := authmw.JWTOrCookieMiddleware(tokenSvc, "eerp_access")
+	presenceGroup := srv.Echo().Group("/api/v1/presence", presenceAuthMw)
+	presenceGroup.GET("", presenceHandler.Get)
+	presenceGroup.PUT("", presenceHandler.SetStatus)
+
+	// ── Database management (unauthenticated, master_key-gated) ─────────────
+	// Backs /database/management (core-front): an Odoo-style database manager
+	// reachable with NO session at all — every handler gates itself on the
+	// SAME master_key secret that signs every JWT (RequireMasterKey), since
+	// this group carries no jwtMw/permMw. Mounted unconditionally (create/
+	// list/switch/delete never need S3); S3-inclusive extract/restore simply
+	// aren't offered when s3_* isn't configured (dbmanage.Manager's own doc
+	// comment) — same degrade-gracefully posture pictures/attachments take
+	// above, just one level deeper (the FEATURE mounts either way; only the S3
+	// option within it is conditional). See internal/dbmanage's own package
+	// doc for the live hot-swap this leans on.
+	var dbManageObjects pictures.ObjectStore
+	if pictures.S3Configured(configContent) {
+		dbManageObjects, err = pictures.NewS3Store(configContent)
+		if err != nil {
+			return fmt.Errorf("Error building S3 object store for database management: %w", err)
+		}
+	}
+	dbManageManager := dbmanage.NewManager(
+		app, presenceHub, dbManageObjects,
+		engine, linker, configContent, a.configPath,
+	)
+	dbManageHandler := dbmanage.NewHandler(dbManageManager)
+	dbManageGroup := srv.Echo().Group("/api/v1/database-management",
+		ormserver.AuthRateLimiter(configContent.AuthRateLimitPerMinute))
+	dbManageGroup.GET("/databases", dbManageHandler.List)
+	dbManageGroup.POST("/databases", dbManageHandler.Create)
+	dbManageGroup.POST("/databases/:name/switch", dbManageHandler.Switch)
+	// Prepare (async, off the request path) + Activate (fast, near-instant
+	// pool swap against an already-warm standby) split what /switch used to
+	// do in one blocking call — see internal/dbmanage/prepare.go.
+	dbManageGroup.POST("/databases/:name/prepare", dbManageHandler.Prepare)
+	dbManageGroup.POST("/databases/:name/activate", dbManageHandler.Activate)
+	dbManageGroup.DELETE("/databases/:name/prepare", dbManageHandler.DiscardPrepared)
+	dbManageGroup.DELETE("/databases/:name", dbManageHandler.Delete)
+	dbManageGroup.GET("/databases/:name/extract", dbManageHandler.Extract)
+	// A restore uploads a whole dump zip: exempt from request_body_limit
+	// (BodyLimitExempt above), capped like nginx's 2g on this location.
+	dbManageGroup.POST("/databases/restore", dbManageHandler.Restore, ormserver.BodyLimit(dbRestoreBodyLimit))
+
+	// ── Cron ──────────────────────────────────────────────────────────────────
+	// Background scheduled actions (docs/adr/ADR-016-cron-scheduler.md). Unlike
+	// chatter/notebook/savedfilter, cron/cron_history ride the GENERIC CRUD
+	// surface (core/modules/cron/module.go's Register) — that's what gives
+	// them List/Kanban/Calendar/Graph for free. Two hand-mounted additions on
+	// top: Create/Update overrides on cron (resolving action_code from the
+	// registry — mounted AFTER the generic block below so Echo keeps these
+	// registrations, same posture as crminheritdemo/warehouse/sale) and one
+	// extra action on cron_history (downloading a run's log file — a static
+	// suffix after :id, so it derives the SAME cron_history:cron_history:read
+	// permission the row's own GET already needs, no new wiring required).
+	cron.SetEnv(app.DB, configContent.CronLogDir)
+	cronOverride := cronmodule.NewHandler(orm.MustRepo[cron.Cron](app.DB))
+	cronHistoryHandler := cron.NewHandler(cron.NewRepository(app.DB))
+	cronHistoryGroup := srv.Echo().Group("/api/v1/cron_history", jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	cronHistoryGroup.GET("/:id/log", cronHistoryHandler.DownloadLog)
+
+	// ── Module management (App Store) ────────────────────────────────────────
+	// Dedicated endpoints over module.json content plus the live runtime
+	// registry (docs/roadmaps/app-store.md, docs/adr/ADR-008) — a virtual
+	// entity, never tenant-scoped (modules are workspace-wide, not per-tenant
+	// data). List/Get re-walk module_root on every call (no snapshot/cache);
+	// PUT/reload act on moduleRuntime first (live, no restart) and only then
+	// persist module.json. The permission middleware derives
+	// modules:modules:read|write from the route for the admin-only actions
+	// below. The bare list (GET "") is NOT behind permMw — every logged-in
+	// user's app shell calls it unconditionally to build the top-bar module
+	// menu (core-front's module-state.ts), so it needs to work for any
+	// identity, including a custom role with zero role_permissions grants.
+	modulesHandler := module.NewHandler(module.NewManager(configContent.ModuleRoot), moduleRuntime)
+	modulesGroup := srv.Echo().Group("/api/v1/modules", jwtMw)
+	modulesGroup.GET("", modulesHandler.List)
+	modulesGroup.GET("/:id", modulesHandler.Get, permMw)
+	modulesGroup.PUT("/:id", modulesHandler.Update, permMw)
+	modulesGroup.POST("/:id/reload", modulesHandler.Reload, permMw)
+	modulesGroup.GET("/:id/logs", modulesHandler.Logs, permMw)
+
+	// The catalog of "views" (entities) a role's rights table can point at
+	// (RoleViewPermission.Entity, a many2one in the frontend descriptor) —
+	// read-only, computed live from core/orm's registry, so it always
+	// reflects this deployment's compiled-in modules. The permission
+	// middleware derives views:views:read from the route.
+	viewsGroup := srv.Echo().Group("/api/v1/views", jwtMw, permMw)
+	viewsGroup.GET("", settingsHandler.GetViewCatalog)
+
+	// ── Users / roles administration ──────────────────────────────────────────
+	// The auth tables are excluded from the generic CRUD surface; these dedicated,
+	// field-whitelisting endpoints are the only HTTP path to them. The permission
+	// middleware derives users:users:* and roles:roles:* from the routes.
+	adminHandler := auth.NewAdminHandler(userRepo, auth.NewRoleRepository(app.DB))
+	usersGroup := srv.Echo().Group("/api/v1/users", jwtMw, permMw)
+	usersGroup.GET("", adminHandler.ListUsers)
+	usersGroup.POST("", adminHandler.CreateUser)
+	usersGroup.GET("/:id", adminHandler.GetUser)
+	usersGroup.PUT("/:id", adminHandler.UpdateUser)
+	rolesGroup := srv.Echo().Group("/api/v1/roles", jwtMw, permMw)
+	rolesGroup.GET("", adminHandler.ListRoles)
+	rolesGroup.POST("", adminHandler.CreateRole)
+	rolesGroup.GET("/:id", adminHandler.GetRole)
+	rolesGroup.PUT("/:id", adminHandler.UpdateRole)
+
+	// Protected routes — JWT + permission middleware on the group, plus
+	// moduleRuntime's active-gate: a table owned by a deactivated module 403s
+	// here instead of ever reaching its generic CRUD handler. Every table this
+	// group serves comes from registry.All() (module-contributed schema —
+	// auth/pictures/notebook/settings are off this surface entirely), so one
+	// gate at the group level covers exactly the routes that need it.
+	handlers := ormserver.BuildHandlers(app)
+	srv.RegisterRoutes(handlers, nil, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+
+	// website_page: validation in front of the generic Create/Update (mounted
+	// AFTER the generic block so Echo's router keeps these registrations).
+	pageH := handlers["website_page"]
+	srv.Echo().POST("/api/v1/website_page", pageH.Create, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), websitemodule.ValidatePageBody)
+	srv.Echo().PUT("/api/v1/website_page/:id", pageH.Update, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), websitemodule.ValidatePageBody)
+
+	// event / event_availability: validation (and event defaults) in front of the generic writes.
+	for table, mw := range map[string]echo.MiddlewareFunc{
+		"event": eventmodule.ValidateEventBody, "event_availability": eventmodule.ValidateAvailabilityBody,
+	} {
+		h := handlers[table]
+		srv.Echo().POST("/api/v1/"+table, h.Create, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), mw)
+		srv.Echo().PUT("/api/v1/"+table+"/:id", h.Update, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), mw)
+	}
+	eventH := eventmodule.NewHandler(app.DB, eventmodule.NewService(app.DB, chatter.NewRepository(app.DB), configContent.SiteURL))
+	// Event app settings (reminders): settings:events:read|write, route-derived.
+	settingsGroup.GET("/events", eventH.GetSettings)
+	settingsGroup.PUT("/events", eventH.PutSettings)
+	// event_booking writes go through the booking service (seat accounting);
+	// a booking is cancelled, never deleted; a session with confirmed
+	// bookings can't be deleted nor move to another event. seats_taken is
+	// read-only on the generic session update and capped by capacity in the DB.
+	bookingH := handlers["event_booking"]
+	srv.Echo().POST("/api/v1/event_booking", eventH.StaffBook(bookingH.GetByID), jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	srv.Echo().PUT("/api/v1/event_booking/:id", eventH.StaffUpdate(bookingH.GetByID), jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	srv.Echo().DELETE("/api/v1/event_booking/:id", eventH.RefuseDelete, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	srv.Echo().POST("/api/v1/event_booking/:id/restore", eventH.RefuseDelete, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	sessionH := handlers["event_session"]
+	srv.Echo().POST("/api/v1/event_session", sessionH.Create, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), eventmodule.ValidateSessionBody)
+	srv.Echo().PUT("/api/v1/event_session/:id", sessionH.Update, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), eventmodule.ValidateSessionBody, eventH.GuardSessionUpdate)
+	srv.Echo().DELETE("/api/v1/event_session/:id", eventH.DeleteSession, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+
+	// project tables: visible same-project references, manager-only project/
+	// member/stage writes, timesheet authorship, delete guards, task move,
+	// and GET /project/:id/can_manage (project:project:read).
+	projectmodule.NewHandler(app.DB, permRepo).Mount(srv.Echo(),
+		func(t string) projectmodule.Generic { return handlers[t] }, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+
+	// Public website reads (ADR-024) — no JWT, no permission middleware: the
+	// published scope is the only gate. The active gate lives in the resolver
+	// because ActiveGateMiddleware keys on the first path segment ("public").
+	if siteTenant != uuid.Nil {
+		publicGroup := srv.Echo().Group("/api/v1/public",
+			ormserver.AuthRateLimiter(publicRateLimit(configContent)),
+			website.TenantMiddleware(siteTenant))
+		publicGroup.GET("/site", routing.PublicSite)
+		publicGroup.GET("/legal", siteFiles.PublicLegal)
+		publicGroup.GET("/localization", siteLocalization.Public)
+		publicGroup.GET("/security.txt", siteFiles.PublicSecurityTxt)
+		publicGroup.GET("/robots.txt", siteFiles.PublicRobotsTxt)
+		publicGroup.GET("/event/:id/sessions", eventH.PublicSessions)
+		publicGroup.GET("/event/:id/slots", eventH.PublicSlots)
+		publicGroup.GET("/event/:id/calendar.ics", eventH.PublicCalendar)
+		// Payment provider webhooks (signed by the provider, for the site tenant).
+		publicGroup.POST("/payments/:provider/webhook", eventH.PaymentWebhook)
+		publicGroup.GET("/events/upcoming", eventH.PublicUpcoming(website.ActiveOnly(moduleRuntime.IsTableActive, publisher.Resolve)))
+		if publicPictures != nil {
+			// The workspace favicon (Settings → Global settings): a picture on the
+			// (workspace, <tenant id>, favicon) anchor, served to anyone — browsers
+			// fetch it before any login. Without one, the default company's logo
+			// (the ERP top bar's picture) stands in; 404 when neither exists.
+			// Also the PWA manifest's icon (core-front app/manifest.ts).
+			publicGroup.GET("/favicon", func(c *echo.Context) error {
+				ctx := c.Request().Context()
+				tenant, _ := access.TenantFromContext(ctx)
+				err := publicPictures(c, pictures.WorkspaceTable, tenant, pictures.FaviconField)
+				var he *echo.HTTPError
+				if !errors.As(err, &he) || he.Code != http.StatusNotFound {
+					return err
+				}
+				var company uuid.UUID
+				if app.DB.QueryRow(ctx, `SELECT id FROM company WHERE tenant_id = $1 AND deleted_at IS NULL
+					ORDER BY is_default DESC, created_at LIMIT 1`, tenant).Scan(&company) != nil {
+					return err
+				}
+				return publicPictures(c, "company", company, "logo")
+			})
+		}
+		ormserver.MountPublic(publicGroup, handlers, website.ActiveOnly(moduleRuntime.IsTableActive, publisher.Resolve), publicPictures)
+
+		// Seed the published selections once (never overwrite an admin's choice).
+		siteSettings := settings.NewRepository(app.DB)
+		for table, sel := range map[string]website.Selection{
+			"website_page": {
+				Fields: []string{"slug", "title", "seo_description", "in_menu", "menu_sequence", "layout", "background", "background_parallax"},
+				Filter: map[string]string{"published": "true"},
+			},
+			"event": {
+				Fields: []string{"name", "description", "location", "kind", "slot_minutes", "timezone"},
+				Filter: map[string]string{"published": "true"},
+			},
+		} {
+			key := website.PublicKey(table)
+			if _, found, err := siteSettings.Get(ctx, siteTenant, uuid.Nil, key); err != nil {
+				common.Logger.Warn("website: reading the published selection failed; not seeding it", zap.String("table", table), zap.Error(err))
+			} else if !found {
+				enc, _ := json.Marshal(sel)
+				if err := siteSettings.Set(ctx, siteTenant, uuid.Nil, key, string(enc)); err != nil {
+					common.Logger.Warn("website: seeding the published selection failed", zap.String("table", table), zap.Error(err))
+				}
+			}
+		}
+
+		siteAuth := authHandler.ForWebsite(siteTenant, userRepo, configContent.SiteURL)
+		websiteAuthGroup := srv.Echo().Group("/api/v1/website/auth", ormserver.AuthRateLimiter(configContent.AuthRateLimitPerMinute))
+		seedErr := auth.SeedWebsiteRoles(ctx, app.DB, siteTenant)
+		mountWebsiteAuth(websiteAuthGroup, siteAuth.Signup, siteAuth.Login, siteAuth.Refresh, siteAuth.Logout, seedErr)
+		if seedErr == nil && configContent.SiteURL == "" {
+			common.Logger.Warn("⚠️  site_url not set — website verification emails will carry a relative link")
+		}
+
+		websiteJWT := authmw.WebsiteJWTMiddleware(tokenSvc)
+		siteMe := website.NewMeHandler(userRepo)
+		websiteGroup := srv.Echo().Group("/api/v1/website", ormserver.AuthRateLimiter(publicRateLimit(configContent)), websiteJWT)
+		websiteGroup.GET("/me", siteMe.Get)
+		websiteGroup.PUT("/me", siteMe.Put)
+		websiteGroup.PUT("/me/preferences", siteMe.PutPreferences)
+		websiteGroup.GET("/me/bookings", eventH.MyBookings)
+		// Email verification (owner session only) attaches earlier anonymous bookings.
+		siteVerify := website.NewVerifyHandler(app.DB, eventmodule.AttachBookings, userRepo, configContent.SiteURL)
+		websiteGroup.POST("/me/verify", siteVerify.Verify)
+		websiteGroup.POST("/me/verify/resend", siteVerify.Resend)
+		websiteGroup.POST("/me/bookings/:id/cancel", eventH.CancelMine)
+		websiteGroup.GET("/me/bookings/:id/calendar.ics", eventH.MyBookingCalendar)
+		websiteGroup.GET("/me/contact", siteForms.MyContact)
+
+		// Bookings: anonymous visitors OR logged-in website users. The site
+		// tenant is stamped first; a website token's tenant is the same.
+		bookings := srv.Echo().Group("/api/v1/website/bookings",
+			ormserver.AuthRateLimiter(publicRateLimit(configContent)),
+			website.TenantMiddleware(siteTenant),
+			authmw.OptionalWebsiteJWTMiddleware(tokenSvc))
+		bookings.POST("", eventH.Book)
+		bookings.POST("/cancel", eventH.CancelByToken)
+		bookings.POST("/claim", eventH.ClaimByToken) // a waiting-list offer's link
+
+		// Form block submissions (ADR-033): anonymous or signed-in visitors,
+		// same stack as bookings. The handler reads the form from the stored,
+		// published page — the request only carries values.
+		forms := srv.Echo().Group("/api/v1/website/forms",
+			ormserver.AuthRateLimiter(publicRateLimit(configContent)),
+			website.TenantMiddleware(siteTenant),
+			authmw.OptionalWebsiteJWTMiddleware(tokenSvc))
+		forms.POST("/:page_id/:block_id", siteForms.Submit)
+	} else {
+		// No site tenant: the Next proxy still needs an answer.
+		srv.Echo().GET("/api/v1/public/site", routing.PublicSite)
+		// Crawlers still need an answer: the default rules (no site settings to read).
+		srv.Echo().GET("/api/v1/public/robots.txt", siteFiles.PublicRobotsTxt)
+	}
+
+	// Website users administration (ADR-024): website_admin:users:read|write.
+	// Outside the site-tenant block: ERP staff manage accounts either way.
+	websiteAdmin := website.NewAdminUsersHandler(userRepo, refreshStore)
+	websiteAdminGroup := srv.Echo().Group("/api/v1/website_admin", jwtMw, permMw)
+	websiteAdminGroup.GET("/users", websiteAdmin.List)
+	websiteAdminGroup.PUT("/users/:id", websiteAdmin.Update)
+
+	// Distance between two records' geo values (ADR-029): geo:distance:read,
+	// route-derived, plus read access to both referenced tables (the ORM checks).
+	geoGroup := srv.Echo().Group("/api/v1/geo", jwtMw, permMw)
+	geoGroup.GET("/distance", geoapi.NewHandler(app.DB).Distance)
+
+	// ── crminheritdemo: Create() override reference example ─────────────────
+	// Mounted AFTER the generic block above so Echo's router keeps THIS
+	// registration for POST /api/v1/crm — confirmed empirically, Echo takes
+	// the last Add() for an identical method+path, it does not panic or
+	// merge. GET/PUT/DELETE/restore on /api/v1/crm are untouched, still
+	// served by the generic handler; only Create is overridden. See
+	// modules/crminheritdemo/handler.go for the full explanation of why this
+	// is a hand-mounted route rather than a "hook" — no such hook exists.
+	crmInheritCreate := crminheritdemo.NewHandler(orm.MustRepo[crminheritdemo.CRM](app.DB))
+	srv.Echo().POST("/api/v1/crm", crmInheritCreate.Create, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+
+	// ── cron: Create/Update overrides ────────────────────────────────────────
+	// Only these two verbs are overridden (GET/DELETE stay generic) — see the
+	// "── Cron ──" section above for why. Mounted here, after the generic
+	// block, for the same Echo route-registration-order reason crminheritdemo
+	// is.
+	srv.Echo().POST("/api/v1/cron", cronOverride.Create, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	srv.Echo().PUT("/api/v1/cron/:id", cronOverride.Update, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+
+	// ── warehouse: product_variant Create override ───────────────────────────
+	// Same reasoning as crminheritdemo above: only POST /api/v1/product_variant
+	// is overridden (defaults Name from the underlying Product) — GET/PUT/DELETE
+	// stay generic. See modules/warehouse/handler.go.
+	productVariantCreate := warehouse.NewHandler(
+		orm.MustRepo[warehouse.ProductVariant](app.DB),
+		orm.MustRepo[warehouse.Product](app.DB),
+	)
+	srv.Echo().POST("/api/v1/product_variant", productVariantCreate.Create, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+
+	// ── warehouse: product reference (sequence or typed) + app settings ──────
+	// modules/warehouse/reference.go: with auto_reference on (the default) a
+	// new product takes the next PRD-<n> and an edit keeps it; the create
+	// also fills the optional text columns a client may leave out.
+	productRefs := warehouse.NewProductHandler(app.DB, settings.NewRepository(app.DB))
+	srv.Echo().POST("/api/v1/product", handlers["product"].Create, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), productRefs.OnCreate)
+	srv.Echo().PUT("/api/v1/product/:id", handlers["product"].Update, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware(), productRefs.OnUpdate)
+	// Warehouse app settings: settings:warehouse:read|write, route-derived.
+	settingsGroup.GET("/warehouse", productRefs.GetSettings)
+	settingsGroup.PUT("/warehouse", productRefs.PutSettings)
+
+	// ── sale: sale_line Create/Update/Delete overrides ───────────────────────
+	// Unlike crminheritdemo/warehouse above, THREE verbs are overridden here
+	// (GET stays generic) — every mutation needs to resolve the line's variant
+	// into a product-price/tax/unit snapshot and roll the invoice's totals back
+	// up. See modules/sale/handler.go.
+	saleLineHandler := sale.NewHandler(
+		orm.MustRepo[sale.SaleLine](app.DB),
+		orm.MustRepo[sale.Invoice](app.DB),
+		orm.MustRepo[warehouse.ProductVariant](app.DB),
+		orm.MustRepo[warehouse.Product](app.DB),
+		orm.MustRepo[sale.SaleTax](app.DB),
+		orm.MustRepo[sale.SaleLineTax](app.DB),
+		orm.MustRepo[sale.ProductTax](app.DB),
+		orm.MustRepo[warehouse.ProductUoms](app.DB),
+		settings.NewRepository(app.DB),
+		companyRepo,
+	)
+	saleLineGroup := srv.Echo().Group("/api/v1/sale_line", jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	saleLineGroup.POST("", saleLineHandler.Create)
+	saleLineGroup.PUT("/:id", saleLineHandler.Update)
+	saleLineGroup.DELETE("/:id", saleLineHandler.Delete)
+
+	// ── sale: sale_line_tax Create/Delete overrides ──────────────────────────
+	// Tagging/untagging a tax onto a sale_line recomputes that line's own
+	// Total, then the invoice's rollup — GET stays generic. See
+	// modules/sale/handler.go's CreateLineTax/DeleteLineTax.
+	saleLineTaxGroup := srv.Echo().Group("/api/v1/sale_line_tax", jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	saleLineTaxGroup.POST("", saleLineHandler.CreateLineTax)
+	saleLineTaxGroup.DELETE("/:id", saleLineHandler.DeleteLineTax)
+
+	// ── auth: role_view_permission[_right] Create/Update/Delete overrides ───
+	// Wires the Rights UI (Settings → Users → Roles → a view's rights) into
+	// REAL enforcement — see modules/auth/handler.go's RightsHandler doc
+	// comment for why: RoleViewPermission was originally data-model-and-UI
+	// only, never touching role_permissions (what PermissionRepository.Has
+	// actually reads), so a freshly created custom role had no working way to
+	// ever get real access to anything. Create is also overridden: a freshly
+	// added view defaults to read+write+delete already tagged on (see
+	// CreateViewPermission's own doc comment) instead of a blank row. GET/list
+	// on both tables stay fully generic.
+	rightsHandler := authmodule.NewRightsHandler(app.DB, permRepo)
+	roleViewPermGroup := srv.Echo().Group("/api/v1/role_view_permission", jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	roleViewPermGroup.POST("", rightsHandler.CreateViewPermission)
+	roleViewPermGroup.PUT("/:id", rightsHandler.UpdateViewPermission)
+	roleViewPermGroup.DELETE("/:id", rightsHandler.DeleteViewPermission)
+	roleViewPermRightGroup := srv.Echo().Group("/api/v1/role_view_permission_right", jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	roleViewPermRightGroup.POST("", rightsHandler.CreateRight)
+	roleViewPermRightGroup.DELETE("/:id", rightsHandler.DeleteRight)
+
+	// ── sale: quote_line Create/Update/Delete overrides ──────────────────────
+	// Same reasoning as sale_line above, scoped to Quote/QuoteLine instead of
+	// Invoice/SaleLine. See modules/sale/quote_handler.go.
+	// Quote/invoice workflow (modules/sale/workflow.go): the number comes from
+	// the per-company yearly sequence on create and never changes; a document
+	// with no line stays a draft; confirm/send/accept are server-side steps.
+	var pdfs sale.PDFSource
+	if reportsHandler != nil {
+		pdfs = reportsHandler
+	}
+	saleWorkflow := sale.NewWorkflowHandler(app.DB, companyRepo, settings.NewRepository(app.DB), pdfs)
+	gate := moduleRuntime.ActiveGateMiddleware()
+	srv.Echo().POST("/api/v1/quote", handlers["quote"].Create, jwtMw, permMw, gate, saleWorkflow.NumberQuote)
+	srv.Echo().PUT("/api/v1/quote/:id", handlers["quote"].Update, jwtMw, permMw, gate, saleWorkflow.GuardQuote)
+	srv.Echo().POST("/api/v1/invoice", handlers["invoice"].Create, jwtMw, permMw, gate, saleWorkflow.NumberInvoice)
+	srv.Echo().PUT("/api/v1/invoice/:id", handlers["invoice"].Update, jwtMw, permMw, gate, saleWorkflow.GuardInvoice)
+	srv.Echo().POST("/api/v1/quote/:id/confirm", saleWorkflow.ConfirmQuote, jwtMw, permMw, gate)
+	srv.Echo().POST("/api/v1/quote/:id/send", saleWorkflow.SendQuote, jwtMw, permMw, gate)
+	srv.Echo().POST("/api/v1/quote/:id/accept", saleWorkflow.AcceptQuote, jwtMw, permMw, gate)
+	srv.Echo().POST("/api/v1/invoice/:id/confirm", saleWorkflow.ConfirmInvoice, jwtMw, permMw, gate)
+	srv.Echo().POST("/api/v1/invoice/:id/send", saleWorkflow.SendInvoice, jwtMw, permMw, gate)
+
+	quoteLineHandler := sale.NewQuoteHandler(
+		orm.MustRepo[sale.QuoteLine](app.DB),
+		orm.MustRepo[sale.Quote](app.DB),
+		orm.MustRepo[warehouse.ProductVariant](app.DB),
+		orm.MustRepo[warehouse.Product](app.DB),
+		orm.MustRepo[sale.ProductTax](app.DB),
+		orm.MustRepo[sale.SaleTax](app.DB),
+		orm.MustRepo[warehouse.ProductUoms](app.DB),
+	)
+	quoteLineGroup := srv.Echo().Group("/api/v1/quote_line", jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	quoteLineGroup.POST("", quoteLineHandler.Create)
+	quoteLineGroup.PUT("/:id", quoteLineHandler.Update)
+	quoteLineGroup.DELETE("/:id", quoteLineHandler.Delete)
+
+	// ── propertymanagement: property_management GET + equipment-status
+	// Create + rent-receipt Delete override ──────────────────────────────────
+	// property_management/property_management_equipment/... ride the generic
+	// CRUD surface (module.go's Register, no WithExcluded) — same posture as
+	// cron — with three hand-mounted overrides: GET on property_management
+	// injects the computed receipt_generated_this_month key the "Generate
+	// Rent Receipt" header button reads; POST on
+	// property_management_equipment_status rolls the entry's State up onto
+	// its parent Equipment's CurrentState; DELETE on
+	// property_management_rent_receipt always rejects (a receipt row is
+	// never removed — see RejectReceiptDelete). PUT stays generic: every
+	// snapshot field on a receipt is meant to stay editable after the fact.
+	// See modules/propertymanagement/handler.go.
+	propertyManagementHandler := propertymanagement.NewHandler(
+		orm.MustRepo[propertymanagement.PropertyManagement](app.DB),
+		orm.MustRepo[propertymanagement.PropertyManagementEquipment](app.DB),
+		orm.MustRepo[propertymanagement.PropertyManagementEquipmentStatus](app.DB),
+		orm.MustRepo[propertymanagement.PropertyManagementBillingLine](app.DB),
+		orm.MustRepo[propertymanagement.PropertyManagementBillingLineTax](app.DB),
+		orm.MustRepo[sale.SaleTax](app.DB),
+		orm.MustRepo[propertymanagement.PropertyManagementRentReceipt](app.DB),
+		orm.MustRepo[propertymanagement.PropertyManagementRentReceiptLine](app.DB),
+		orm.MustRepo[warehouse.ProductUoms](app.DB),
+		settings.NewRepository(app.DB),
+		companyRepo,
+	)
+	// POST overridden to default uom_id from the workspace's units.system
+	// setting when the client didn't pick one (handler.go's CreateProperty);
+	// GET overridden to inject the computed receipt_generated_this_month key.
+	srv.Echo().POST("/api/v1/property_management", propertyManagementHandler.CreateProperty, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	srv.Echo().GET("/api/v1/property_management/:id", propertyManagementHandler.GetProperty, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	srv.Echo().POST("/api/v1/property_management_equipment_status", propertyManagementHandler.CreateEquipmentStatus, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	// GET overridden to inject the computed display_taxes key (the
+	// workspace's "Display taxes on report" setting) the receipt PDF reads.
+	srv.Echo().GET("/api/v1/property_management_rent_receipt/:id", propertyManagementHandler.GetRentReceipt, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	srv.Echo().DELETE("/api/v1/property_management_rent_receipt/:id", propertyManagementHandler.RejectReceiptDelete, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	// Property management app settings: settings:propertymanagement:read|write, route-derived.
+	settingsGroup.GET("/propertymanagement", propertyManagementHandler.GetSettings)
+	settingsGroup.PUT("/propertymanagement", propertyManagementHandler.PutSettings)
+	srv.Echo().POST("/api/v1/property_management_rent_receipt_line", propertyManagementHandler.CreateRentReceiptLine, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+
+	// ── propertymanagement: billing_line Create/Update + billing_line_tax
+	// Create/Delete overrides ──────────────────────────────────────────────
+	// Same "compute Total on line/tax changes" shape as sale_line/
+	// sale_line_tax above, scoped to PropertyManagementBillingLine (GET/
+	// DELETE stay generic). See modules/propertymanagement/handler.go.
+	billingLineGroup := srv.Echo().Group("/api/v1/property_management_billing_line", jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	billingLineGroup.POST("", propertyManagementHandler.CreateBillingLine)
+	billingLineGroup.PUT("/:id", propertyManagementHandler.UpdateBillingLine)
+	billingLineTaxGroup := srv.Echo().Group("/api/v1/property_management_billing_line_tax", jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	billingLineTaxGroup.POST("", propertyManagementHandler.CreateBillingLineTax)
+	billingLineTaxGroup.DELETE("/:id", propertyManagementHandler.DeleteBillingLineTax)
+
+	// Snapshot the final business routes, after all generic-handler overrides.
+	if configContent.MCPEnabled {
+		mcpbridge.New(srv.Echo(), permRepo, moduleRuntime.IsTableActive, configContent.MCPAllowWrites, app.Logger).
+			Mount(srv.Echo(), configContent, jwtMw)
+	}
+	a.server, a.userRepo, a.permRepo, a.presenceHub = srv, userRepo, permRepo, presenceHub
+	for _, r := range srv.Routes() {
+		common.Logger.Debug("route", zap.String("method", r.Method), zap.String("path", r.Path))
+	}
+	return nil
+}
+
+// Run starts the background jobs and serves HTTP until ctx is canceled, then
+// drains gracefully.
+func (a *App) Run(ctx context.Context) error {
+	app := a.db
+
+	// The cron scheduler polls for due crons every minute until ctx is
+	// canceled (see internal/cron/scheduler.go) — started here, alongside
+	// the server, so it stops on the same SIGINT/SIGTERM.
+	cronScheduler := cron.NewScheduler(app.DB, a.userRepo, a.permRepo, chatter.NewRepository(app.DB), a.cfg.CronLogDir)
+	cronScheduler.SetNotifier(a.notify)
+	go cronScheduler.Run(ctx)
+
+	// Quote expiry sweep (modules/sale/expiry.go): "if the valid until date
+	// is reached, the quote's status goes to expired" is unconditional
+	// business logic, not a user-configured scheduled action — a separate,
+	// simpler ticker from the cron scheduler above, hourly since expiry
+	// doesn't need minute-level precision. Runs once immediately so a quote
+	// already overdue at boot doesn't wait a full hour for its first check.
+	go func() {
+		if err := sale.ExpireOverdueQuotes(ctx, app.DB); err != nil {
+			common.Logger.Warn("sale: expire overdue quotes", zap.Error(err))
+		}
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := sale.ExpireOverdueQuotes(ctx, app.DB); err != nil {
+					common.Logger.Warn("sale: expire overdue quotes", zap.Error(err))
+				}
+			}
+		}
+	}()
+
+	// Presence absent -> offline sweep (internal/presence/sweeper.go): every
+	// minute, push the status of any user who's been disconnected past
+	// absentAfter — nothing else triggers that transition, since no request
+	// happens at the exact moment the 30 minutes elapse. Same inline-ticker
+	// shape as the quote-expiry sweep above, since it's a single fixed job
+	// too (unlike the cron scheduler, which manages many user-defined rows).
+	// Activities a previous process left running can't finish any more: fail
+	// them. Only here, at a real server start — a test's Build may share the
+	// database with a live server whose runs are in flight.
+	if err := a.notify.FailInterrupted(ctx, a.startedAt); err != nil {
+		common.Logger.Warn("notify: fail interrupted activities", zap.Error(err))
+	}
+	// Notification retention (7 days for finished activities, 30 for personal).
+	go notify.RunSweeper(ctx, a.notify.Repo())
+
+	presenceRepo := presence.NewRepository(app.DB)
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := presence.SweepAbsentToOffline(ctx, presenceRepo, a.presenceHub); err != nil {
+					common.Logger.Warn("presence: sweep absent to offline", zap.Error(err))
+				}
+			}
+		}
+	}()
+
+	// Search index maintainer (internal/searchindex, ADR-032): the last step
+	// of the schema workflow — trigram indexes for every searchable text
+	// column the statistics say is worth one, built CONCURRENTLY right after
+	// boot and re-checked hourly (tables grow, modules activate, dbmanage
+	// switches databases). Off the boot path on purpose: a first build on a
+	// large table can take minutes, and the server must not wait for it.
+	go searchindex.Run(ctx, app.DB, time.Hour)
+
+	// Live exchange rates for the website's currency switcher (ECB daily feed),
+	// refreshed in the background — never fetched on a request path.
+	go a.rates.Run(ctx)
+
+	// Event sweep (modules/event): every 5 minutes, queue the reminder of
+	// bookings entering their tenant's reminder window (events.settings
+	// reminder_hours), expire unclaimed waiting-list offers (their seats pass to
+	// the next in line) and release unpaid payment holds. Same inline-ticker
+	// shape as above.
+	eventSvc := eventmodule.NewService(app.DB, chatter.NewRepository(app.DB), a.cfg.SiteURL)
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if _, err := eventSvc.SendReminders(ctx); err != nil {
+					common.Logger.Warn("event: send reminders", zap.Error(err))
+				}
+				if err := eventSvc.ExpireOffers(ctx); err != nil {
+					common.Logger.Warn("event: expire waiting-list offers", zap.Error(err))
+				}
+				if err := eventSvc.ExpireHolds(ctx); err != nil {
+					common.Logger.Warn("event: release unpaid holds", zap.Error(err))
+				}
+			}
+		}
+	}()
+
+	// Mail outbox sender (internal/mail): delivers queued email every 30 s.
+	// Without smtp_host, mail stays pending until SMTP is configured.
+	if mail.Configured(a.cfg) {
+		go mail.NewSender(app.DB, mail.NewSMTPTransport(a.cfg)).Run(ctx)
+	} else {
+		common.Logger.Warn("smtp_host not configured — queued mail will not be sent")
+	}
+
+	common.Logger.Info("server starting")
+	return a.server.Start(ctx)
+}
+
+// siteCompany is the website's company: the workspace's first one, the same
+// company sale.WorkspaceCurrency prices event sessions in.
+func siteCompany(db *orm.DB) website.SiteCompany {
+	return func(ctx context.Context, tenant uuid.UUID) (uuid.UUID, string, error) {
+		var id uuid.UUID
+		var currency string
+		err := db.QueryRow(ctx, `SELECT id, currency FROM company WHERE tenant_id = $1 AND deleted_at IS NULL ORDER BY created_at LIMIT 1`, tenant).Scan(&id, &currency)
+		if errors.Is(err, orm.ErrNotFound) {
+			return uuid.Nil, "", nil
+		}
+		return id, currency, err
+	}
+}
+
+func publicRateLimit(cfg *types.Config) int {
+	if cfg.PublicRateLimitPerMinute > 0 {
+		return cfg.PublicRateLimitPerMinute
+	}
+	return 300
+}
+
+// mountWebsiteAuth mounts the visitor auth routes. A website-role seeding
+// failure (e.g. a live role already holding website_user's technical name
+// under another id) must not stop the backend booting: it is logged, and
+// only signup — which assigns website_user — stays unmounted; existing
+// accounts keep login/refresh/logout.
+func mountWebsiteAuth(g *echo.Group, signup, login, refresh, logout echo.HandlerFunc, seedErr error) {
+	if seedErr != nil {
+		common.Logger.Warn("⚠️  seed website roles failed — website signup disabled", zap.Error(seedErr))
+	} else {
+		g.POST("/signup", signup)
+	}
+	g.POST("/login", login)
+	g.POST("/refresh", refresh)
+	g.POST("/logout", logout)
+}

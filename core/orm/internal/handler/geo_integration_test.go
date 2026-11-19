@@ -1,0 +1,479 @@
+package handler_test
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"slices"
+	"strconv"
+	"testing"
+
+	"core/internal/testdb"
+	"core/orm"
+	"core/orm/access"
+	"core/orm/internal/crud"
+	"core/orm/internal/handler"
+	"core/orm/internal/registry"
+	"core/orm/model"
+	ormserver "core/orm/server"
+
+	"github.com/google/uuid"
+	"github.com/labstack/echo/v5"
+)
+
+// Test-only tables (dropped by the tests' cleanup): places carry a point,
+// zones a shape.
+type GeoPlace struct {
+	model.BaseModel
+	Name  string        `db:"name"`
+	Where *orm.GeoPoint `db:"geo_location,index=gist"`
+}
+
+type GeoZone struct {
+	model.BaseModel
+	Name string        `db:"name"`
+	Area *orm.GeoShape `db:"area,index=gist"`
+}
+
+func setupGeo(t *testing.T) (*orm.App, *echo.Echo) {
+	t.Helper()
+	app := testdb.Open(t)
+	_ = registry.Register[GeoPlace](registry.WithTableName("geo_places"))
+	_ = registry.Register[GeoZone](registry.WithTableName("geo_zones"))
+	testdb.Migrate(t, app, "geo_places", "geo_zones")
+	t.Cleanup(func() {
+		_, _ = app.DB.Exec(context.Background(), `DROP TABLE IF EXISTS geo_places, geo_zones`)
+	})
+	handlers := map[string]*handler.GenericHandler{}
+	for _, table := range []string{"geo_places", "geo_zones"} {
+		meta, _ := registry.Get(table)
+		handlers[table] = handler.NewGenericHandlerFromSvc(crud.NewService(crud.NewRepository(app.DB, meta), meta), meta)
+	}
+	srv := ormserver.New(app, ormserver.Config{})
+	srv.RegisterRoutes(handlers, nil)
+	return app, srv.Echo()
+}
+
+// doAs sends a request as tenant; readable lists the tables the caller may
+// read (the permission middleware's read check), nil = none.
+func doAs(e *echo.Echo, tenant uuid.UUID, readable []string, method, path, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	ctx := access.WithTenant(req.Context(), tenant)
+	if readable != nil {
+		ctx = access.WithReadCheck(ctx, func(table string) bool {
+			return slices.Contains(readable, table)
+		})
+	}
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req.WithContext(ctx))
+	return rec
+}
+
+func decodeObj(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
+	t.Helper()
+	var m map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &m); err != nil {
+		t.Fatalf("decode %d %s: %v", rec.Code, rec.Body.String(), err)
+	}
+	return m
+}
+
+func TestGeo_CRUDRoundTrip(t *testing.T) {
+	_, e := setupGeo(t)
+	tenant := uuid.New()
+
+	rec := doAs(e, tenant, nil, http.MethodPost, "/api/v1/geo_places",
+		`{"name":"Paris","geo_location":{"type":"Point","coordinates":[2.35,48.85]}}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body.String())
+	}
+	created := decodeObj(t, rec)
+	id := created["id"].(string)
+	loc, _ := json.Marshal(created["geo_location"])
+	if string(loc) != `{"coordinates":[2.35,48.85],"type":"Point"}` {
+		t.Errorf("created geo_location = %s", loc)
+	}
+
+	got := decodeObj(t, doAs(e, tenant, nil, http.MethodGet, "/api/v1/geo_places/"+id, ""))
+	if loc, _ := json.Marshal(got["geo_location"]); string(loc) != `{"coordinates":[2.35,48.85],"type":"Point"}` {
+		t.Errorf("read geo_location = %s", loc)
+	}
+
+	// List responses convert too.
+	list := decodeObj(t, doAs(e, tenant, nil, http.MethodGet, "/api/v1/geo_places", ""))
+	rows, _ := list["data"].([]any)
+	if len(rows) != 1 {
+		t.Fatalf("list = %v", list)
+	}
+	if loc, _ := json.Marshal(rows[0].(map[string]any)["geo_location"]); string(loc) != `{"coordinates":[2.35,48.85],"type":"Point"}` {
+		t.Errorf("list geo_location = %s", loc)
+	}
+
+	// Clearing stores NULL (Review Focus 3).
+	rec = doAs(e, tenant, nil, http.MethodPut, "/api/v1/geo_places/"+id, `{"name":"Paris","geo_location":null}`)
+	if rec.Code != http.StatusOK || decodeObj(t, rec)["geo_location"] != nil {
+		t.Fatalf("clear: %d %s", rec.Code, rec.Body.String())
+	}
+
+	// A zone round-trips as its GeoJSON polygon.
+	rec = doAs(e, tenant, nil, http.MethodPost, "/api/v1/geo_zones",
+		`{"name":"Z","area":{"type":"Polygon","coordinates":[[[2,48],[3,48],[3,49],[2,49],[2,48]]]}}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("zone: %d %s", rec.Code, rec.Body.String())
+	}
+	if area := decodeObj(t, rec)["area"].(map[string]any); area["type"] != "Polygon" {
+		t.Errorf("area = %v", area)
+	}
+}
+
+func TestGeo_InvalidGeometryIs422(t *testing.T) {
+	_, e := setupGeo(t)
+	for _, body := range []string{
+		`{"name":"x","geo_location":{"type":"Point","coordinates":[200,0]}}`,
+		`{"name":"x","geo_location":{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,0]]]}}`,
+		`{"name":"x","geo_location":"POINT(1 2)"}`,
+	} {
+		rec := doAs(e, uuid.New(), nil, http.MethodPost, "/api/v1/geo_places", body)
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("%s: %d %s", body, rec.Code, rec.Body.String())
+			continue
+		}
+		errObj := decodeObj(t, rec)["error"].(map[string]any)
+		if errObj["code"] != "VALIDATION_ERROR" {
+			t.Errorf("%s: %v", body, errObj)
+		}
+		if f, _ := json.Marshal(errObj["fields"]); string(f) != `["geo_location"]` {
+			t.Errorf("%s: fields = %s", body, f)
+		}
+	}
+}
+
+func TestGeo_InvalidUpdateIs422AndWritesNothing(t *testing.T) {
+	_, e := setupGeo(t)
+	tenant := uuid.New()
+	rec := doAs(e, tenant, nil, http.MethodPost, "/api/v1/geo_places",
+		`{"name":"Paris","geo_location":{"type":"Point","coordinates":[2.35,48.85]}}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body.String())
+	}
+	id := decodeObj(t, rec)["id"].(string)
+
+	rec = doAs(e, tenant, nil, http.MethodPut, "/api/v1/geo_places/"+id,
+		`{"name":"Lyon","geo_location":{"type":"Point","coordinates":[200,0]}}`)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("update: %d %s", rec.Code, rec.Body.String())
+	}
+	errObj := decodeObj(t, rec)["error"].(map[string]any)
+	if f, _ := json.Marshal(errObj["fields"]); errObj["code"] != "VALIDATION_ERROR" || string(f) != `["geo_location"]` {
+		t.Errorf("envelope = %v", errObj)
+	}
+
+	got := decodeObj(t, doAs(e, tenant, nil, http.MethodGet, "/api/v1/geo_places/"+id, ""))
+	if loc, _ := json.Marshal(got["geo_location"]); string(loc) != `{"coordinates":[2.35,48.85],"type":"Point"}` || got["name"] != "Paris" {
+		t.Errorf("record changed: %v", got)
+	}
+}
+
+func createGeo(t *testing.T, e *echo.Echo, tenant uuid.UUID, path, body string) string {
+	t.Helper()
+	rec := doAs(e, tenant, nil, http.MethodPost, path, body)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create %s: %d %s", path, rec.Code, rec.Body.String())
+	}
+	return decodeObj(t, rec)["id"].(string)
+}
+
+func names(t *testing.T, rec *httptest.ResponseRecorder) []string {
+	t.Helper()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list: %d %s", rec.Code, rec.Body.String())
+	}
+	var body struct{ Data []map[string]any }
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	out := []string{}
+	for _, row := range body.Data {
+		out = append(out, row["name"].(string))
+	}
+	return out
+}
+
+func TestGeo_NearWithinCovers(t *testing.T) {
+	_, e := setupGeo(t)
+	tenant := uuid.New()
+	pt := func(lon, lat string) string { return `{"type":"Point","coordinates":[` + lon + `,` + lat + `]}` }
+	createGeo(t, e, tenant, "/api/v1/geo_places", `{"name":"Paris","geo_location":`+pt("2.35", "48.85")+`}`)
+	createGeo(t, e, tenant, "/api/v1/geo_places", `{"name":"Lyon","geo_location":`+pt("4.83", "45.76")+`}`)
+	createGeo(t, e, tenant, "/api/v1/geo_places", `{"name":"Versailles","geo_location":`+pt("2.13", "48.80")+`}`)
+	createGeo(t, e, tenant, "/api/v1/geo_places", `{"name":"Nowhere"}`) // no location (Review Focus 2)
+	createGeo(t, e, tenant, "/api/v1/geo_zones", `{"name":"IDF","area":{"type":"Polygon","coordinates":[[[1.4,48.1],[3.6,48.1],[3.6,49.3],[1.4,49.3],[1.4,48.1]]]}}`)
+
+	// Nearest to Paris first; the unlocated row last with a null distance.
+	rec := doAs(e, tenant, nil, http.MethodGet, "/api/v1/geo_places?near[geo_location]=2.35,48.85", "")
+	if got := names(t, rec); len(got) != 4 || got[0] != "Paris" || got[1] != "Versailles" || got[2] != "Lyon" || got[3] != "Nowhere" {
+		t.Errorf("near order = %v", got)
+	}
+	var body struct{ Data []map[string]any }
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if d, _ := body.Data[1]["_distance_m"].(float64); d < 16000 || d > 18000 {
+		t.Errorf("Paris→Versailles = %v m, want ~17 km", body.Data[1]["_distance_m"])
+	}
+	if body.Data[3]["_distance_m"] != nil {
+		t.Errorf("unlocated distance = %v, want null", body.Data[3]["_distance_m"])
+	}
+	if _, ok := decodeObj(t, doAs(e, tenant, nil, http.MethodGet, "/api/v1/geo_places", ""))["data"].([]any)[0].(map[string]any)["_distance_m"]; ok {
+		t.Error("_distance_m present without near")
+	}
+
+	// Equal distances (here all NULL) still page stably: no row repeats or
+	// goes missing across pages.
+	unlocated := uuid.New()
+	for i := range 6 {
+		createGeo(t, e, unlocated, "/api/v1/geo_places", `{"name":"U`+strconv.Itoa(i)+`"}`)
+	}
+	seen := map[string]bool{}
+	for _, page := range []string{"1", "2"} {
+		for _, n := range names(t, doAs(e, unlocated, nil, http.MethodGet, "/api/v1/geo_places?near[geo_location]=2.35,48.85&page_size=3&page="+page, "")) {
+			seen[n] = true
+		}
+	}
+	if len(seen) != 6 {
+		t.Errorf("near pages over unlocated rows = %v, want 6 distinct", seen)
+	}
+
+	// 50 km radius around Paris.
+	if got := names(t, doAs(e, tenant, nil, http.MethodGet, "/api/v1/geo_places?within[geo_location]=2.35,48.85,50000&near[geo_location]=2.35,48.85", "")); len(got) != 2 {
+		t.Errorf("within = %v, want Paris+Versailles", got)
+	}
+	// Which zone covers Paris / Lyon.
+	if got := names(t, doAs(e, tenant, nil, http.MethodGet, "/api/v1/geo_zones?covers[area]=2.35,48.85", "")); len(got) != 1 {
+		t.Errorf("covers Paris = %v", got)
+	}
+	if got := names(t, doAs(e, tenant, nil, http.MethodGet, "/api/v1/geo_zones?covers[area]=4.83,45.76", "")); len(got) != 0 {
+		t.Errorf("covers Lyon = %v", got)
+	}
+
+	for _, bad := range []string{
+		"/api/v1/geo_places?near[geo_location]=200,0",
+		"/api/v1/geo_places?near[name]=2,48",
+		"/api/v1/geo_places?within[geo_location]=2,48",
+		"/api/v1/geo_places?within[geo_location]=2,48,-5",
+		"/api/v1/geo_zones?covers[geo_location]=2,48",
+		"/api/v1/geo_places?covers[geo_location]=2,48",
+	} {
+		if rec := doAs(e, tenant, nil, http.MethodGet, bad, ""); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s = %d, want 400", bad, rec.Code)
+		}
+	}
+}
+
+func TestGeo_Inside(t *testing.T) {
+	_, e := setupGeo(t)
+	tenant := uuid.New()
+	createGeo(t, e, tenant, "/api/v1/geo_places", `{"name":"Paris","geo_location":{"type":"Point","coordinates":[2.35,48.85]}}`)
+	createGeo(t, e, tenant, "/api/v1/geo_places", `{"name":"Lyon","geo_location":{"type":"Point","coordinates":[4.83,45.76]}}`)
+	zone := createGeo(t, e, tenant, "/api/v1/geo_zones", `{"name":"IDF","area":{"type":"Polygon","coordinates":[[[1.4,48.1],[3.6,48.1],[3.6,49.3],[1.4,49.3],[1.4,48.1]]]}}`)
+	path := "/api/v1/geo_places?inside[geo_location]=geo_zones:" + zone + ":area"
+	readable := []string{"geo_places", "geo_zones"}
+
+	if got := names(t, doAs(e, tenant, readable, http.MethodGet, path, "")); len(got) != 1 || got[0] != "Paris" {
+		t.Errorf("inside = %v, want [Paris]", got)
+	}
+	// Another tenant's zone matches nothing, without revealing it exists.
+	if got := names(t, doAs(e, uuid.New(), readable, http.MethodGet, path, "")); len(got) != 0 {
+		t.Errorf("other tenant = %v", got)
+	}
+	// Unreadable zone table, non-shape column, unknown table -> 404.
+	for _, tc := range []struct {
+		path     string
+		readable []string
+	}{
+		{path, []string{"geo_places"}},
+		{path, nil},
+		{"/api/v1/geo_places?inside[geo_location]=geo_zones:" + zone + ":name", readable},
+		{"/api/v1/geo_places?inside[geo_location]=nope:" + zone + ":area", readable},
+	} {
+		if rec := doAs(e, tenant, tc.readable, http.MethodGet, tc.path, ""); rec.Code != http.StatusNotFound {
+			t.Errorf("%s (readable %v) = %d, want 404", tc.path, tc.readable, rec.Code)
+		}
+	}
+	if rec := doAs(e, tenant, readable, http.MethodGet, "/api/v1/geo_places?inside[geo_location]=garbage", ""); rec.Code != http.StatusBadRequest {
+		t.Errorf("malformed ref = %d, want 400", rec.Code)
+	}
+}
+
+func TestGeo_Distance(t *testing.T) {
+	app, e := setupGeo(t)
+	tenant := uuid.New()
+	paris := createGeo(t, e, tenant, "/api/v1/geo_places", `{"name":"Paris","geo_location":{"type":"Point","coordinates":[2.35,48.85]}}`)
+	lyon := createGeo(t, e, tenant, "/api/v1/geo_places", `{"name":"Lyon","geo_location":{"type":"Point","coordinates":[4.83,45.76]}}`)
+	none := createGeo(t, e, tenant, "/api/v1/geo_places", `{"name":"Nowhere"}`)
+	zone := createGeo(t, e, tenant, "/api/v1/geo_zones", `{"name":"IDF","area":{"type":"Polygon","coordinates":[[[1.4,48.1],[3.6,48.1],[3.6,49.3],[1.4,49.3],[1.4,48.1]]]}}`)
+
+	ctx := access.WithReadCheck(access.WithTenant(context.Background(), tenant), func(string) bool { return true })
+	d, err := crud.Distance(ctx, app.DB, "geo_places:"+paris+":geo_location", "geo_places:"+lyon+":geo_location")
+	if err != nil || d == nil || *d < 390000 || *d > 395000 {
+		t.Fatalf("Paris->Lyon = %v, %v; want ~392 km", d, err)
+	}
+	if d, _ := crud.Distance(ctx, app.DB, "geo_places:"+paris+":geo_location", "geo_zones:"+zone+":area"); d == nil || *d != 0 {
+		t.Errorf("Paris->IDF = %v, want 0 (inside)", d)
+	}
+	if d, err := crud.Distance(ctx, app.DB, "geo_places:"+none+":geo_location", "geo_places:"+lyon+":geo_location"); err != nil || d != nil {
+		t.Errorf("unlocated = %v, %v; want nil", d, err)
+	}
+	noRead := access.WithTenant(context.Background(), tenant)
+	if _, err := crud.Distance(noRead, app.DB, "geo_places:"+paris+":geo_location", "geo_places:"+lyon+":geo_location"); !errors.Is(err, crud.ErrGeoRef) {
+		t.Errorf("unreadable = %v, want ErrGeoRef", err)
+	}
+}
+
+type GeoSecretZone struct {
+	model.BaseModel
+	Name string        `db:"name"`
+	Area *orm.GeoShape `db:"area,index=gist"`
+}
+
+type GeoHiddenZone struct {
+	model.BaseModel
+	Name string        `db:"name"`
+	Area *orm.GeoShape `db:"area,index=gist"`
+}
+
+const idfGeoJSON = `{"type":"Polygon","coordinates":[[[1.4,48.1],[3.6,48.1],[3.6,49.3],[1.4,49.3],[1.4,48.1]]]}`
+
+// setupGeoRefTables registers the extra reference-target tables: one with a
+// group-gated shape column, one Excluded.
+func setupGeoRefTables(t *testing.T, app *orm.App) {
+	t.Helper()
+	_ = registry.Register[GeoSecretZone](registry.WithTableName("geo_secret_zones"),
+		registry.WithFieldGroups(map[string][]string{"area": {"geo_admin"}}))
+	_ = registry.Register[GeoHiddenZone](registry.WithTableName("geo_hidden_zones"), registry.WithExcluded())
+	testdb.Migrate(t, app, "geo_secret_zones", "geo_hidden_zones")
+	t.Cleanup(func() {
+		_, _ = app.DB.Exec(context.Background(), `DROP TABLE IF EXISTS geo_secret_zones, geo_hidden_zones`)
+	})
+}
+
+func insertZone(t *testing.T, app *orm.App, table string, tenant uuid.UUID) string {
+	t.Helper()
+	id := uuid.New()
+	_, err := app.DB.Exec(context.Background(),
+		`INSERT INTO `+table+` (id, tenant_id, name, area, created_at, updated_at)
+		 VALUES ($1, $2, 'Z', ST_GeomFromGeoJSON($3)::geography, now(), now())`, id, tenant, idfGeoJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id.String()
+}
+
+func doCtx(e *echo.Echo, ctx context.Context, path string) *httptest.ResponseRecorder {
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil).WithContext(ctx))
+	return rec
+}
+
+func readAll(ctx context.Context) context.Context {
+	return access.WithReadCheck(ctx, func(string) bool { return true })
+}
+
+func TestGeo_TenantIsolation(t *testing.T) {
+	app, e := setupGeo(t)
+	a, b := uuid.New(), uuid.New()
+	parisJSON := `{"name":"Paris","geo_location":{"type":"Point","coordinates":[2.35,48.85]}}`
+	createGeo(t, e, a, "/api/v1/geo_places", parisJSON)
+	placeB := createGeo(t, e, b, "/api/v1/geo_places", parisJSON)
+	zoneA := createGeo(t, e, a, "/api/v1/geo_zones", `{"name":"IDF","area":`+idfGeoJSON+`}`)
+	readable := []string{"geo_places", "geo_zones"}
+
+	// B has a place inside A's zone, but may not use A's zone.
+	path := "/api/v1/geo_places?inside[geo_location]=geo_zones:" + zoneA + ":area"
+	if got := names(t, doAs(e, b, readable, http.MethodGet, path, "")); len(got) != 0 {
+		t.Errorf("tenant B via A's zone = %v, want []", got)
+	}
+	ctxB := readAll(access.WithTenant(context.Background(), b))
+	if d, err := crud.Distance(ctxB, app.DB, "geo_places:"+placeB+":geo_location", "geo_zones:"+zoneA+":area"); err != nil || d != nil {
+		t.Errorf("cross-tenant distance = %v, %v; want nil", d, err)
+	}
+}
+
+func TestGeo_RefChecks(t *testing.T) {
+	app, e := setupGeo(t)
+	setupGeoRefTables(t, app)
+	tenant := uuid.New()
+	place := createGeo(t, e, tenant, "/api/v1/geo_places", `{"name":"Paris","geo_location":{"type":"Point","coordinates":[2.35,48.85]}}`)
+	zone := createGeo(t, e, tenant, "/api/v1/geo_zones", `{"name":"IDF","area":`+idfGeoJSON+`}`)
+	secret := insertZone(t, app, "geo_secret_zones", tenant)
+	hidden := insertZone(t, app, "geo_hidden_zones", tenant)
+	base := access.WithTenant(context.Background(), tenant)
+	ctx := readAll(base)
+	inside := func(ref string) string { return "/api/v1/geo_places?inside[geo_location]=" + ref }
+	placeRef := "geo_places:" + place + ":geo_location"
+
+	// Soft-deleted zone matches nothing.
+	if _, err := app.DB.Exec(context.Background(), `UPDATE geo_zones SET deleted_at = now() WHERE id = $1`, zone); err != nil {
+		t.Fatal(err)
+	}
+	if got := names(t, doCtx(e, ctx, inside("geo_zones:"+zone+":area"))); len(got) != 0 {
+		t.Errorf("soft-deleted zone matched %v", got)
+	}
+	if d, err := crud.Distance(ctx, app.DB, placeRef, "geo_zones:"+zone+":area"); err != nil || d != nil {
+		t.Errorf("soft-deleted distance = %v, %v; want nil", d, err)
+	}
+
+	// Group-gated shape column: 404 without the group, usable with it.
+	secretRef := "geo_secret_zones:" + secret + ":area"
+	if rec := doCtx(e, ctx, inside(secretRef)); rec.Code != http.StatusNotFound {
+		t.Errorf("gated inside = %d, want 404", rec.Code)
+	}
+	if _, err := crud.Distance(ctx, app.DB, placeRef, secretRef); !errors.Is(err, crud.ErrGeoRef) {
+		t.Errorf("gated distance = %v, want ErrGeoRef", err)
+	}
+	withGroup := access.WithGroups(ctx, []string{"geo_admin"})
+	if got := names(t, doCtx(e, withGroup, inside(secretRef))); len(got) != 1 {
+		t.Errorf("gated inside with group = %v, want 1 row", got)
+	}
+
+	// Excluded table: 404.
+	hiddenRef := "geo_hidden_zones:" + hidden + ":area"
+	if rec := doCtx(e, ctx, inside(hiddenRef)); rec.Code != http.StatusNotFound {
+		t.Errorf("excluded inside = %d, want 404", rec.Code)
+	}
+	if _, err := crud.Distance(ctx, app.DB, placeRef, hiddenRef); !errors.Is(err, crud.ErrGeoRef) {
+		t.Errorf("excluded distance = %v, want ErrGeoRef", err)
+	}
+
+	// Public scope: references refused (400 / ErrGeoParam).
+	pub := access.WithPublicScope(ctx, access.PublicScope{Columns: []string{"id", "name", "geo_location"}})
+	if rec := doCtx(e, pub, inside(placeRef)); rec.Code != http.StatusBadRequest {
+		t.Errorf("public inside = %d, want 400", rec.Code)
+	}
+	if _, err := crud.Distance(pub, app.DB, placeRef, placeRef); !errors.Is(err, crud.ErrGeoParam) {
+		t.Errorf("public distance = %v, want ErrGeoParam", err)
+	}
+
+	// Non-geo column.
+	if _, err := crud.Distance(ctx, app.DB, placeRef, "geo_places:"+place+":name"); !errors.Is(err, crud.ErrGeoRef) {
+		t.Errorf("non-geo distance = %v, want ErrGeoRef", err)
+	}
+}
+
+func TestGeo_InactiveModuleTable(t *testing.T) {
+	app, e := setupGeo(t)
+	tenant := uuid.New()
+	place := createGeo(t, e, tenant, "/api/v1/geo_places", `{"name":"Paris","geo_location":{"type":"Point","coordinates":[2.35,48.85]}}`)
+	zone := createGeo(t, e, tenant, "/api/v1/geo_zones", `{"name":"IDF","area":`+idfGeoJSON+`}`)
+	crud.SetTableActiveCheck(func(table string) bool { return table != "geo_zones" })
+	t.Cleanup(func() { crud.SetTableActiveCheck(nil) })
+	ctx := readAll(access.WithTenant(context.Background(), tenant))
+	zoneRef := "geo_zones:" + zone + ":area"
+
+	if rec := doCtx(e, ctx, "/api/v1/geo_places?inside[geo_location]="+zoneRef); rec.Code != http.StatusNotFound {
+		t.Errorf("inactive inside = %d, want 404", rec.Code)
+	}
+	if _, err := crud.Distance(ctx, app.DB, "geo_places:"+place+":geo_location", zoneRef); !errors.Is(err, crud.ErrGeoRef) {
+		t.Errorf("inactive distance = %v, want ErrGeoRef", err)
+	}
+}

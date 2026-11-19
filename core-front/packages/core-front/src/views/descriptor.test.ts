@@ -75,7 +75,7 @@ describe('resolveWidget', () => {
     const deny: Array<[FieldType, string]> = [
       ['text', 'stars'],
       ['number', 'long'],
-      ['boolean', 'stars'],
+      ['boolean', 'int'],
       ['date', 'phone'],
     ]
     for (const [type, widget] of deny) {
@@ -325,6 +325,19 @@ describe('validateSearchDescriptor', () => {
     expect(() =>
       validateSearchDescriptor(treeDescriptor(searchFields, { groupableFields: ['nope'] })),
     ).toThrowError(/search.groupableFields "nope" is not declared/)
+  })
+
+  it('accepts filterOnlyFields, also in filterableFields, and refuses a repeated or relation-less one', () => {
+    const assignees: FieldDescriptor = { name: 'assignees', label: 'Assignees', type: 'relation', relation: { entity: 'users', kind: 'many2many' } }
+    expect(() =>
+      validateSearchDescriptor(treeDescriptor(searchFields, { filterOnlyFields: [assignees], filterableFields: ['name', 'assignees'] })),
+    ).not.toThrow()
+    expect(() =>
+      validateSearchDescriptor(treeDescriptor(searchFields, { filterOnlyFields: [{ name: 'name', label: 'Name', type: 'text' }] })),
+    ).toThrowError(/filterOnlyFields "name" repeats/)
+    expect(() =>
+      validateSearchDescriptor(treeDescriptor(searchFields, { filterOnlyFields: [{ name: 'x', label: 'X', type: 'relation' }] })),
+    ).toThrowError(/filterOnlyFields "x" needs a relation block/)
   })
 
   it('is a no-op for every other viewType, even with a search block set', () => {
@@ -971,6 +984,76 @@ describe('requiredMissing', () => {
     expect(requiredMissing(d, {})).toEqual([])
   })
 
+  it('a required DEFERRED many2many blocks a NEW record with nothing staged to link', () => {
+    const d = descriptor([
+      {
+        name: 'current_tenant',
+        type: 'relation',
+        required: true,
+        widgetOptions: { deferred: true },
+        relation: { entity: 'contact', kind: 'many2many', via: 'property_management_tenant' },
+      },
+    ])
+    expect(requiredMissing(d, { toLink: [] })).toEqual(['current_tenant'])
+    expect(requiredMissing(d, { current_tenant: { toLink: [], toUnlinkJunctionIds: [] } })).toEqual([
+      'current_tenant',
+    ])
+  })
+
+  it('a required DEFERRED many2many is satisfied once something is staged to link', () => {
+    const d = descriptor([
+      {
+        name: 'current_tenant',
+        type: 'relation',
+        required: true,
+        widgetOptions: { deferred: true },
+        relation: { entity: 'contact', kind: 'many2many', via: 'property_management_tenant' },
+      },
+    ])
+    expect(
+      requiredMissing(d, {
+        current_tenant: { toLink: [{ id: 'c1' }], toUnlinkJunctionIds: [] },
+      }),
+    ).toEqual([])
+  })
+
+  it('a required DEFERRED many2many never blocks an EXISTING record (draft has an id)', () => {
+    const d = descriptor([
+      {
+        name: 'current_tenant',
+        type: 'relation',
+        required: true,
+        widgetOptions: { deferred: true },
+        relation: { entity: 'contact', kind: 'many2many', via: 'property_management_tenant' },
+      },
+    ])
+    // Untouched (no toLink staged) but the record already has an id — with
+    // no hasDeferredLinks callback given (the old signature), there's no way
+    // to see this field's real state, so it stays unenforced rather than risk
+    // blocking a save that already has tenants.
+    expect(requiredMissing(d, { id: 'p1' })).toEqual([])
+  })
+
+  it('a required DEFERRED many2many on an EXISTING record defers to hasDeferredLinks', () => {
+    const d = descriptor([
+      {
+        name: 'current_tenant',
+        type: 'relation',
+        required: true,
+        widgetOptions: { deferred: true },
+        relation: { entity: 'contact', kind: 'many2many', via: 'property_management_tenant' },
+      },
+    ])
+    // The widget positively reported zero links (e.g. the user just removed
+    // the last one) — blocks.
+    expect(requiredMissing(d, { id: 'p1' }, () => false)).toEqual(['current_tenant'])
+    // The widget positively reported at least one link — satisfied.
+    expect(requiredMissing(d, { id: 'p1' }, () => true)).toEqual([])
+    // No report yet (hidden field, RelationOps not mounted, or a race with
+    // the widget's own async fetch) — fails OPEN, never blocks on a guess.
+    expect(requiredMissing(d, { id: 'p1' }, () => undefined)).toEqual([])
+  })
+
   it('reports every missing field, in descriptor order', () => {
     const d = descriptor([
       { name: 'a', type: 'text', required: true },
@@ -978,5 +1061,43 @@ describe('requiredMissing', () => {
       { name: 'c', type: 'text', required: true },
     ])
     expect(requiredMissing(d, { b: 'x' })).toEqual(['a', 'c'])
+  })
+})
+
+describe('evaluateCondition — date ops', () => {
+  const inMinutes = (m: number) => new Date(Date.now() + m * 60_000).toISOString()
+
+  it('before_now: the date is earlier than now plus value minutes', () => {
+    const opensIn60 = { field: 'starts_at', op: 'before_now', value: 60 } as const
+    expect(evaluateCondition(opensIn60, { starts_at: inMinutes(30) })).toBe(true)
+    expect(evaluateCondition(opensIn60, { starts_at: inMinutes(-10) })).toBe(true)
+    expect(evaluateCondition(opensIn60, { starts_at: inMinutes(3 * 24 * 60) })).toBe(false)
+    expect(evaluateCondition({ field: 'starts_at', op: 'before_now' }, { starts_at: inMinutes(-1) })).toBe(true)
+  })
+
+  it('after_now: the date is later than now plus value minutes', () => {
+    expect(evaluateCondition({ field: 'due', op: 'after_now' }, { due: inMinutes(5) })).toBe(true)
+    expect(evaluateCondition({ field: 'due', op: 'after_now', value: -60 }, { due: inMinutes(-30) })).toBe(true)
+    expect(evaluateCondition({ field: 'due', op: 'after_now' }, { due: inMinutes(-5) })).toBe(false)
+  })
+
+  it('an unset or unparseable date is off for both', () => {
+    for (const v of [null, undefined, '', 'not a date']) {
+      expect(evaluateCondition({ field: 'd', op: 'before_now' }, { d: v })).toBe(false)
+      expect(evaluateCondition({ field: 'd', op: 'after_now' }, { d: v })).toBe(false)
+    }
+  })
+})
+
+describe('geo field types', () => {
+  it('resolves geo/point by default, geo/shape and distance/meters', () => {
+    expect(resolveWidget({ name: 'loc', type: 'geo' })).toBe('point')
+    expect(resolveWidget({ name: 'zone', type: 'geo', widget: 'shape' })).toBe('shape')
+    expect(resolveWidget({ name: 'd', type: 'distance' })).toBe('meters')
+    expect(() => resolveWidget({ name: 'loc', type: 'geo', widget: 'stars' })).toThrow(/not allowed/)
+  })
+  it('zero-defaults both to null', () => {
+    expect(fieldZeroDefault({ name: 'loc', type: 'geo' })).toBeNull()
+    expect(fieldZeroDefault({ name: 'd', type: 'distance' })).toBeNull()
   })
 })

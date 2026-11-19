@@ -1,9 +1,10 @@
 import type { FrontModule } from '@eerp/core-front'
-import { dashboardRoute, invoiceRoutes, orderLinesPageOperations } from './invoice_views'
-import { quoteRoutes, quoteLinesPageOperations } from './quote_views'
+import { dashboardRoute, invoiceRoutes, invoicePartiesOperations, orderLinesPageOperations } from './invoice_views'
+import { quoteRoutes, quoteLinesPageOperations, quotePartiesOperations } from './quote_views'
 import { saleLineRoutes } from './sale_line_views'
 import { quoteLineRoutes } from './quote_line_views'
 import { saleTaxRoutes } from './sale_tax_views'
+import { productTaxesOperations } from './product_tax_views'
 import { invoiceReport } from '../reports/invoice_report'
 import { quoteReport } from '../reports/quote_report'
 
@@ -37,8 +38,10 @@ const sale: FrontModule = {
   ],
   reports: [invoiceReport, quoteReport],
   extends: [
-    { path: '/sale/:id', operations: orderLinesPageOperations },
-    { path: '/sale/quote/:id', operations: quoteLinesPageOperations },
+    { path: '/sale/:id', operations: [...orderLinesPageOperations, ...invoicePartiesOperations] },
+    { path: '/sale/quote/:id', operations: [...quoteLinesPageOperations, ...quotePartiesOperations] },
+    // A product's Taxes, next to its price (product_tax_views.ts).
+    { path: '/warehouse/products/:id', operations: productTaxesOperations },
   ],
 }
 

@@ -1,0 +1,152 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const listMessages = vi.fn()
+const markRead = vi.fn()
+vi.mock('./client', () => ({
+  listMessages: (...a: unknown[]) => listMessages(...a),
+  markRead: (...a: unknown[]) => markRead(...a),
+}))
+
+import { useSessionStore } from '@eerp/core-front'
+import { useChatStore } from './chat-store'
+
+const msg = (id: string, created_at: string, over: object = {}) => ({
+  id, channel_id: 'c1', author_id: 'u1', author_name: 'Alice', body: id, created_at, attachments: [], reactions: [], ...over,
+})
+const frame = (m: ReturnType<typeof msg>) => ({ type: 'chat_message' as const, channel_id: m.channel_id, team_id: 't1', message: m })
+
+describe('chat-store', () => {
+  beforeEach(() => {
+    useChatStore.setState({ open: null, messages: {}, hasMore: {}, unread: {} })
+    listMessages.mockReset()
+    markRead.mockReset().mockResolvedValue(undefined)
+    useSessionStore.setState({ identity: null })
+  })
+
+  it('keeps a frame for the open channel that lands while its page is loading', async () => {
+    let resolve!: (v: unknown) => void
+    listMessages.mockReturnValue(new Promise((r) => { resolve = r }))
+    const loading = useChatStore.getState().load('c1')
+    useChatStore.getState().receive(frame(msg('m2', '2026-01-02T00:00:00Z')))
+    resolve([msg('m2', '2026-01-02T00:00:00Z'), msg('m1', '2026-01-01T00:00:00Z')])
+    await loading
+    useChatStore.getState().receive(frame(msg('m3', '2026-01-03T00:00:00Z')))
+    expect(useChatStore.getState().messages.c1.map((m) => m.id)).toEqual(['m1', 'm2', 'm3'])
+    expect(useChatStore.getState().unread.c1).toBe(0)
+  })
+
+  it('keeps a mid-load frame the page did not include', async () => {
+    let resolve!: (v: unknown) => void
+    listMessages.mockReturnValue(new Promise((r) => { resolve = r }))
+    const loading = useChatStore.getState().load('c1')
+    useChatStore.getState().receive(frame(msg('m2', '2026-01-02T00:00:00Z')))
+    resolve([msg('m1', '2026-01-01T00:00:00Z')])
+    await loading
+    expect(useChatStore.getState().messages.c1.map((m) => m.id)).toEqual(['m1', 'm2'])
+  })
+
+  it('a message of my own never counts as unread', () => {
+    useSessionStore.setState({ identity: { userId: 'me', tenantId: 't', roles: [], permissions: [] } })
+    useChatStore.getState().receive(frame(msg('m1', '2026-01-01T00:00:00Z', { channel_id: 'c2', author_id: 'me' })))
+    useChatStore.getState().receive(frame(msg('m2', '2026-01-01T00:00:00Z', { channel_id: 'c2' })))
+    expect(useChatStore.getState().unread.c2).toBe(1)
+  })
+
+  it('load shows the newest page oldest-first, marks the channel read and zeroes its unread', async () => {
+    useChatStore.getState().setUnread({ c1: 3 })
+    listMessages.mockResolvedValue([msg('m2', '2026-01-02T00:00:00Z'), msg('m1', '2026-01-01T00:00:00Z')])
+    await useChatStore.getState().load('c1')
+    const s = useChatStore.getState()
+    expect(s.messages.c1.map((m) => m.id)).toEqual(['m1', 'm2'])
+    expect(s.hasMore.c1).toBe(false)
+    expect(s.unread.c1).toBe(0)
+    expect(markRead).toHaveBeenCalledWith('c1')
+  })
+
+  it('receive dedupes by id', async () => {
+    listMessages.mockResolvedValue([msg('m1', '2026-01-01T00:00:00Z')])
+    await useChatStore.getState().load('c1')
+    useChatStore.getState().receive(frame(msg('m1', '2026-01-01T00:00:00Z')))
+    useChatStore.getState().receive(frame(msg('m2', '2026-01-02T00:00:00Z')))
+    useChatStore.getState().receive(frame(msg('m2', '2026-01-02T00:00:00Z')))
+    expect(useChatStore.getState().messages.c1.map((m) => m.id)).toEqual(['m1', 'm2'])
+  })
+
+  it('unread increments only for channels that are not open', async () => {
+    listMessages.mockResolvedValue([])
+    await useChatStore.getState().load('c1')
+    useChatStore.getState().receive(frame(msg('m1', '2026-01-01T00:00:00Z')))
+    useChatStore.getState().receive(frame(msg('m2', '2026-01-01T00:00:00Z', { channel_id: 'c2' })))
+    useChatStore.getState().receive(frame(msg('m3', '2026-01-01T00:00:00Z', { channel_id: 'c2' })))
+    expect(useChatStore.getState().unread).toEqual({ c1: 0, c2: 2 })
+  })
+
+  it('loadOlder prepends the page before the oldest message', async () => {
+    listMessages.mockResolvedValueOnce(Array.from({ length: 50 }, (_, i) => msg(`n${49 - i}`, `2026-02-01T00:00:${String(49 - i).padStart(2, '0')}Z`)))
+    await useChatStore.getState().load('c1')
+    expect(useChatStore.getState().hasMore.c1).toBe(true)
+    listMessages.mockResolvedValueOnce([msg('o2', '2026-01-02T00:00:00Z'), msg('o1', '2026-01-01T00:00:00Z')])
+    await useChatStore.getState().loadOlder('c1')
+    expect(listMessages).toHaveBeenLastCalledWith('c1', '2026-02-01T00:00:00Z', 50)
+    const ids = useChatStore.getState().messages.c1.map((m) => m.id)
+    expect(ids.slice(0, 3)).toEqual(['o1', 'o2', 'n0'])
+    expect(useChatStore.getState().hasMore.c1).toBe(false)
+  })
+
+  it('returning to a channel that kept receiving shows the fresh page in order', async () => {
+    listMessages.mockResolvedValueOnce([msg('m2', '2026-01-02T00:00:00.5Z'), msg('m1', '2026-01-01T00:00:00Z')])
+    await useChatStore.getState().load('c1')
+    useChatStore.getState().close('c1')
+    useChatStore.getState().receive(frame(msg('m3', '2026-01-03T00:00:00Z')))
+    // the fresh page no longer includes m1; a frame lands mid-load with a trimmed fraction
+    let resolve!: (v: unknown) => void
+    listMessages.mockReturnValueOnce(new Promise((r) => { resolve = r }))
+    const loading = useChatStore.getState().load('c1')
+    useChatStore.getState().receive(frame(msg('m4', '2026-01-03T00:00:00.1Z')))
+    resolve([msg('m3', '2026-01-03T00:00:00.000Z'), msg('m2', '2026-01-02T00:00:00.5Z')])
+    await loading
+    expect(useChatStore.getState().messages.c1.map((m) => m.id)).toEqual(['m2', 'm3', 'm4'])
+  })
+
+  it('switching away after loadOlder and back drops the older pages', async () => {
+    listMessages.mockResolvedValueOnce(Array.from({ length: 50 }, (_, i) => msg(`n${49 - i}`, `2026-02-01T00:00:${String(49 - i).padStart(2, '0')}Z`)))
+    await useChatStore.getState().load('c1')
+    listMessages.mockResolvedValueOnce([msg('o1', '2026-01-01T00:00:00Z')])
+    await useChatStore.getState().loadOlder('c1')
+    useChatStore.getState().close('c1')
+    listMessages.mockResolvedValueOnce(Array.from({ length: 50 }, (_, i) => msg(`n${49 - i}`, `2026-02-01T00:00:${String(49 - i).padStart(2, '0')}Z`)))
+    await useChatStore.getState().load('c1')
+    const ids = useChatStore.getState().messages.c1.map((m) => m.id)
+    expect(ids[0]).toBe('n0')
+    expect(ids).toHaveLength(50)
+    expect(useChatStore.getState().hasMore.c1).toBe(true)
+  })
+
+  it('a reaction frame replaces counts while keeping mine', async () => {
+    listMessages.mockResolvedValue([msg('m1', '2026-01-01T00:00:00Z', { reactions: [{ emoji: '👍', count: 1, mine: true }] })])
+    await useChatStore.getState().load('c1')
+    useChatStore.getState().applyReactions({
+      type: 'chat_reaction', channel_id: 'c1', message_id: 'm1', reactions: [{ emoji: '👍', count: 2 }, { emoji: '🎉', count: 1 }],
+    })
+    expect(useChatStore.getState().messages.c1[0].reactions).toEqual([
+      { emoji: '👍', count: 2, mine: true },
+      { emoji: '🎉', count: 1, mine: false },
+    ])
+  })
+
+  it('an updated message takes its new body, edited_at and files, keeping my reactions', async () => {
+    listMessages.mockResolvedValue([msg('m1', '2026-01-01T00:00:00Z', { reactions: [{ emoji: '👍', count: 1, mine: true }] })])
+    await useChatStore.getState().load('c1')
+    const att = { id: 'a1', filename: 'x.pdf', mime: 'application/pdf', size: 1 }
+    // The frame is built from the editor's view: its reactions don't carry my `mine`.
+    useChatStore.getState().update({
+      type: 'chat_message_updated', channel_id: 'c1',
+      message: msg('m1', '2026-01-01T00:00:00Z', { body: 'fixed', edited_at: '2026-01-01T01:00:00Z', attachments: [att], reactions: [{ emoji: '👍', count: 1, mine: false }] }),
+    })
+    const m = useChatStore.getState().messages.c1[0]
+    expect(m).toMatchObject({ body: 'fixed', edited_at: '2026-01-01T01:00:00Z', attachments: [att], reactions: [{ emoji: '👍', count: 1, mine: true }] })
+    // A message this tab never loaded is ignored (no partial history).
+    useChatStore.getState().update({ type: 'chat_message_updated', channel_id: 'c9', message: msg('m9', '2026-01-01T00:00:00Z', { channel_id: 'c9' }) })
+    expect(useChatStore.getState().messages.c9).toBeUndefined()
+  })
+})

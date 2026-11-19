@@ -20,7 +20,6 @@ import (
 // the same choice Invoice.IssuerName already makes for its own snapshot.
 type ChatterMessage struct {
 	model.BaseModel
-	TenantID    uuid.UUID `db:"tenant_id,index"`
 	TableName   string    `db:"table_name"`
 	RecordID    uuid.UUID `db:"record_id,index"`
 	AuthorID    uuid.UUID `db:"author_id"`

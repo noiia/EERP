@@ -6,7 +6,9 @@ import {
   FORM_NOTEBOOK_ID,
   ModuleRegistry,
   normalizeLayout,
+  resolveStatusBar,
   validateDescriptorWidgets,
+  validateStatusBarDescriptor,
 } from '@eerp/core-front'
 import crm from './crm_views'
 
@@ -23,6 +25,15 @@ describe('crm FrontModule', () => {
     expect(list.descriptor.viewType).toBe('tree')
     expect(form.descriptor.viewType).toBe('form')
     expect(crm.routes.every((r) => r.descriptor.entity === 'crm')).toBe(true)
+  })
+
+  it('edits the status from a clickable breadcrumb, every status option by default', () => {
+    const form = crm.routes.find((r) => r.path === '/crm/:id')!.descriptor
+    expect(form.statusBar).toEqual({ field: 'status', editable: true })
+    expect(() => validateStatusBarDescriptor(form)).not.toThrow()
+    expect(resolveStatusBar(form)?.steps).toEqual(['incoming', 'running', 'won', 'lost', 'closed'])
+    // The list keeps no breadcrumb — it's a form-only control.
+    expect(crm.routes.find((r) => r.path === '/crm/list')!.descriptor.statusBar).toBeUndefined()
   })
 
   it('makes list rows open the contact form', () => {
@@ -46,7 +57,6 @@ describe('crm FrontModule', () => {
   it('exposes the scalar fields on every view and the relations on the form only', () => {
     expect(crm.routes[0].descriptor.fields.map((f) => f.name)).toEqual([
       'name',
-      'email',
       'company',
       'status',
       'score',
@@ -58,7 +68,6 @@ describe('crm FrontModule', () => {
     expect(form?.descriptor.fields.map((f) => f.name)).toEqual([
       'picture',
       'name',
-      'email',
       'company',
       'status',
       'score',
@@ -66,7 +75,6 @@ describe('crm FrontModule', () => {
       'satisfaction',
       'deals',
       'notes',
-      'display_name',
       'contact_id',
       'tags',
     ])
@@ -154,27 +162,6 @@ describe('crm FrontModule', () => {
     expect(score?.compute).toBeUndefined()
     expect(score?.store).toBeUndefined()
     expect(score?.widget).toBe('stars')
-  })
-
-  it('registers crm.displayName as a display-only (store:false) compute', () => {
-    const fn = behaviorRegistry.fieldFunction('crm.displayName')
-    expect(fn?.depends).toEqual(['name', 'company'])
-    expect(fn?.handler({ name: 'Ada', company: 'Acme' })).toBe('Ada (Acme)')
-    expect(fn?.handler({ name: 'Ada' })).toBe('Ada')
-
-    const form = crm.routes.find((r) => r.path === '/crm/:id')
-    const display = form?.descriptor.fields.find((f) => f.name === 'display_name')
-    expect(display?.compute).toBe('crm.displayName')
-    expect(display?.store).toBe(false)
-  })
-
-  it('registers crm.suggestEmail: company edits patch an empty email only', () => {
-    const handler = behaviorRegistry.onChangeFor('crm').find((h) => h.name === 'crm.suggestEmail')
-    expect(handler?.onChange).toEqual(['company'])
-    expect(handler?.handler({ company: 'Acme Corp.' })).toEqual({ email: 'contact@acmecorp.com' })
-    // Never clobbers what the user already typed.
-    expect(handler?.handler({ company: 'Acme', email: 'ada@ada.io' })).toBeUndefined()
-    expect(handler?.handler({ company: '' })).toBeUndefined()
   })
 })
 

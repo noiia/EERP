@@ -30,7 +30,7 @@ const operations: Operation[] = [
   { op: 'addField', field: { name: 'comment', label: 'Comment', type: 'text', widget: 'long' } },
   // Reorders the form/list without touching crm_views.ts's field declaration
   // order at all — the layout tree (not `fields[]`) is what moves.
-  { op: 'move', name: 'email', target: 'date', position: 'after' },
+  { op: 'move', name: 'company', target: 'date', position: 'after' },
   // States apply live against the draft (Phase 2) — meaningful on the form
   // (FormRenderer/LayoutForm evaluate them), inert-but-harmless on the list
   // (TreeRenderer never reads `states`, only column order/presence).

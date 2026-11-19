@@ -6,9 +6,8 @@
 package company
 
 import (
+	"core/orm"
 	"core/orm/model"
-
-	"github.com/google/uuid"
 )
 
 // Company is a legal entity within a tenant — the "who are we" profile other
@@ -16,8 +15,7 @@ import (
 // re-entering the same name/address/phone/email repeatedly.
 type Company struct {
 	model.BaseModel
-	TenantID uuid.UUID `db:"tenant_id,index"`
-	Name     string    `db:"name"`
+	Name string `db:"name"`
 	// Address* — the type: 'address' composite field's 7 sibling columns
 	// (core-front's AddressWidget, core/CLAUDE.md's ORM section), prefixed
 	// "address_" to match the frontend field name 'address'. Real columns
@@ -50,4 +48,8 @@ type Company struct {
 	// bytes. Pointer = nullable, so a company created before this field
 	// existed (or via the generic API with no logo) stays a valid row.
 	Logo *bool `db:"logo"`
+	// GeoLocation and ServiceZone (ADR-029): where the company is, and the
+	// area it serves ("contacts inside our zone").
+	GeoLocation *orm.GeoPoint `db:"geo_location,index=gist"`
+	ServiceZone *orm.GeoShape `db:"service_zone,index=gist"`
 }

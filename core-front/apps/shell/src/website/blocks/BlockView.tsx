@@ -1,0 +1,47 @@
+import type { Block, BookingConfig, FormConfig, EventListConfig, RecordCarouselConfig, HeroConfig, ImageCarouselConfig, ImageConfig, PublicDataSource, RecordDetailConfig, SearchConfig, RecordListConfig, SectionConfig, TextConfig } from '../types'
+import { AppointmentBookingBlock } from './AppointmentBookingBlock'
+import { EventBookingBlock } from './EventBookingBlock'
+import { EventListBlock } from './EventListBlock'
+import { FormBlock } from './FormBlock'
+import { HeroBlock } from './HeroBlock'
+import { ImageBlock } from './ImageBlock'
+import { ImageCarouselBlock } from './ImageCarouselBlock'
+import { RecordCarouselBlock } from './RecordCarouselBlock'
+import { RecordDetailBlock } from './RecordDetailBlock'
+import { RecordListBlock } from './RecordListBlock'
+import { SearchBlock } from './SearchBlock'
+import { SectionBlock } from './SectionBlock'
+import { TextBlock } from './TextBlock'
+
+// Async children are awaited as plain functions so the result renders in vitest too (RTL cannot render async elements).
+/** Async server component: renders one block from published data. Shared by the public site and the editor preview.
+ * `params`: the URL's record id, plus — on the site — the page id and path a form block posts to and returns to. */
+export async function BlockView({ block, source, params }: { block: Block; source: PublicDataSource; params: { id?: string; pageId?: string; path?: string } }) {
+  const c = block.config
+  switch (block.type) {
+    case 'text': return <TextBlock config={c as unknown as TextConfig} />
+    case 'image': return ImageBlock({ config: c as unknown as ImageConfig, source })
+    case 'section': return SectionBlock({ config: c as unknown as SectionConfig, source })
+    case 'hero': return <HeroBlock config={c as unknown as HeroConfig} />
+    case 'record_list': return RecordListBlock({ config: c as unknown as RecordListConfig, source, h: block.h })
+    case 'record_detail': {
+      const cfg = c as unknown as RecordDetailConfig
+      return RecordDetailBlock({ config: cfg, source, id: cfg.record || params.id })
+    }
+    case 'record_carousel': return RecordCarouselBlock({ config: c as unknown as RecordCarouselConfig, source })
+    case 'image_carousel': return ImageCarouselBlock({ config: c as unknown as ImageCarouselConfig, source })
+    // Unset event: the one in the URL — a single generic event page serves every event.
+    case 'event_booking': {
+      const cfg = c as unknown as BookingConfig
+      return EventBookingBlock({ config: { ...cfg, event_id: cfg.event_id || params.id }, source, path: params.path })
+    }
+    case 'appointment_booking': {
+      const cfg = c as unknown as BookingConfig
+      return AppointmentBookingBlock({ config: { ...cfg, event_id: cfg.event_id || params.id }, source, path: params.path })
+    }
+    case 'event_list': return EventListBlock({ config: c as unknown as EventListConfig })
+    case 'form': return FormBlock({ config: c as unknown as FormConfig, pageId: params.pageId ?? '', blockId: block.id, path: params.path ?? '/' })
+    case 'search': return <SearchBlock config={c as unknown as SearchConfig} pageId={params.pageId} blockId={block.id} />
+    default: return null
+  }
+}

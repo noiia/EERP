@@ -2,14 +2,26 @@ package module
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"go.uber.org/zap"
 
 	"core/internal/common"
 	"core/internal/types"
 	"core/orm"
 )
+
+// pgNotNullViolation is Postgres's SQLSTATE for "column contains null
+// values" — what ADD COLUMN ... NOT NULL raises against a table that
+// already has rows and no DEFAULT to backfill them with.
+const pgNotNullViolation = "23502"
+
+func isNotNullViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == pgNotNullViolation
+}
 
 func bootstrapMigrationsTable(ctx context.Context, db *orm.DB) error {
 	_, err := db.Exec(ctx, `CREATE TABLE IF NOT EXISTS module_migrations (
@@ -153,21 +165,42 @@ func zeroSQLDefault(sqlType string) string {
 // that is not a BaseModel column. Idempotent — safe to call on extension.
 func ensureColumns(ctx context.Context, db orm.Executor, table string, fields []orm.MigrationField) error {
 	for _, f := range fields {
-		if baseModelColumns[f.Column] {
+		if baseModelColumns[f.Column] || f.Generated {
 			continue
 		}
+		required := !f.Nullable && !f.IsPK
 		notNull := ""
-		if !f.Nullable && !f.IsPK {
+		hasDefault := false
+		if required {
 			notNull = " NOT NULL"
 			if def := zeroSQLDefault(f.SQLType); def != "" {
 				notNull += " DEFAULT " + def
+				hasDefault = true
 			}
 		}
 		// #nosec G201 — table/column names come from module manifests, not user input.
 		sql := fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s%s",
 			table, f.Column, f.SQLType, notNull)
 		if _, err := db.Exec(ctx, sql); err != nil {
-			return fmt.Errorf("add column %s: %w", f.Column, err)
+			// A NOT NULL column with no natural zero default (e.g. UUID — a
+			// relation/tenant field, zeroSQLDefault has no sane value for it)
+			// fails outright (23502) against a table that already has rows:
+			// there is nothing to put in the new column for them. Fall back to
+			// adding it nullable — the owning module's own Migrate() hook is
+			// what backfills a real per-row value and tightens the column to
+			// NOT NULL afterward (see auth.module.go's user_roles.tenant_id for
+			// the pattern this fallback exists to unblock); this generic pass
+			// has no way to invent that value itself. Only retried when NO
+			// default was available in the first place — a field that DID have
+			// one hitting 23502 anyway is a genuinely unexpected error, not this
+			// known gap, and still surfaces as-is.
+			if !required || hasDefault || !isNotNullViolation(err) {
+				return fmt.Errorf("add column %s: %w", f.Column, err)
+			}
+			nullableSQL := fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s", table, f.Column, f.SQLType)
+			if _, err2 := db.Exec(ctx, nullableSQL); err2 != nil {
+				return fmt.Errorf("add column %s (nullable fallback after 23502): %w", f.Column, err2)
+			}
 		}
 	}
 	return nil
@@ -194,4 +227,131 @@ func ensureIndexes(ctx context.Context, db orm.Executor, table string, fields []
 		}
 	}
 	return nil
+}
+
+// schemaLockKey names the Postgres advisory lock that serializes schema DDL
+// across processes. CREATE TABLE IF NOT EXISTS is not concurrency-safe in
+// Postgres (two sessions creating the same table race on pg_type and one fails
+// with a duplicate key), and several processes can migrate one database at
+// once: backend replicas booting together, or `go test ./...` running
+// package test binaries in parallel.
+const schemaLockKey int64 = 7311990001
+
+// withSchemaLock runs fn while holding the schema advisory lock. The lock is
+// session-scoped, so it lives on one dedicated pooled connection; fn's own
+// statements may use any connection. Not re-entrant across connections: fn
+// must not call withSchemaLock again.
+func withSchemaLock(ctx context.Context, db *orm.DB, fn func() error) error {
+	conn, err := db.Pool().Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("schema lock: acquire connection: %w", err)
+	}
+	defer conn.Release()
+	if _, err := conn.Exec(ctx, "SELECT pg_advisory_lock($1)", schemaLockKey); err != nil {
+		return fmt.Errorf("schema lock: %w", err)
+	}
+	defer func() {
+		_, _ = conn.Exec(context.WithoutCancel(ctx), "SELECT pg_advisory_unlock($1)", schemaLockKey)
+	}()
+	return fn()
+}
+
+// ensureExtensions installs the Postgres extensions the ORM's column types
+// need — today PostGIS, for orm.GeoPoint/orm.GeoShape geography columns.
+// Idempotent, and run under the schema lock by every DDL entry point (boot,
+// EnsureSchema, MigrateModules), so a database created before geo fields
+// existed — or a brand-new one from internal/dbmanage — gets it before its
+// first geography column. Needs a role allowed to create extensions (the
+// compose `postgres` superuser); on a managed database, have an admin run
+// CREATE EXTENSION postgis once.
+//
+// After a database image upgrade (e.g. PostGIS 3.6 → 3.7) the installed
+// extension still carries the old version's SQL objects; when it lags the
+// version the server ships, postgis_extensions_upgrade() brings postgis and
+// its companions (topology, raster…) up to date. Up-to-date databases — and
+// managed ones whose provider upgrades them — never run it.
+func ensureExtensions(ctx context.Context, db orm.Executor) error {
+	if _, err := db.Exec(ctx, `CREATE EXTENSION IF NOT EXISTS postgis`); err != nil {
+		return fmt.Errorf("create extension postgis: %w", err)
+	}
+	if _, err := db.Exec(ctx, `DO $$ BEGIN
+		IF EXISTS (SELECT 1 FROM pg_available_extensions
+		           WHERE name LIKE 'postgis%' AND installed_version IS NOT NULL
+		             AND installed_version <> default_version) THEN
+			PERFORM postgis_extensions_upgrade();
+		END IF;
+	END $$`); err != nil {
+		return fmt.Errorf("upgrade extension postgis: %w", err)
+	}
+	return nil
+}
+
+// EnsureSchema creates/extends each registered table to match its struct
+// (BaseModel columns, fields, indexes) — the same idempotent DDL the module
+// loader runs at boot, exposed for callers that need a table without booting
+// the whole registry (integration tests via internal/testdb).
+func EnsureSchema(ctx context.Context, db *orm.DB, tables ...string) error {
+	return withSchemaLock(ctx, db, func() error { return ensureSchema(ctx, db, tables...) })
+}
+
+func ensureSchema(ctx context.Context, db orm.Executor, tables ...string) error {
+	if err := ensureExtensions(ctx, db); err != nil {
+		return err
+	}
+	for _, table := range tables {
+		fields, ok := orm.MigrationFieldsForTable(table)
+		if !ok {
+			return fmt.Errorf("ensure schema: %s is not registered", table)
+		}
+		if err := ensureTable(ctx, db, table); err != nil {
+			return fmt.Errorf("ensure schema %s: %w", table, err)
+		}
+		if err := ensureColumns(ctx, db, table, fields); err != nil {
+			return fmt.Errorf("ensure schema %s: %w", table, err)
+		}
+		if err := ensureIndexes(ctx, db, table, fields); err != nil {
+			return fmt.Errorf("ensure schema %s: %w", table, err)
+		}
+	}
+	return nil
+}
+
+// MigrateModules gives db the real schema of the named Go modules, as boot
+// would: each module's Register(), then EnsureSchema over every registered
+// table, then each module's own Migrator (join tables, unique indexes). For
+// callers that need production tables without booting the whole Registry —
+// integration tests (internal/testdb). Modules must be linked in (imported,
+// so their init() ran RegisterGoModule).
+func MigrateModules(ctx context.Context, db *orm.DB, names ...string) error {
+	goMu.Lock()
+	byName := make(map[string]GoModule, len(goModules))
+	for _, m := range goModules {
+		byName[m.Name()] = m
+	}
+	goMu.Unlock()
+
+	picked := make([]GoModule, 0, len(names))
+	for _, name := range names {
+		m, ok := byName[name]
+		if !ok {
+			return fmt.Errorf("migrate modules: %q is not registered (import its package)", name)
+		}
+		if err := m.Register(); err != nil {
+			return fmt.Errorf("migrate modules: %s: register: %w", name, err)
+		}
+		picked = append(picked, m)
+	}
+	return withSchemaLock(ctx, db, func() error {
+		if err := ensureSchema(ctx, db, orm.RegisteredTableNames()...); err != nil {
+			return fmt.Errorf("migrate modules: %w", err)
+		}
+		for _, m := range picked {
+			if migrator, ok := m.(Migrator); ok {
+				if err := migrator.Migrate(ctx, db); err != nil {
+					return fmt.Errorf("migrate modules: %s: migrate: %w", m.Name(), err)
+				}
+			}
+		}
+		return nil
+	})
 }

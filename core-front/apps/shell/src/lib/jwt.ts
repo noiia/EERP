@@ -17,6 +17,7 @@ interface AccessClaims {
   roles?: string[]
   groups?: string[]
   permissions?: string[]
+  must_change_password?: boolean
   exp?: number
 }
 
@@ -26,7 +27,7 @@ function decodeBase64Url(segment: string): unknown {
   return JSON.parse(Buffer.from(base64, 'base64').toString('utf8'))
 }
 
-export function decodeAccessClaims(token: string): AccessClaims | null {
+function decodeAccessClaims(token: string): AccessClaims | null {
   const parts = token.split('.')
   if (parts.length !== 3) return null
   try {
@@ -52,5 +53,6 @@ export function identityFromAccessToken(token: string | undefined): Identity | n
     roles: Array.isArray(claims.roles) ? claims.roles : [],
     groups: Array.isArray(claims.groups) ? claims.groups : [],
     permissions: Array.isArray(claims.permissions) ? claims.permissions : [],
+    mustChangePassword: claims.must_change_password === true,
   }
 }

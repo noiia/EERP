@@ -21,6 +21,11 @@ export interface OptimisticFieldMove<T extends HasId> {
    * Save has, because this is a real write, not a display trick.
    */
   moveField: (id: string, value: unknown) => Promise<void>
+  /** moveField for several fields at once (one PATCH, one revert) — Gantt's
+   * bar move shifts its start and end together. */
+  moveFields: (id: string, patch: Record<string, unknown>) => Promise<void>
+  /** Shows a record just created from the view (quick-create) without a reload. */
+  addRecord: (record: T) => void
 }
 
 export function useOptimisticFieldMove<T extends HasId>(
@@ -38,22 +43,27 @@ export function useOptimisticFieldMove<T extends HasId>(
     setRecords(initialData)
   }, [initialData])
 
-  async function moveField(id: string, value: unknown) {
-    const record = records.find((r) => r.id === id)
+  async function moveFields(id: string, patch: Record<string, unknown>) {
+    const record = records.find((r) => r.id === id) as Record<string, unknown> | undefined
     if (!record) return
-    const current = (record as Record<string, unknown>)[field] ?? null
-    if (current === (value ?? null)) return
-    const previous = records
+    if (Object.entries(patch).every(([k, v]) => (record[k] ?? null) === (v ?? null))) return
+    // Restore only this record's patched fields: another record's concurrent write stays.
+    const previous = Object.fromEntries(Object.keys(patch).map((k) => [k, record[k]]))
     setError(null)
-    setRecords((rs) => rs.map((r) => (r.id === id ? ({ ...r, [field]: value } as T) : r)))
+    setRecords((rs) => rs.map((r) => (r.id === id ? ({ ...r, ...patch } as T) : r)))
     try {
-      await actions.update(id, { [field]: value } as Partial<T>)
+      await actions.update(id, patch as Partial<T>)
     } catch (e) {
-      setRecords(previous)
+      setRecords((rs) => rs.map((r) => (r.id === id ? ({ ...r, ...previous } as T) : r)))
       const err = toApiError(e)
       setError({ code: err.code, message: err.message, requestId: err.requestId })
     }
   }
 
-  return { records, error, moveField }
+  const moveField = (id: string, value: unknown) => moveFields(id, { [field]: value })
+
+  const addRecord = (record: T) =>
+    setRecords((rs) => (rs.some((r) => r.id === record.id) ? rs : [...rs, record]))
+
+  return { records, error, moveField, moveFields, addRecord }
 }

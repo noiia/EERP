@@ -8,20 +8,20 @@ import { fileURLToPath } from 'node:url'
 import {
   discoverFrom,
   discoverTranslationsFrom,
-  findRepoRoot,
   renderClientManifest,
   renderManifest,
   renderTranslationsManifest,
+  resolveRepoConfig,
   translationsForDir,
 } from './module-discovery.mjs'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const shellRoot = join(scriptDir, '..')
 
-if (!findRepoRoot(scriptDir)) {
+if (!resolveRepoConfig(scriptDir)) {
   console.warn(
-    `[generate-modules] eerp-config.json not reachable from ${scriptDir} — ` +
-      'writing an empty manifest (no modules discovered).',
+    `[generate-modules] neither eerp-config.json nor MODULE_ROOTS/REPO_ROOT reachable ` +
+      `from ${scriptDir} — writing an empty manifest (no modules discovered).`,
   )
 }
 const discovered = discoverFrom(scriptDir)

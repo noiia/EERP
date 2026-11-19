@@ -12,7 +12,7 @@ import (
 	"core/internal/auth"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // ── Stubs ────────────────────────────────────────────────────────────────────
@@ -59,11 +59,10 @@ func serve(t *testing.T, h echo.HandlerFunc, method, target string, body io.Read
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 	for k, v := range params {
-		c.SetParamNames(k)
-		c.SetParamValues(v)
+		c.SetPathValues(append(c.PathValues(), echo.PathValue{Name: k, Value: v}))
 	}
 	if err := h(c); err != nil {
-		e.HTTPErrorHandler(err, c)
+		e.HTTPErrorHandler(c, err)
 	}
 	return rec
 }
@@ -89,13 +88,13 @@ func TestList(t *testing.T) {
 	target := "/api/v1/chatter_messages?table=crm&record=" + recordID.String()
 
 	t.Run("returns messages, envelope shape, tenant-pinned lookup", func(t *testing.T) {
-		m1 := ChatterMessage{TenantID: identity.TenantID, TableName: "crm", RecordID: recordID, AuthorEmail: "a@x.com", Kind: "message", Body: "First"}
-		m1.ID = uuid.New()
-		m2 := ChatterMessage{TenantID: identity.TenantID, TableName: "crm", RecordID: recordID, AuthorEmail: "b@x.com", Kind: "log", Body: "Second"}
-		m2.ID = uuid.New()
+		m1 := ChatterMessage{TenantID: identity.TenantID, TableName: "crm", RecordID: recordID, AuthorEmail: "a@x.com", Kind: "message", Body: "First",
+			ID: uuid.New()}
+		m2 := ChatterMessage{TenantID: identity.TenantID, TableName: "crm", RecordID: recordID, AuthorEmail: "b@x.com", Kind: "log", Body: "Second",
+			ID: uuid.New()}
 		store := &stubStore{listed: []ChatterMessage{m1, m2}}
 
-		rec := serve(t, newHandlerWith(store, &stubUsers{}).List, http.MethodGet, target, nil, identity, nil)
+		rec := serve(t, NewHandler(store, &stubUsers{}).List, http.MethodGet, target, nil, identity, nil)
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
@@ -116,7 +115,7 @@ func TestList(t *testing.T) {
 	})
 
 	t.Run("malformed anchor is 400", func(t *testing.T) {
-		rec := serve(t, newHandlerWith(&stubStore{}, &stubUsers{}).List,
+		rec := serve(t, NewHandler(&stubStore{}, &stubUsers{}).List,
 			http.MethodGet, "/api/v1/chatter_messages?table=Bad!&record="+recordID.String(), nil, identity, nil)
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("status = %d, want 400", rec.Code)
@@ -127,7 +126,7 @@ func TestList(t *testing.T) {
 	})
 
 	t.Run("malformed record id is 400", func(t *testing.T) {
-		rec := serve(t, newHandlerWith(&stubStore{}, &stubUsers{}).List,
+		rec := serve(t, NewHandler(&stubStore{}, &stubUsers{}).List,
 			http.MethodGet, "/api/v1/chatter_messages?table=crm&record=nope", nil, identity, nil)
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("status = %d, want 400", rec.Code)
@@ -146,7 +145,7 @@ func TestCreate(t *testing.T) {
 		store := &stubStore{}
 		body := `{"table_name":"crm","record_id":"` + recordID.String() + `","kind":"message","body":"Hello there"}`
 
-		rec := serve(t, newHandlerWith(store, users).Create,
+		rec := serve(t, NewHandler(store, users).Create,
 			http.MethodPost, "/api/v1/chatter_messages", strings.NewReader(body), identity, nil)
 
 		if rec.Code != http.StatusCreated {
@@ -173,7 +172,7 @@ func TestCreate(t *testing.T) {
 		store := &stubStore{}
 		body := `{"table_name":"crm","record_id":"` + recordID.String() + `","kind":"log","body":"Changed status: open -> won"}`
 
-		rec := serve(t, newHandlerWith(store, users).Create,
+		rec := serve(t, NewHandler(store, users).Create,
 			http.MethodPost, "/api/v1/chatter_messages", strings.NewReader(body), identity, nil)
 
 		if rec.Code != http.StatusCreated {
@@ -200,7 +199,7 @@ func TestCreate(t *testing.T) {
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				store := &stubStore{}
-				rec := serve(t, newHandlerWith(store, users).Create,
+				rec := serve(t, NewHandler(store, users).Create,
 					http.MethodPost, "/api/v1/chatter_messages", strings.NewReader(tt.body), identity, nil)
 				if rec.Code != http.StatusBadRequest {
 					t.Fatalf("status = %d, want 400 (body: %s)", rec.Code, rec.Body.String())

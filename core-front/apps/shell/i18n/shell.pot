@@ -35,6 +35,18 @@ msgstr ""
 msgid "Manage your workspace preferences."
 msgstr ""
 
+msgid "Frontend"
+msgstr ""
+
+msgid "Core"
+msgstr ""
+
+msgid "PDF worker"
+msgstr ""
+
+msgid "unavailable"
+msgstr ""
+
 #: app/settings/SettingsHub.tsx src/components/AppearanceSettings.tsx
 msgid "Appearance"
 msgstr ""
@@ -386,4 +398,2733 @@ msgid "created"
 msgstr ""
 
 msgid "failed"
+msgstr ""
+
+msgid "Copy details"
+msgstr ""
+
+msgid "Copied"
+msgstr ""
+
+msgid "Required fields are missing"
+msgstr ""
+
+msgid "Fill in"
+msgstr ""
+
+msgid "These required fields are not on this form, so they cannot be filled in here. Please send the details to your administrator:"
+msgstr ""
+
+msgid "Missing:"
+msgstr ""
+
+msgid "Reference for your administrator"
+msgstr ""
+
+msgid "The server could not complete this request. If it keeps happening, contact your administrator."
+msgstr ""
+
+msgid "more"
+msgstr ""
+
+msgid "shown this month"
+msgstr ""
+
+msgid "shown"
+msgstr ""
+
+
+msgid "ERP"
+msgstr ""
+
+msgid "Log in"
+msgstr ""
+
+msgid "My account"
+msgstr ""
+
+msgid "Page not found"
+msgstr ""
+
+msgid "Back to home"
+msgstr ""
+
+msgid "All rights reserved."
+msgstr ""
+
+msgid "Website"
+msgstr ""
+
+msgid "Published data"
+msgstr ""
+
+msgid "Routing"
+msgstr ""
+
+msgid "Website users"
+msgstr ""
+
+msgid "Published data, routing and website accounts."
+msgstr ""
+
+msgid "Which tables and columns the public website may read."
+msgstr ""
+
+msgid "Serve the website from a path or its own domain."
+msgstr ""
+
+msgid "Visitor accounts registered on the website."
+msgstr ""
+
+msgid "Saved."
+msgstr ""
+
+msgid "Only rows where"
+msgstr ""
+
+msgid "Column"
+msgstr ""
+
+msgid "Value"
+msgstr ""
+
+msgid "Remove filter"
+msgstr ""
+
+msgid "Add filter"
+msgstr ""
+
+msgid "No table is declared for publication."
+msgstr ""
+
+msgid "Path — the website lives under the ERP address"
+msgstr ""
+
+msgid "Host — the website has its own domain"
+msgstr ""
+
+msgid "Website host"
+msgstr ""
+
+msgid "ERP host"
+msgstr ""
+
+msgid "To avoid locking yourself out, save this from the ERP address you are entering, e.g. https://erp.example.com/app/settings/website/routing. To recover, set the environment variable EERP_SITE_ROUTING=path."
+msgstr ""
+
+msgid "Phone"
+msgstr ""
+
+msgid "Verified"
+msgstr ""
+
+msgid "Disabled"
+msgstr ""
+
+msgid "Yes"
+msgstr ""
+
+msgid "No"
+msgstr ""
+
+# Website page editor (app/app/website/pages/[id]/design)
+msgid "Add block"
+msgstr ""
+
+msgid "Text"
+msgstr ""
+
+msgid "Image"
+msgstr ""
+
+msgid "Hero"
+msgstr ""
+
+msgid "Record list"
+msgstr ""
+
+msgid "Record detail"
+msgstr ""
+
+msgid "Event booking"
+msgstr ""
+
+msgid "Appointment booking"
+msgstr ""
+
+msgid "Table"
+msgstr ""
+
+msgid "Fields"
+msgstr ""
+
+msgid "Heading"
+msgstr ""
+
+msgid "Body"
+msgstr ""
+
+msgid "Alignment"
+msgstr ""
+
+msgid "Left"
+msgstr ""
+
+msgid "Center"
+msgstr ""
+
+msgid "Right"
+msgstr ""
+
+msgid "Title"
+msgstr ""
+
+msgid "Subtitle"
+msgstr ""
+
+msgid "Button label"
+msgstr ""
+
+msgid "Button link"
+msgstr ""
+
+msgid "Record id"
+msgstr ""
+
+msgid "Picture field"
+msgstr ""
+
+msgid "Alternative text"
+msgstr ""
+
+msgid "Link"
+msgstr ""
+
+msgid "Title field"
+msgstr ""
+
+msgid "Display"
+msgstr ""
+
+msgid "Grid"
+msgstr ""
+
+msgid "Records per page"
+msgstr ""
+
+msgid "Detail page"
+msgstr ""
+
+msgid "not published"
+msgstr ""
+
+msgid "page not found"
+msgstr ""
+
+msgid "Create a page holding a Record detail block on the same table, its record left empty, publish it, then pick it here."
+msgstr ""
+
+msgid "Delete block"
+msgstr ""
+
+msgid "View on site"
+msgstr ""
+
+msgid "Back"
+msgstr ""
+
+msgid "Nothing to show yet: configure this block."
+msgstr ""
+
+msgid "Select a block to configure it."
+msgstr ""
+
+msgid "Could not save."
+msgstr ""
+
+msgid "Password must be at least 8 characters."
+msgstr ""
+
+msgid "Invalid email or password."
+msgstr ""
+
+msgid "This email cannot be used."
+msgstr ""
+
+msgid "Too many attempts. Please try again later."
+msgstr ""
+
+msgid "Please check the form."
+msgstr ""
+
+msgid "Something went wrong. Please try again."
+msgstr ""
+
+msgid "Sign up"
+msgstr ""
+
+msgid "Password"
+msgstr ""
+
+msgid "At least 8 characters."
+msgstr ""
+
+msgid "No account yet? Sign up"
+msgstr ""
+
+msgid "Already have an account? Log in"
+msgstr ""
+
+msgid "Your session has expired. Please log in again."
+msgstr ""
+
+msgid "Name is required; name and surname max 200, phone max 50 characters."
+msgstr ""
+
+msgid "Surname"
+msgstr ""
+
+msgid "Log out"
+msgstr ""
+
+msgid "My bookings"
+msgstr ""
+
+msgid "Your bookings will appear here."
+msgstr ""
+
+msgid "Staff sign-in"
+msgstr ""
+
+msgid "Outgoing emails"
+msgstr ""
+
+msgid "Booking and account emails, their delivery status, and retries."
+msgstr ""
+
+msgid "Could not retry."
+msgstr ""
+
+msgid "All"
+msgstr ""
+
+msgid "pending"
+msgstr ""
+
+msgid "sent"
+msgstr ""
+
+msgid "Recipient"
+msgstr ""
+
+msgid "Subject"
+msgstr ""
+
+msgid "Status"
+msgstr ""
+
+msgid "Attempts"
+msgstr ""
+
+msgid "Last error"
+msgstr ""
+
+msgid "Retry"
+msgstr ""
+
+msgid "Just taken — pick another time."
+msgstr ""
+
+msgid "Too many attempts. Please wait a minute and try again."
+msgstr ""
+
+msgid "Booking confirmed — a confirmation email is on its way to"
+msgstr ""
+
+msgid "No dates available right now."
+msgstr ""
+
+msgid "Full"
+msgstr ""
+
+msgid "Seats"
+msgstr ""
+
+msgid "Book"
+msgstr ""
+
+msgid "Previous week"
+msgstr ""
+
+msgid "Next week"
+msgstr ""
+
+msgid "Loading"
+msgstr ""
+
+msgid "This link is invalid or was already used."
+msgstr ""
+
+msgid "Cancel this booking?"
+msgstr ""
+
+msgid "Cancel booking"
+msgstr ""
+
+msgid "Your booking is cancelled."
+msgstr ""
+
+msgid "Confirm your email address"
+msgstr ""
+
+msgid "Confirm my email"
+msgstr ""
+
+msgid "Your email is confirmed. Your earlier bookings now appear in your account."
+msgstr ""
+
+msgid "confirmed"
+msgstr ""
+
+msgid "cancelled"
+msgstr ""
+
+msgid "attended"
+msgstr ""
+
+msgid "no_show"
+msgstr ""
+
+msgid "Confirm your email to see bookings made before you signed up."
+msgstr ""
+
+msgid "Upcoming"
+msgstr ""
+
+msgid "Past and cancelled"
+msgstr ""
+
+msgid "Could not cancel — retry"
+msgstr ""
+
+msgid "Email sent"
+msgstr ""
+
+msgid "Could not send — retry"
+msgstr ""
+
+msgid "Resend the email"
+msgstr ""
+
+msgid "Event"
+msgstr ""
+
+msgid "The block shows once the event is published."
+msgstr ""
+
+msgid "Horizontal alignment"
+msgstr ""
+
+msgid "Vertical alignment"
+msgstr ""
+
+msgid "Top"
+msgstr ""
+
+msgid "Bottom"
+msgstr ""
+
+msgid "Button size"
+msgstr ""
+
+msgid "Small"
+msgstr ""
+
+msgid "Medium"
+msgstr ""
+
+msgid "Large"
+msgstr ""
+
+msgid "Button width"
+msgstr ""
+
+msgid "Fit its text"
+msgstr ""
+
+msgid "Full width"
+msgstr ""
+
+msgid "Padding"
+msgstr ""
+
+msgid "Compact"
+msgstr ""
+
+msgid "Normal"
+msgstr ""
+
+msgid "Spacious"
+msgstr ""
+
+msgid "Publish"
+msgstr ""
+
+msgid "Not public yet — the website shows nothing for these fields:"
+msgstr ""
+
+msgid "Record carousel"
+msgstr ""
+
+msgid "Record (empty = the one in the URL)"
+msgstr ""
+
+msgid "Records (empty = the first ones)"
+msgstr ""
+
+msgid "Maximum number of records"
+msgstr ""
+
+msgid "No records"
+msgstr ""
+
+msgid "Picture position"
+msgstr ""
+
+msgid "Picture width beside the text (%)"
+msgstr ""
+
+msgid "Card width (px)"
+msgstr ""
+
+msgid "Favicon"
+msgstr ""
+
+msgid "The small icon shown in browser tabs, for the ERP and the public website, and the icon of the installed app. Without one, the company logo is used. A square PNG (e.g. 64×64) works best; browsers may keep the old one for a few minutes."
+msgstr ""
+
+msgid "Replace"
+msgstr ""
+
+msgid "Upload"
+msgstr ""
+
+msgid "Company logo"
+msgstr ""
+
+msgid "Change the company logo"
+msgstr ""
+
+msgid "Add the company logo"
+msgstr ""
+
+msgid "Per page"
+msgstr ""
+
+msgid "Previous picture"
+msgstr ""
+
+msgid "Next picture"
+msgstr ""
+
+msgid "Image carousel"
+msgstr ""
+
+msgid "Related records picker"
+msgstr ""
+
+msgid "Related table"
+msgstr ""
+
+msgid "Column holding the record id"
+msgstr ""
+
+msgid "Related title field"
+msgstr ""
+
+msgid "Related picture field"
+msgstr ""
+
+msgid "Related fields"
+msgstr ""
+
+msgid "Caption field"
+msgstr ""
+
+msgid "Event list"
+msgstr ""
+
+msgid "No upcoming events."
+msgstr ""
+
+msgid "Book a slot"
+msgstr ""
+
+msgid "1 seat left"
+msgstr ""
+
+msgid "seats left"
+msgstr ""
+
+msgid "The event in the URL"
+msgstr ""
+
+msgid "Left on the event in the URL, this page can serve every event: pick it as the Event page of an Event list block."
+msgstr ""
+
+msgid "Cards"
+msgstr ""
+
+msgid "Maximum number of events"
+msgstr ""
+
+
+msgid "Event page"
+msgstr ""
+
+msgid "Create a page holding Event booking and Appointment booking blocks left on the event in the URL, publish it, then pick it here."
+msgstr ""
+
+msgid "Email templates"
+msgstr ""
+
+msgid "The emails the workspace sends, reworded and translated."
+msgstr ""
+
+msgid "No email templates are registered."
+msgstr ""
+
+msgid "Customized"
+msgstr ""
+
+msgid "Default text"
+msgstr ""
+
+msgid "Language"
+msgstr ""
+
+msgid "Reset to default"
+msgstr ""
+
+msgid "Back to the default text."
+msgstr ""
+
+msgid "Click a variable to insert it; it is replaced by the real value in each email. The plain-text version is built from this text."
+msgstr ""
+
+msgid "Reminders"
+msgstr ""
+
+msgid "Send the reminder email this many hours before the start (0 = no reminders)"
+msgstr ""
+
+msgid "Bookings made less than that before the start get no reminder: their confirmation is recent enough."
+msgstr ""
+
+msgid "Edit the email texts"
+msgstr ""
+
+msgid "Event booking confirmed"
+msgstr ""
+
+msgid "Event booking reminder"
+msgstr ""
+
+msgid "Event booking cancelled"
+msgstr ""
+
+msgid "Website: confirm your email"
+msgstr ""
+
+msgid "Bold"
+msgstr ""
+
+msgid "Italic"
+msgstr ""
+
+msgid "Underline"
+msgstr ""
+
+msgid "Bulleted list"
+msgstr ""
+
+msgid "Numbered list"
+msgstr ""
+
+msgid "Remove link"
+msgstr ""
+
+msgid "Link address (https://…, mailto:… or {{variable}})"
+msgstr ""
+
+msgid "Full — join the waiting list"
+msgstr ""
+
+msgid "Join the waiting list"
+msgstr ""
+
+msgid "You're on the waiting list — we'll email you if a seat frees up:"
+msgstr ""
+
+msgid "Someone booked this seat first. You stay on the waiting list."
+msgstr ""
+
+msgid "A seat is free"
+msgstr ""
+
+msgid "Book my seat"
+msgstr ""
+
+msgid "Your seat is booked — a confirmation email is on its way."
+msgstr ""
+
+msgid "Waiting list"
+msgstr ""
+
+msgid "Hours a freed seat stays reserved for the next person on the waiting list"
+msgstr ""
+
+msgid "waitlisted"
+msgstr ""
+
+msgid "expired"
+msgstr ""
+
+msgid "pending_payment"
+msgstr ""
+
+msgid "Event waiting list joined"
+msgstr ""
+
+msgid "Event waiting list: a seat is free"
+msgstr ""
+
+msgid "Event booking confirmed, to pay at the event"
+msgstr ""
+
+msgid "Add to calendar"
+msgstr ""
+
+msgid "Add all dates to my calendar"
+msgstr ""
+
+msgid "Events calendar feed"
+msgstr ""
+
+msgid "Subscribe to every event session and appointment from your calendar app. Keep the link private: anyone with it can read the schedule."
+msgstr ""
+
+msgid "Calendar link"
+msgstr ""
+
+msgid "Copy it now: it is not shown again."
+msgstr ""
+
+msgid "Replace my calendar link"
+msgstr ""
+
+msgid "Create my calendar link"
+msgstr ""
+
+msgid "Stop the link"
+msgstr ""
+
+msgid "Online payment is unavailable right now. Please try again in a few minutes."
+msgstr ""
+
+msgid "Taking you to the payment page…"
+msgstr ""
+
+msgid "Thank you"
+msgstr ""
+
+msgid "Your payment is being confirmed. Your booking confirmation will arrive by email in a moment."
+msgstr ""
+
+msgid "Takes card payments for paid event bookings through Stripe Checkout. Without it, bookings are paid at the event."
+msgstr ""
+
+msgid "Activate the Stripe payments app (Settings → Apps) for these settings to take effect."
+msgstr ""
+
+msgid "Take payments online"
+msgstr ""
+
+msgid "Secret key (sk_…)"
+msgstr ""
+
+msgid "A secret key is saved; leave blank to keep it."
+msgstr ""
+
+msgid "Webhook signing secret (whsec_…)"
+msgstr ""
+
+msgid "A signing secret is saved; leave blank to keep it."
+msgstr ""
+
+msgid "In the Stripe dashboard, add a webhook endpoint for the checkout.session.completed and checkout.session.expired events at:"
+msgstr ""
+
+msgid "Groups to seed"
+msgstr ""
+
+msgid "already seeded"
+msgstr ""
+
+msgid "needed by"
+msgstr ""
+
+msgid "Companies & tax catalog"
+msgstr ""
+
+msgid "Products & variants"
+msgstr ""
+
+msgid "Contacts"
+msgstr ""
+
+msgid "CRM leads & tags"
+msgstr ""
+
+msgid "Quotes"
+msgstr ""
+
+msgid "Invoices"
+msgstr ""
+
+msgid "Property management"
+msgstr ""
+
+msgid "Events & bookings"
+msgstr ""
+
+msgid "About 100,000 rows each of contacts, CRM leads, products, variants, quotes, invoices, rent receipts and event bookings, with lines, several taxes and companies, plus graph views with calculated fields on every list over 10,000 rows. Pick the groups below; each is seeded once per workspace, and all of them take about half a minute."
+msgstr ""
+
+msgid "Background section"
+msgstr ""
+
+msgid "Picture from table"
+msgstr ""
+
+msgid "Record (empty = the first one with a picture)"
+msgstr ""
+
+msgid "Text and button"
+msgstr ""
+
+msgid "Picture fit"
+msgstr ""
+
+msgid "Fill the block (crop)"
+msgstr ""
+
+msgid "Whole picture"
+msgstr ""
+
+msgid "Link (without a button)"
+msgstr ""
+
+msgid "Optional: shown over the picture."
+msgstr ""
+
+msgid "Background color"
+msgstr ""
+
+msgid "No color"
+msgstr ""
+
+msgid "Parallax (picture stays fixed while scrolling)"
+msgstr ""
+
+msgid "Darken the picture (%)"
+msgstr ""
+
+msgid "Blocks placed over this section are drawn on top of it."
+msgstr ""
+
+msgid "Optional: shown on the section itself."
+msgstr ""
+
+msgid "Page background"
+msgstr ""
+
+msgid "Set a background picture (and parallax) in the page form; add a Background section block for a colored band."
+msgstr ""
+
+msgid "Open the page form"
+msgstr ""
+
+msgid "Legal notice"
+msgstr ""
+
+msgid "No legal notice has been set yet."
+msgstr ""
+
+msgid "Publisher"
+msgstr ""
+
+msgid "Hosting"
+msgstr ""
+
+msgid "Company name"
+msgstr ""
+
+msgid "Legal form"
+msgstr ""
+
+msgid "Share capital"
+msgstr ""
+
+msgid "Registered office"
+msgstr ""
+
+msgid "Registration (SIRET / RCS)"
+msgstr ""
+
+msgid "VAT number"
+msgstr ""
+
+msgid "Publication director"
+msgstr ""
+
+msgid "Host"
+msgstr ""
+
+msgid "Address"
+msgstr ""
+
+msgid "Additional text (privacy, cookies, credits…)"
+msgstr ""
+
+msgid "View on the website"
+msgstr ""
+
+msgid "The publisher and host details shown on the website and in the ERP."
+msgstr ""
+
+msgid "The publisher and host of this workspace and its website."
+msgstr ""
+
+msgid "security.txt"
+msgstr ""
+
+msgid "How security researchers can reach you (RFC 9116)."
+msgstr ""
+
+msgid "robots.txt"
+msgstr ""
+
+msgid "What search engines may crawl."
+msgstr ""
+
+msgid "Contacts (one per line)"
+msgstr ""
+
+msgid "mailto:, tel: or https:// addresses. Leave empty to stop serving the file."
+msgstr ""
+
+msgid "Expires"
+msgstr ""
+
+msgid "At most a year away. Renew it before then, or the file stops being served."
+msgstr ""
+
+msgid "Policy URL"
+msgstr ""
+
+msgid "Acknowledgments URL"
+msgstr ""
+
+msgid "Encryption key URL"
+msgstr ""
+
+msgid "Preferred languages"
+msgstr ""
+
+msgid "Served file"
+msgstr ""
+
+msgid "Not served."
+msgstr ""
+
+msgid "Additional rules"
+msgstr ""
+
+msgid "Appended after the built-in rules, which keep crawlers out of the ERP, the API and visitor pages."
+msgstr ""
+
+msgid "Served file (for this address)"
+msgstr ""
+
+msgid "Location"
+msgstr ""
+
+msgid "Service zone"
+msgstr ""
+
+msgid "Contacts in this zone"
+msgstr ""
+
+msgid "Search an address"
+msgstr ""
+
+msgid "Locate from address"
+msgstr ""
+
+msgid "Clear"
+msgstr ""
+
+msgid "Click the map to add points; click a point to remove it."
+msgstr ""
+
+msgid "Near an address"
+msgstr ""
+
+msgid "Use my location"
+msgstr ""
+
+msgid "Within (km, optional)"
+msgstr ""
+
+msgid "Zone of"
+msgstr ""
+
+msgid "Zone"
+msgstr ""
+
+msgid "Distance"
+msgstr ""
+
+msgid "near"
+msgstr ""
+
+msgid "inside zone of"
+msgstr ""
+
+msgid "covers"
+msgstr ""
+
+msgid "Near"
+msgstr ""
+
+msgid "Inside zone"
+msgstr ""
+
+msgid "Covers point"
+msgstr ""
+
+msgid "Nearest to me (asks the visitor's location)"
+msgstr ""
+
+msgid "Lists published events with a future session (appointment events too), soonest first — or nearest first when the visitor shares their location."
+msgstr ""
+
+msgid "changed"
+msgstr ""
+
+msgid "Address not found"
+msgstr ""
+
+msgid "Distances need the event table's map position (geo_location) published under Settings → Website → Published data."
+msgstr ""
+
+msgid "Username"
+msgstr ""
+
+msgid "Sign in"
+msgstr ""
+
+msgid "Signing in…"
+msgstr ""
+
+msgid "Login failed"
+msgstr ""
+
+msgid "Continue with"
+msgstr ""
+
+msgid "or"
+msgstr ""
+
+msgid "Sign in with email and password"
+msgstr ""
+
+msgid "Sign in with"
+msgstr ""
+
+msgid "the company directory"
+msgstr ""
+
+msgid "Single sign-on failed. Try again or use another method."
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Authentication"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Default method"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Alternatives"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Company directory (LDAP)"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "LLDAP defaults"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Test connection"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Test discovery"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Stored — leave empty to keep"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Callback URL"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Group"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Role"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Default role"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "— none (refuse) —"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Add provider"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "ERP public URL"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Local"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "OK"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Test failed."
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Configure LDAP"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Label"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Server URL"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Use StartTLS"
+msgstr ""
+
+msgid "Allow an unencrypted connection (danger)"
+msgstr ""
+
+msgid "The bind password and every user's password cross the network in clear. Use it only on a network you trust; prefer ldaps:// when the directory supports it."
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Bind DN"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Bind password"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Base DN"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "User filter"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Email attribute"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Name attribute"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Groups attribute"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Photo attribute"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Group search base"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Group filter"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Single sign-on (OIDC)"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Identifier"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Issuer URL"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Client ID"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Client secret"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Scopes"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Groups claim"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Trust the provider’s email"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "<ERP URL>"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Role mapping"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Add mapping"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Sign-in methods: password, company directory (LDAP), single sign-on (OIDC)."
+msgstr ""
+
+#: app/settings/authentication/page.tsx
+msgid "Could not load the authentication settings."
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Allowed email domains"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Comma-separated. Empty admits every account of this provider — restrict a public provider (Google, Microsoft)."
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "Method"
+msgstr ""
+
+#: app/settings/authentication/AuthSettingsForm.tsx
+msgid "All methods"
+msgstr ""
+
+msgid "Notifications"
+msgstr ""
+
+msgid "Running now"
+msgstr ""
+
+msgid "Mark all as read"
+msgstr ""
+
+msgid "Enable desktop notifications"
+msgstr ""
+
+msgid "No notifications"
+msgstr ""
+
+msgid "Failed"
+msgstr ""
+
+msgid "Scheduled actions"
+msgstr ""
+
+msgid "Demo data seeding"
+msgstr ""
+
+msgid "Teams"
+msgstr ""
+
+msgid "Seeding demo data"
+msgstr ""
+
+msgid "Demo data seeding failed"
+msgstr ""
+
+msgid "New notifications"
+msgstr ""
+
+msgid "Starting…"
+msgstr ""
+
+msgid "The full demo seed failed."
+msgstr ""
+
+#. List pagination: "1–20 of ≈ 10001", "1–20 of more than 20".
+#: packages/core-front/src/views/renderers.tsx
+msgid "of"
+msgstr ""
+
+msgid "more than"
+msgstr ""
+
+msgid "Close"
+msgstr ""
+
+msgid "Rent receipts"
+msgstr ""
+
+msgid "Display taxes on report"
+msgstr ""
+
+msgid "Prints the Tax column on rent receipts generated from now on. Receipts already generated keep their PDF until it is regenerated."
+msgstr ""
+
+msgid "Status bar"
+msgstr ""
+
+msgid "Field"
+msgstr ""
+
+msgid "Steps"
+msgstr ""
+
+msgid "Revert to module settings"
+msgstr ""
+
+msgid "Pick at least one step."
+msgstr ""
+
+msgid "The steps shown at the top of the form, taken from one of its selection fields. By default: the field the app chose, with every one of its values."
+msgstr ""
+
+msgid "Changing the status bar requires the settings:views:write permission."
+msgstr ""
+
+msgid "Some counts could not be loaded"
+msgstr ""
+
+msgid "Products"
+msgstr ""
+
+msgid "Generate references automatically"
+msgstr ""
+
+msgid "On: each new product gets the next reference (PRD-00001, PRD-00002…), which cannot be edited. Off: references are typed by hand."
+msgstr ""
+
+msgid "Create…"
+msgstr ""
+
+msgid "Create an address"
+msgstr ""
+
+msgid "Number and street"
+msgstr ""
+
+msgid "Zip code"
+msgstr ""
+
+msgid "City"
+msgstr ""
+
+msgid "State"
+msgstr ""
+
+#: @eerp/core-front widgets (number/duration)
+msgid "Hours"
+msgstr ""
+
+msgid "Minutes"
+msgstr ""
+
+msgid "h"
+msgstr ""
+
+msgid "min"
+msgstr ""
+
+msgid "Form"
+msgstr ""
+
+msgid "Long text"
+msgstr ""
+
+msgid "Number"
+msgstr ""
+
+msgid "Date"
+msgstr ""
+
+msgid "Checkbox"
+msgstr ""
+
+msgid "Selection"
+msgstr ""
+
+msgid "User data"
+msgstr ""
+
+msgid "Message"
+msgstr ""
+
+msgid "Target {n}"
+msgstr ""
+
+msgid "Remove target {n}"
+msgstr ""
+
+msgid "Not linked"
+msgstr ""
+
+msgid "← record of target {n}"
+msgstr ""
+
+msgid "Fixed value"
+msgstr ""
+
+msgid "Remove fixed value"
+msgstr ""
+
+msgid "Add fixed value"
+msgstr ""
+
+msgid "Remove field"
+msgstr ""
+
+msgid "Stored in"
+msgstr ""
+
+msgid "Options (one per line)"
+msgstr ""
+
+msgid "Required"
+msgstr ""
+
+msgid "Saved into"
+msgstr ""
+
+msgid "Each submission creates one record per target, in order. Only tables and columns a module allows are offered."
+msgstr ""
+
+msgid "Add target"
+msgstr ""
+
+msgid "Add field"
+msgstr ""
+
+msgid "Send"
+msgstr ""
+
+msgid "After submit"
+msgstr ""
+
+msgid "Then"
+msgstr ""
+
+msgid "Show a message"
+msgstr ""
+
+msgid "Go to a page"
+msgstr ""
+
+msgid "Thank you — your answers were sent."
+msgstr ""
+
+msgid "Page"
+msgstr ""
+
+msgid "Login required"
+msgstr ""
+
+msgid "After login, go to"
+msgstr ""
+
+msgid "This page"
+msgstr ""
+
+msgid "Allow account creation"
+msgstr ""
+
+msgid "Street"
+msgstr ""
+
+msgid "Complement"
+msgstr ""
+
+msgid "This email already has an account — log in instead."
+msgstr ""
+
+msgid "This field is required."
+msgstr ""
+
+msgid "Check this value."
+msgstr ""
+
+msgid "This form is not available right now."
+msgstr ""
+
+msgid "Please log in to send this form."
+msgstr ""
+
+msgid "Create an account"
+msgstr ""
+
+msgid "Log in to continue"
+msgstr ""
+
+msgid "Street number"
+msgstr ""
+
+msgid "Login"
+msgstr ""
+
+msgid "Site page"
+msgstr ""
+
+msgid "External link"
+msgstr ""
+
+msgid "URL"
+msgstr ""
+
+msgid "Not a valid link (https://, mailto: or a /path)."
+msgstr ""
+
+msgid "Section"
+msgstr ""
+
+msgid "Button"
+msgstr ""
+
+msgid "after login"
+msgstr ""
+
+msgid "Link to a page that doesn't exist"
+msgstr ""
+
+msgid "A published page links to an unpublished page"
+msgstr ""
+
+msgid "Unpublished page in the menu"
+msgstr ""
+
+msgid "Detail page has no detail or booking block"
+msgstr ""
+
+msgid "The page could not be loaded."
+msgstr ""
+
+msgid "Problems"
+msgstr ""
+
+msgid "No problems found."
+msgstr ""
+
+msgid "Unpublished"
+msgstr ""
+
+msgid "Click a page to open it in the builder. Drag a box to move it, drag from the dot on its right onto another page to add a link, or drag the end of an arrow to change where it leads. Select an arrow to remove it."
+msgstr ""
+
+#: app/app/website/workflows
+msgid "Could not save the positions."
+msgstr ""
+
+#: app/app/website/workflows
+msgid "That block already has a link. Pick another one."
+msgstr ""
+
+#: app/app/website/workflows
+msgid "This link is no longer on the page."
+msgstr ""
+
+#: app/app/website/workflows
+msgid "Arrange automatically"
+msgstr ""
+
+#: app/app/website/workflows
+msgid "New link"
+msgstr ""
+
+#: app/app/website/workflows
+msgid "From"
+msgstr ""
+
+#: app/app/website/workflows
+msgid "To"
+msgstr ""
+
+#: app/app/website/workflows
+msgid "Which block holds the link?"
+msgstr ""
+
+#: app/app/website/workflows
+msgid "Add a new button block at the bottom of the page"
+msgstr ""
+
+#: app/app/website/workflows
+msgid "Button text"
+msgstr ""
+
+#: app/app/website/workflows
+msgid "Add link"
+msgstr ""
+
+#: app/app/website/workflows
+msgid "Remove this link?"
+msgstr ""
+
+#: app/app/website/workflows
+msgid "The block stays on the page; only its link is removed."
+msgstr ""
+
+#: app/app/website/workflows
+msgid "Image link"
+msgstr ""
+
+#: app/app/website/workflows
+msgid "Card detail page"
+msgstr ""
+
+#: app/app/website/workflows
+msgid "Page after submit"
+msgstr ""
+
+#: src/components/DeveloperSettings.tsx
+msgid "Databases"
+msgstr ""
+
+#: src/components/DeveloperSettings.tsx
+msgid "List, create, switch, delete, extract and restore the databases of this server. The page sits outside the ERP and asks for the master key, not your session."
+msgstr ""
+
+#: src/components/DeveloperSettings.tsx
+msgid "Open database management"
+msgstr ""
+
+msgid "Language & currency"
+msgstr ""
+
+msgid "The default language and currency, and the currencies visitors can pick."
+msgstr ""
+
+msgid "What a first-time visitor sees. Visitors can change both in the website footer; an account keeps its own choice."
+msgstr ""
+
+msgid "Currencies"
+msgstr ""
+
+msgid "Prices are stored in the workspace currency; other currencies are converted for display only, at the live rate (European Central Bank) unless you set one. Bookings are still charged in the workspace currency."
+msgstr ""
+
+msgid "Workspace currency"
+msgstr ""
+
+msgid "Rate"
+msgstr ""
+
+msgid "No live rate"
+msgstr ""
+
+msgid "Live rate"
+msgstr ""
+
+msgid "No live rate: set one, or the currency is not offered."
+msgstr ""
+
+msgid "Add a currency (ISO code)"
+msgstr ""
+
+msgid "The rate you set is below the live rate, so prices show lower than their market conversion:"
+msgstr ""
+
+msgid "Default currency"
+msgstr ""
+
+msgid "Currency"
+msgstr ""
+
+msgid "Short date format"
+msgstr ""
+
+msgid "The language's own"
+msgstr ""
+
+msgid "Used where space is short, such as the website booking list on a phone."
+msgstr ""
+
+msgid "How numbers and short dates display across the workspace, for everyone."
+msgstr ""
+
+msgid "Main"
+msgstr ""
+
+msgid "A heading and paragraphs."
+msgstr ""
+
+msgid "A picture from a record, with optional text and a button over it."
+msgstr ""
+
+msgid "A large title, a subtitle and a button."
+msgstr ""
+
+msgid "Records as a grid of cards or a table."
+msgstr ""
+
+msgid "One record: its picture and fields."
+msgstr ""
+
+msgid "A row of record cards that scrolls sideways."
+msgstr ""
+
+msgid "Pictures one at a time, with arrows and swipe."
+msgstr ""
+
+msgid "An event’s sessions, booked by visitors."
+msgstr ""
+
+msgid "Free time slots of an appointment event."
+msgstr ""
+
+msgid "Upcoming events, soonest first."
+msgstr ""
+
+msgid "A colored or picture band other blocks sit on."
+msgstr ""
+
+msgid "Fields visitors fill in, saved into records."
+msgstr ""
+
+msgid "Layout and content"
+msgstr ""
+
+msgid "Records"
+msgstr ""
+
+msgid "Events"
+msgstr ""
+
+msgid "Visitors"
+msgstr ""
+
+msgid "Close (Esc)"
+msgstr ""
+
+msgid "Blocks"
+msgstr ""
+
+msgid "Select a block on the page or in this list to configure it."
+msgstr ""
+
+msgid "No blocks yet."
+msgstr ""
+
+msgid "Ctrl+S saves the page. Esc closes the block settings."
+msgstr ""
+
+msgid "This page has no blocks yet"
+msgstr ""
+
+msgid "Add a hero, a text or any other block, then drag it into place and resize it from its corner."
+msgstr ""
+
+msgid "Back to the page form"
+msgstr ""
+
+msgid "Unsaved changes"
+msgstr ""
+
+msgid "All changes saved"
+msgstr ""
+
+msgid "Preview width"
+msgstr ""
+
+msgid "Desktop"
+msgstr ""
+
+msgid "Desktop: drag and resize blocks"
+msgstr ""
+
+msgid "Phone: blocks stacked as visitors see them"
+msgstr ""
+
+msgid "Layout"
+msgstr ""
+
+msgid "Picture"
+msgstr ""
+
+msgid "Background"
+msgstr ""
+
+msgid "Data"
+msgstr ""
+
+msgid "Card"
+msgstr ""
+
+msgid "Access"
+msgstr ""
+
+msgid "Leave an empty line between paragraphs."
+msgstr ""
+
+msgid "Fields shown on each record."
+msgstr ""
+
+msgid "The default view: visitors can switch between grid and list."
+msgstr ""
+
+msgid "Pick a table first."
+msgstr ""
+
+msgid "Optional: rows of another table linked to this record, e.g. product variants."
+msgstr ""
+
+msgid "Map details"
+msgstr ""
+
+msgid "Legend"
+msgstr ""
+
+msgid "A page of the site"
+msgstr ""
+
+msgid "Login, sign-up, account, or another site"
+msgstr ""
+
+msgid "Needs attention"
+msgstr ""
+
+msgid "Broken"
+msgstr ""
+
+msgid "Click a page to open it in the builder."
+msgstr ""
+
+msgid "Drag a box to move it."
+msgstr ""
+
+msgid "Drag from the dot on a page’s right onto another page to add a link, or drag the end of an arrow to change where it leads. Select an arrow to remove it."
+msgstr ""
+
+msgid "Every page of the site and the buttons and links between them."
+msgstr ""
+
+msgid "Domain and search engines"
+msgstr ""
+
+msgid "Switch to dark mode"
+msgstr ""
+
+msgid "Switch to light mode"
+msgstr ""
+
+msgid "A sample value: no published record has one yet."
+msgstr ""
+
+msgid "After the value"
+msgstr ""
+
+msgid "Amount"
+msgstr ""
+
+msgid "Apply"
+msgstr ""
+
+msgid "Automatic"
+msgstr ""
+
+msgid "Before the value"
+msgstr ""
+
+msgid "Cancel"
+msgstr ""
+
+msgid "Choice"
+msgstr ""
+
+msgid "Color"
+msgstr ""
+
+msgid "Country of numbers without a +prefix"
+msgstr ""
+
+msgid "Currency from a column"
+msgstr ""
+
+msgid "Custom label"
+msgstr ""
+
+msgid "Date and time"
+msgstr ""
+
+msgid "Date style"
+msgstr ""
+
+msgid "Decimal number"
+msgstr ""
+
+msgid "Decimals"
+msgstr ""
+
+msgid "Display settings"
+msgstr ""
+
+msgid "Duration"
+msgstr ""
+
+msgid "Empty: automatic."
+msgstr ""
+
+msgid "Empty: the column name."
+msgstr ""
+
+msgid "Empty: the country of the site’s default language. Numbers of another country are written internationally."
+msgstr ""
+
+msgid "Empty: the server’s. The zone is always shown next to the time."
+msgstr ""
+
+msgid "Empty: the workspace currency, converted for visitors who pick another one."
+msgstr ""
+
+msgid "Field display"
+msgstr ""
+
+msgid "Font Awesome Free icons. The icon is decorative: the label and value carry the meaning."
+msgstr ""
+
+msgid "For records that each store their own currency code."
+msgstr ""
+
+msgid "Format"
+msgstr ""
+
+msgid "Hide the label"
+msgstr ""
+
+msgid "How each field shows"
+msgstr ""
+
+msgid "Icons"
+msgstr ""
+
+msgid "In the ERP:"
+msgstr ""
+
+msgid "Label hidden"
+msgstr ""
+
+msgid "Like the text"
+msgstr ""
+
+msgid "Link color"
+msgstr ""
+
+msgid "Linked record"
+msgstr ""
+
+msgid "Long (March 1, 2026)"
+msgstr ""
+
+msgid "Loose"
+msgstr ""
+
+msgid "Medium (Mar 1, 2026)"
+msgstr ""
+
+msgid "Muted"
+msgstr ""
+
+msgid "No icon"
+msgstr ""
+
+msgid "No icon matches."
+msgstr ""
+
+msgid "Not a country code (two letters, e.g. FR, US)."
+msgstr ""
+
+msgid "Nothing to show for this field."
+msgstr ""
+
+msgid "Only the value shows. Screen readers still announce the label."
+msgstr ""
+
+msgid "Percentage"
+msgstr ""
+
+msgid "Position"
+msgstr ""
+
+msgid "Rating"
+msgstr ""
+
+msgid "Reset to automatic"
+msgstr ""
+
+msgid "Search icons"
+msgstr ""
+
+msgid "Search icons (phone, mail, instagram…)"
+msgstr ""
+
+msgid "Short (03/01/2026)"
+msgstr ""
+
+msgid "Show as"
+msgstr ""
+
+msgid "Spacing"
+msgstr ""
+
+msgid "Tight"
+msgstr ""
+
+msgid "Time zone"
+msgstr ""
+
+msgid "Web address"
+msgstr ""
+
+msgid "When no"
+msgstr ""
+
+msgid "When yes"
+msgstr ""
+
+msgid "Whole number"
+msgstr ""
+
+msgid "Yes / no"
+msgstr ""
+
+msgid "with an icon"
+msgstr ""
+
+msgid "{n} out of {max}"
+msgstr ""
+
+msgid "Solid"
+msgstr ""
+
+msgid "Regular"
+msgstr ""
+
+msgid "Brands"
+msgstr ""
+
+msgid "Search bar"
+msgstr ""
+
+msgid "A search bar over the tables you pick."
+msgstr ""
+
+msgid "Type at least 2 characters"
+msgstr ""
+
+msgid "No results"
+msgstr ""
+
+msgid "Searching…"
+msgstr ""
+
+msgid "Search"
+msgstr ""
+
+msgid "Placeholder"
+msgstr ""
+
+msgid "Results per table"
+msgstr ""
+
+msgid "Searched tables"
+msgstr ""
+
+msgid "Results are grouped by table, in this order."
+msgstr ""
+
+msgid "Add a table to search in."
+msgstr ""
+
+msgid "Move"
+msgstr ""
+
+msgid "Schedule on"
+msgstr ""
+
+msgid "Move up"
+msgstr ""
+
+msgid "Remove table"
+msgstr ""
+
+msgid "Section label"
+msgstr ""
+
+msgid "Search in"
+msgstr ""
+
+msgid "Add table"
+msgstr ""
+
+msgid "Search results"
+msgstr ""
+
+msgid "Add column"
+msgstr ""
+
+msgid "Rename column"
+msgstr ""
+
+msgid "Column name"
+msgstr ""
+
+msgid "No column named {name} exists for this card."
+msgstr ""
+
+msgid "This board has too many columns: only the first ones are shown."
+msgstr ""
+
+msgid "Gantt"
+msgstr ""
+
+msgid "Zoom"
+msgstr ""
+
+msgid "Day"
+msgstr ""
+
+msgid "Week"
+msgstr ""
+
+msgid "Month"
+msgstr ""
+
+msgid "Today"
+msgstr ""
+
+msgid "Timeline position"
+msgstr ""
+
+msgid "Previous period"
+msgstr ""
+
+msgid "Next period"
+msgstr ""
+
+msgid "Gantt start"
+msgstr ""
+
+msgid "Gantt end"
+msgstr ""
+
+msgid "records shown — narrow the range or the filters to see the rest"
+msgstr ""
+
+msgid "Which field powers each list's Kanban, Calendar and Gantt display modes, and whether Graph mode is on."
+msgstr ""
+
+msgid "Colors of"
+msgstr ""
+
+msgid "Drag an unscheduled record onto the timeline to plan it."
+msgstr ""
+
+msgid "WBS"
+msgstr ""
+
+msgid "PERT"
+msgstr ""
+
+msgid "Add note"
+msgstr ""
+
+msgid "Delete note"
+msgstr ""
+
+msgid "Note"
+msgstr ""
+
+msgid "How to use this diagram"
+msgstr ""
+
+msgid "Scroll to zoom, drag the background to move around."
+msgstr ""
+
+msgid "Drag a box to move it: your arrangement is saved for you only."
+msgstr ""
+
+msgid "Shift+click or Shift+drag on the background selects several boxes; drag one to move them all."
+msgstr ""
+
+msgid "Double-click a box to open its record. Zoomed out, boxes show only their title."
+msgstr ""
+
+msgid "Drag from the dot on the right of a box to another box to add a dependency."
+msgstr ""
+
+msgid "Drag from the dot under a box to another box to make it its parent."
+msgstr ""
+
+msgid "Click a link to select it, then press Delete to remove it."
+msgstr ""
+
+msgid "Drop a box onto another to move it under that one."
+msgstr ""
+
+msgid "Undo"
+msgstr ""
+
+msgid "Redo"
+msgstr ""
+
+msgid "Drop a box with no links onto a line to insert it there."
+msgstr ""
+
+msgid "Ctrl+Z undoes your last change, Ctrl+Y redoes it."
+msgstr ""
+
+msgid "Add note adds a text box only you see; drag from its dot to a box to link them."
+msgstr ""
+
+msgid "Re-arrange places every box again; Fit view shows the whole diagram."
+msgstr ""
+
+msgid "Re-arrange"
+msgstr ""
+
+msgid "Export PNG"
+msgstr ""
+
+msgid "Export PDF"
+msgstr ""
+
+msgid "Fit view"
+msgstr ""
+
+msgid "More than {n} records match — narrow the filters to draw the diagram"
+msgstr ""
+
+msgid "Expand"
+msgstr ""
+
+msgid "Collapse"
+msgstr ""
+
+msgid "+1 task · {h} h"
+msgstr ""
+
+msgid "+{n} tasks · {h} h"
+msgstr ""
+
+msgid "Folded branch"
+msgstr ""
+
+msgid "ES"
+msgstr ""
+
+msgid "EF"
+msgstr ""
+
+msgid "LS"
+msgstr ""
+
+msgid "LF"
+msgstr ""
+
+msgid "Slack: {n} d"
+msgstr ""
+
+msgid "No estimate"
+msgstr ""
+
+msgid "Critical path"
+msgstr ""
+
+msgid "Closed"
+msgstr ""
+
+msgid "1 hidden link"
+msgstr ""
+
+msgid "{n} hidden links"
+msgstr ""
+
+msgid "Dependency cycle: critical path not computed"
+msgstr ""
+
+msgid "Add contact"
+msgstr ""
+
+msgid "Create a new contact"
+msgstr ""
+
+msgid "Add user"
+msgstr ""
+
+msgid "Add text"
+msgstr ""
+
+msgid "Contact"
+msgstr ""
+
+msgid "User"
+msgstr ""
+
+msgid "Pick a color"
+msgstr ""
+
+msgid "Clear color"
+msgstr ""
+
+msgid "Deleted contact"
+msgstr ""
+
+msgid "Unknown user"
+msgstr ""
+
+msgid "OBS"
+msgstr ""
+
+msgid "Risk"
+msgstr ""
+
+msgid "Edit box"
+msgstr ""
+
+msgid "Drag a box to move it: the chart is shared, and only the project manager can change it."
+msgstr ""
+
+msgid "Add boxes from the toolbar; drag from a box's dot to another to put it under that one."
+msgstr ""
+
+msgid "New risk"
+msgstr ""
+
+msgid "Matrix"
+msgstr ""
+
+msgid "Ishikawa"
+msgstr ""
+
+msgid "Register"
+msgstr ""
+
+msgid "Likelihood"
+msgstr ""
+
+msgid "Severity"
+msgstr ""
+
+msgid "Current"
+msgstr ""
+
+msgid "After remediation"
+msgstr ""
+
+msgid "Now"
+msgstr ""
+
+msgid "After"
+msgstr ""
+
+msgid "Uncategorized"
+msgstr ""
+
+msgid "Delay"
+msgstr ""
+
+msgid "Cost"
+msgstr ""
+
+msgid "Quality"
+msgstr ""
+
+msgid "Not computable"
+msgstr ""
+
+msgid "Category"
+msgstr ""
+
+msgid "Impact on"
+msgstr ""
+
+msgid "Detectability"
+msgstr ""
+
+msgid "If it happens"
+msgstr ""
+
+msgid "Criticity"
+msgstr ""
+
+msgid "Remediation"
+msgstr ""
+
+msgid "Responsible"
+msgstr ""
+
+msgid "Deadline"
+msgstr ""
+
+msgid "Residual criticity"
+msgstr ""
+
+msgid "Full screen"
+msgstr ""
+
+msgid "Exit full screen"
+msgstr ""
+
+msgid "More"
+msgstr ""
+
+msgid "Insights"
+msgstr ""
+
+msgid "Matrices"
+msgstr ""
+
+msgid "Swimlanes"
+msgstr ""
+
+msgid "Unassigned"
+msgstr ""
+
+msgid "First 1000 shown"
+msgstr ""
+
+msgid "Baseline"
+msgstr ""
+
+msgid "No baseline"
+msgstr ""
+
+msgid "Dependency cycle: no critical path"
+msgstr ""
+
+msgid "PBS"
+msgstr ""
+
+msgid "Add item"
+msgstr ""
+
+msgid "Edit item"
+msgstr ""
+
+msgid "Parent"
+msgstr ""
+
+msgid "No parent"
+msgstr ""
+
+msgid "No task produces this"
+msgstr ""
+
+msgid "No milestone yet for {name}"
+msgstr ""
+
+msgid "New note"
+msgstr ""
+
+msgid "Invalid note file."
+msgstr ""
+
+msgid "This note contains formatting that this editor does not support."
+msgstr ""
+
+msgid "Discard unsaved changes?"
+msgstr ""
+
+msgid "Strikethrough"
+msgstr ""
+
+msgid "Task list"
+msgstr ""
+
+msgid "Blockquote"
+msgstr ""
+
+msgid "Code block"
+msgstr ""
+
+msgid "Subscript"
+msgstr ""
+
+msgid "Superscript"
+msgstr ""
+
+msgid "This note has changed. Reopen it before saving again."
+msgstr ""
+
+msgid "Only .ocnote files can be edited as notes."
+msgstr ""
+
+msgid "The note is too large."
+msgstr ""
+
+msgid "The note must contain a Tiptap JSON document."
+msgstr ""
+
+msgid "The note version is required."
+msgstr ""
+
+msgid "Align left"
+msgstr ""
+
+msgid "Align center"
+msgstr ""
+
+msgid "Align right"
+msgstr ""
+
+msgid "Insert table"
+msgstr ""
+
+msgid "Insert image"
+msgstr ""
+
+msgid "Image address"
+msgstr ""
+
+msgid "Text color"
+msgstr ""
+
+msgid "Download"
+msgstr ""
+
+msgid "Loading…"
+msgstr ""
+
+msgid "Document tools"
+msgstr ""
+
+msgid "Text style"
+msgstr ""
+
+msgid "Normal text"
+msgstr ""
+
+msgid "Font family"
+msgstr ""
+
+msgid "Font size"
+msgstr ""
+
+msgid "Default"
+msgstr ""
+
+msgid "Line spacing"
+msgstr ""
+
+msgid "Justify"
+msgstr ""
+
+msgid "Custom color"
+msgstr ""
+
+msgid "Reset color"
+msgstr ""
+
+msgid "Table size"
+msgstr ""
+
+msgid "Add row above"
+msgstr ""
+
+msgid "Add row below"
+msgstr ""
+
+msgid "Add column before"
+msgstr ""
+
+msgid "Add column after"
+msgstr ""
+
+msgid "Toggle header row"
+msgstr ""
+
+msgid "Merge cells"
+msgstr ""
+
+msgid "Split cell"
+msgstr ""
+
+msgid "Delete row"
+msgstr ""
+
+msgid "Delete column"
+msgstr ""
+
+msgid "Delete table"
+msgstr ""
+
+msgid "Upload image"
+msgstr ""
+
+msgid "Image from URL"
+msgstr ""
+
+msgid "Remove image"
+msgstr ""
+
+msgid "Horizontal line"
+msgstr ""
+
+msgid "Clear formatting"
+msgstr ""
+
+msgid "Link address"
+msgstr ""
+
+msgid "Link text"
+msgstr ""
+
+msgid "Enter a valid address."
+msgstr ""
+
+msgid "Insert"
+msgstr ""
+
+msgid "Choose an image smaller than 5 MB."
+msgstr ""
+
+msgid "The image could not be loaded."
+msgstr ""
+
+msgid "Find and replace"
+msgstr ""
+
+msgid "Find in document"
+msgstr ""
+
+msgid "Replace with"
+msgstr ""
+
+msgid "Replace all"
+msgstr ""
+
+msgid "Previous result"
+msgstr ""
+
+msgid "Next result"
+msgstr ""
+
+msgid "Match case"
+msgstr ""
+
+msgid "Whole words"
+msgstr ""
+
+msgid "Close search"
+msgstr ""
+
+msgid "Document outline"
+msgstr ""
+
+msgid "Outline"
+msgstr ""
+
+msgid "Close outline"
+msgstr ""
+
+msgid "Headings"
+msgstr ""
+
+msgid "Untitled heading"
+msgstr ""
+
+msgid "Add headings to navigate your document."
+msgstr ""
+
+msgid "Note content"
+msgstr ""
+
+msgid "Code language"
+msgstr ""
+
+msgid "Print"
+msgstr ""
+
+msgid "Allow pop-ups to print this document."
+msgstr ""
+
+msgid "words"
+msgstr ""
+
+msgid "characters"
+msgstr ""
+
+msgid "Editing"
+msgstr ""
+
+msgid "Read only"
+msgstr ""
+
+msgid "Your changes have not been saved yet."
+msgstr ""
+
+msgid "Keep editing"
+msgstr ""
+
+msgid "Discard changes"
+msgstr ""
+
+msgid "Records: {n}"
+msgstr ""
+
+msgid "Add task"
+msgstr ""
+
+msgid "Remove from diagram"
+msgstr ""
+
+msgid "No match"
 msgstr ""

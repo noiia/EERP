@@ -1,22 +1,30 @@
 'use client'
-import { useState, type ComponentType } from 'react'
+import { forwardRef, useId, useState, type ComponentType } from 'react'
 import Box from '@mui/material/Box'
 import FormControlLabel from '@mui/material/FormControlLabel'
+import type { InputBaseComponentProps } from '@mui/material/InputBase'
 import IconButton from '@mui/material/IconButton'
 import InputAdornment from '@mui/material/InputAdornment'
 import MenuItem from '@mui/material/MenuItem'
+import Radio from '@mui/material/Radio'
+import RadioGroup from '@mui/material/RadioGroup'
 import Rating from '@mui/material/Rating'
 import Switch from '@mui/material/Switch'
 import Table from '@mui/material/Table'
 import TableBody from '@mui/material/TableBody'
 import TableCell from '@mui/material/TableCell'
 import TableHead from '@mui/material/TableHead'
+import TableContainer from '@mui/material/TableContainer'
 import TableRow from '@mui/material/TableRow'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
+import { HtmlEditor } from './lazy-widgets'
 import { useT } from '../i18n/translate'
 import { fieldLabel, resolveWidget, type FieldDescriptor, type JsonValue } from './descriptor'
 import { AddressWidget } from './address-widget'
+import { MindmapWidget } from './mindmap-widget'
+import { DistanceWidget } from './distance-widget'
+import { GeoPointWidget, GeoShapeWidget } from './geo-widgets'
 import { RelationCarouselWidget } from './carousel-widget'
 import { RelationSummaryWidget } from './relation-summary-widget'
 import { useAccountsStore } from './accounts-store'
@@ -25,7 +33,13 @@ import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { isHexColor } from './palette'
 import { BooleanFileWidget } from './file-widgets'
 import { BooleanPictureWidget, BooleanSignatureWidget } from './picture-widgets'
-import { RelationListWidget, RelationSearchWidget, RelationTagsWidget, TaxTotalsWidget } from './relation-widgets'
+import {
+  RelationColorTagsWidget,
+  RelationListWidget,
+  RelationSearchWidget,
+  RelationTagsWidget,
+  TaxTotalsWidget,
+} from './relation-widgets'
 import { useNumberFormat } from './format-store'
 import { tabularNums } from './tokens'
 
@@ -263,11 +277,26 @@ function TextLongWidget({ field, value, onChange, disabled }: WidgetProps) {
   )
 }
 
+// ── html ──────────────────────────────────────────────────────────────────────
+
+/** text/html: rich text stored as HTML — the server must sanitize it (html-editor.tsx). */
+function TextHtmlWidget({ field, value, onChange, disabled }: WidgetProps) {
+  const t = useT()
+  return (
+    <HtmlEditor
+      label={field.hideLabel ? undefined : t(fieldLabel(field))}
+      value={(value as string) ?? ''}
+      onChange={onChange}
+      disabled={disabled}
+    />
+  )
+}
+
 // ── table (docs/roadmaps/app-store.md, Phase 2) ───────────────────────────────
 
 /** widgetOptions.columns entry — declared, not inferred, like every other
  * descriptor-driven presentation choice. */
-export interface TableWidgetColumn {
+interface TableWidgetColumn {
   key: string
   label: string
 }
@@ -308,27 +337,33 @@ function TableWidget({ field, value }: WidgetProps) {
           {t(emptyLabel)}
         </Typography>
       ) : (
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              {columns.map((col) => (
-                <TableCell key={col.key}>{t(col.label)}</TableCell>
-              ))}
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {rows.map((row, i) => (
-              // Rows are anonymous records with no natural id, and this table
-              // never reorders — index-as-key is safe here.
-              <TableRow key={i}>
-                {columns.map((col) => {
-                  const cell = row[col.key]
-                  return <TableCell key={col.key}>{cell != null ? String(cell) : ''}</TableCell>
-                })}
+        // TableContainer's own overflow-x: auto scopes the horizontal
+        // scrollbar to just this table when its declared columns don't fit —
+        // a wide notebook-page table (e.g. the App Store's Views/Reports
+        // pages) never pushes the surrounding page/tab sideways.
+        <TableContainer>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                {columns.map((col) => (
+                  <TableCell key={col.key}>{t(col.label)}</TableCell>
+                ))}
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHead>
+            <TableBody>
+              {rows.map((row, i) => (
+                // Rows are anonymous records with no natural id, and this
+                // table never reorders — index-as-key is safe here.
+                <TableRow key={i}>
+                  {columns.map((col) => {
+                    const cell = row[col.key]
+                    return <TableCell key={col.key}>{cell != null ? String(cell) : ''}</TableCell>
+                  })}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
       )}
     </Box>
   )
@@ -359,17 +394,105 @@ function SelectionWidget({ field, value, onChange, disabled }: WidgetProps) {
     >
       {options.map((option) => (
         <MenuItem key={option} value={option}>
-          {t(option)}
+          {t(field.selection?.labels?.[option] ?? option)}
         </MenuItem>
       ))}
     </TextField>
   )
 }
 
+/** The radios as a TextField's input: what InputBase hands an input
+ * component (class, focus/blur, disabled) plus the options and the pick. */
+const RadioRowInput = forwardRef<HTMLDivElement, InputBaseComponentProps>(function RadioRowInput(
+  {
+    className,
+    value,
+    disabled,
+    onFocus,
+    onBlur,
+    id,
+    name,
+    options,
+    labels,
+    onPick,
+    'aria-labelledby': labelledBy,
+  },
+  ref,
+) {
+  return (
+    <RadioGroup
+      ref={ref}
+      row
+      id={id}
+      aria-labelledby={labelledBy}
+      name={name}
+      className={className}
+      value={value}
+      onChange={(e) => onPick(e.target.value)}
+      onFocus={onFocus}
+      onBlur={onBlur}
+      // `&&`: InputBase's input class (display: block, a fixed height) would
+      // otherwise win over the row layout and cancel the gap.
+      sx={{ '&&': { display: 'flex', flexWrap: 'nowrap', gap: 3, height: 'auto' } }}
+    >
+      {(options as string[]).map((option, i) => (
+        <FormControlLabel
+          key={option}
+          value={option}
+          disabled={disabled}
+          control={<Radio size="small" sx={{ p: 0, mr: 0.75 }} />}
+          label={(labels as string[])[i]}
+          // The input's own line height, so the box is exactly a text field's.
+          sx={{ m: 0, '& .MuiFormControlLabel-label': { lineHeight: 'inherit' } }}
+        />
+      ))}
+    </RadioGroup>
+  )
+})
+
+/**
+ * selection/radio — the same closed list as SelectionWidget, as a row of radio
+ * buttons, for a short list the user should see whole (a contact's Company /
+ * Contact kind). It takes a text field's box (its height and its label
+ * position, without the outline), so it lines up with the fields around it
+ * instead of stacking a label line over the radios.
+ */
+function SelectionRadioWidget({ field, value, onChange, disabled }: WidgetProps) {
+  const t = useT()
+  const id = useId()
+  const options = field.selection?.options ?? []
+  return (
+    <TextField
+      id={id}
+      label={field.hideLabel ? undefined : t(fieldLabel(field))}
+      required={field.required}
+      disabled={disabled}
+      fullWidth
+      value={typeof value === 'string' && options.includes(value) ? value : ''}
+      slotProps={{
+        inputLabel: { shrink: true },
+        input: {
+          inputComponent: RadioRowInput,
+          // No outline: the radios are their own affordance. Hidden rather than
+          // borderless, so the focus/hover rules restyling it can't bring it back.
+          sx: { '& .MuiOutlinedInput-notchedOutline': { display: 'none' } },
+          inputProps: {
+            name: field.name,
+            options,
+            labels: options.map((o) => t(o)),
+            onPick: onChange,
+            'aria-labelledby': field.hideLabel ? undefined : `${id}-label`,
+          },
+        },
+      }}
+    />
+  )
+}
+
 /** widgetOptions.presets entry for SelectionLinkedWidget — a plain field-name
  * -> value patch applied to SIBLING fields (never this field's own value,
  * which onChange already handles) when that option is picked. */
-export type LinkedSelectionPresets = Record<string, Record<string, JsonValue>>
+type LinkedSelectionPresets = Record<string, Record<string, JsonValue>>
 
 /**
  * Same closed-list dropdown as SelectionWidget, but picking an option ALSO
@@ -432,6 +555,30 @@ function DateWidget({ field, value, onChange, disabled }: WidgetProps) {
       slotProps={{ inputLabel: { shrink: true } }}
       value={dateOnly}
       onChange={(e) => onChange(e.target.value)}
+    />
+  )
+}
+
+// date/datetime: a timestamptz column (an instant). Edited in the BROWSER's
+// time zone — datetime-local takes 'YYYY-MM-DDTHH:mm' with no zone — and
+// written back as UTC ISO, so the stored instant is exact whatever the zone.
+function DateTimeWidget({ field, value, onChange, disabled }: WidgetProps) {
+  const t = useT()
+  const d = typeof value === 'string' && value ? new Date(value) : null
+  const local =
+    d && !Number.isNaN(d.getTime())
+      ? new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
+      : ''
+  return (
+    <TextField
+      label={field.hideLabel ? undefined : t(fieldLabel(field))}
+      type="datetime-local"
+      required={field.required}
+      disabled={disabled}
+      fullWidth
+      slotProps={{ inputLabel: { shrink: true } }}
+      value={local}
+      onChange={(e) => onChange(e.target.value ? new Date(e.target.value).toISOString() : null)}
     />
   )
 }
@@ -568,6 +715,71 @@ function NumberPercentWidget({ field, value, onChange, disabled }: WidgetProps) 
   return <NumberInput field={field} input={input} endAdornment="%" disabled={disabled} />
 }
 
+/**
+ * Integer minutes edited as hours : minutes (slot length, buffer). The stored
+ * value stays a plain minute count; minutes clamp to 0-59 and emptying minutes
+ * with no hours (or both inputs) clears the field. Read-only shows "1 h 30 min".
+ */
+function NumberDurationWidget({ field, value, onChange, disabled }: WidgetProps) {
+  const t = useT()
+  const total = typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : null
+  const hours = total === null ? '' : String(Math.floor(total / 60))
+  const minutes = total === null ? '' : String(total % 60)
+  const label = t(fieldLabel(field))
+  const hUnit = t('h')
+  const mUnit = t('min')
+  const clock = byPrefixAndName.fas['clock']
+  if (disabled) {
+    return (
+      <Box>
+        {!field.hideLabel && (
+          <Typography variant="caption" color="text.secondary" component="div">
+            {label}
+          </Typography>
+        )}
+        <Typography variant="body1">{total === null ? '' : `${hours} ${hUnit} ${minutes} ${mUnit}`}</Typography>
+      </Box>
+    )
+  }
+  const emit = (h: string, m: string) => {
+    if (m === '' && (h === '' || Number(h) === 0)) return onChange(null)
+    const hh = Math.max(0, Math.trunc(Number(h) || 0))
+    const mm = Math.min(59, Math.max(0, Math.trunc(Number(m) || 0)))
+    onChange(hh * 60 + mm)
+  }
+  return (
+    <Box>
+      {!field.hideLabel && (
+        <Typography variant="caption" color="text.secondary" component="div">
+          {label}
+        </Typography>
+      )}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        {clock && <FontAwesomeIcon icon={clock} />}
+        <TextField
+          size="small"
+          type="number"
+          sx={{ width: 80 }}
+          value={hours}
+          onChange={(e) => emit(e.target.value, minutes)}
+          slotProps={{ htmlInput: { min: 0, step: 1, 'aria-label': t('Hours') } }}
+        />
+        <span>{hUnit}</span>
+        <span>:</span>
+        <TextField
+          size="small"
+          type="number"
+          sx={{ width: 80 }}
+          value={minutes}
+          onChange={(e) => emit(hours, e.target.value)}
+          slotProps={{ htmlInput: { min: 0, max: 59, step: 1, 'aria-label': t('Minutes') } }}
+        />
+        <span>{mUnit}</span>
+      </Box>
+    </Box>
+  )
+}
+
 function NumberStarsWidget({ field, value, onChange, disabled }: WidgetProps) {
   const t = useT()
   const max = typeof field.widgetOptions?.max === 'number' ? field.widgetOptions.max : 3
@@ -589,6 +801,21 @@ function NumberStarsWidget({ field, value, onChange, disabled }: WidgetProps) {
   )
 }
 
+/** One star for a boolean (e.g. a task's priority): clicking it again clears it. */
+function BooleanStarsWidget({ field, value, onChange, disabled }: WidgetProps) {
+  const t = useT()
+  return (
+    <Box>
+      {!field.hideLabel && (
+        <Typography variant="caption" color="text.secondary" component="legend">
+          {t(fieldLabel(field))}
+        </Typography>
+      )}
+      <Rating max={1} readOnly={disabled} value={value === true ? 1 : 0} onChange={(_e, next) => onChange(next === 1)} />
+    </Box>
+  )
+}
+
 // ── phone (allowed on text — recommended — and number) ────────────────────────
 
 /**
@@ -596,7 +823,7 @@ function NumberStarsWidget({ field, value, onChange, disabled }: WidgetProps) {
  * defaults, not a libphonenumber replacement. Ordered longest-dial-first when
  * matching so '+1 ...' never shadows '+1242'-style codes we may add later.
  */
-export const PHONE_COUNTRIES: readonly { code: string; dial: string; flag: string }[] = [
+const PHONE_COUNTRIES: readonly { code: string; dial: string; flag: string }[] = [
   { code: 'FR', dial: '33', flag: '🇫🇷' },
   { code: 'BE', dial: '32', flag: '🇧🇪' },
   { code: 'CH', dial: '41', flag: '🇨🇭' },
@@ -696,6 +923,7 @@ function PhoneWidget({ field, value, onChange, disabled }: WidgetProps) {
 const WIDGET_COMPONENTS: Record<string, ComponentType<WidgetProps>> = {
   'text/simple': TextSimpleWidget,
   'text/long': TextLongWidget,
+  'text/html': TextHtmlWidget,
   'text/phone': PhoneWidget,
   'text/table': TableWidget,
   'text/color': TextColorWidget,
@@ -707,21 +935,30 @@ const WIDGET_COMPONENTS: Record<string, ComponentType<WidgetProps>> = {
   'number/int': NumberIntWidget,
   'number/percent': NumberPercentWidget,
   'number/stars': NumberStarsWidget,
+  'number/duration': NumberDurationWidget,
   'number/phone': PhoneWidget,
   'boolean/switch': BooleanSwitchWidget,
+  'boolean/stars': BooleanStarsWidget,
   'boolean/picture': BooleanPictureWidget,
   'boolean/file': BooleanFileWidget,
   'boolean/signature': BooleanSignatureWidget,
   'date/simple': DateWidget,
+  'date/datetime': DateTimeWidget,
   'selection/select': SelectionWidget,
   'selection/linked': SelectionLinkedWidget,
+  'selection/radio': SelectionRadioWidget,
   'relation/search': RelationSearchWidget,
   'relation/tags': RelationTagsWidget,
   'relation/list': RelationListWidget,
   'relation/carousel': RelationCarouselWidget,
+  'relation/colortags': RelationColorTagsWidget,
   'relation/summary': RelationSummaryWidget,
   'totals/recap': TaxTotalsWidget,
+  'text/mindmap': MindmapWidget,
   'address/form': AddressWidget,
+  'distance/meters': DistanceWidget,
+  'geo/point': GeoPointWidget,
+  'geo/shape': GeoShapeWidget,
 }
 
 /**

@@ -1,9 +1,13 @@
 import {
   exportReportPDF,
+  FORM_COLUMNS_ID,
   FORM_NOTEBOOK_ID,
   registerFieldFunction,
+  registerHeaderButtonAction,
   registerMenuAction,
   type FrontRoute,
+  type HeaderButtonContext,
+  type HeaderButtonDescriptor,
   type MenuNode,
   type Operation,
   type ViewDescriptor,
@@ -83,14 +87,53 @@ registerMenuAction({
   handler: ({ recordId }) => exportReportPDF('sale.invoice', recordId),
 })
 
+// Invoice workflow: draft -> confirmed -> sent -> paid. Confirm and Send are
+// server-side steps (modules/sale/workflow.go, HeaderButtonContext.runAction)
+// — Confirm needs at least one line; Send emails the invoice's PDF to its
+// Customer and every Recipient. Same shape as quote_views.ts's buttons.
+function runAction(ctx: HeaderButtonContext, action: string) {
+  if (!ctx.runAction) throw new Error('record actions are not available here')
+  return ctx.runAction(action)
+}
+
+registerHeaderButtonAction({
+  entity: 'invoice',
+  name: 'sale.confirmInvoice',
+  handler: async (ctx) => {
+    await runAction(ctx, 'confirm')
+  },
+})
+
+registerHeaderButtonAction({
+  entity: 'invoice',
+  name: 'sale.sendInvoice',
+  handler: async (ctx) => {
+    await runAction(ctx, 'send')
+  },
+})
+
+const invoiceHeaderButtons: HeaderButtonDescriptor[] = [
+  { name: 'sale.confirmInvoice', label: 'Confirm', states: { visible: { field: 'status', op: 'eq', value: 'draft' } } },
+  { name: 'sale.sendInvoice', label: 'Send', states: { visible: { field: 'status', op: 'eq', value: 'confirmed' } } },
+]
+
 export const fields: ViewDescriptor['fields'] = [
-  { name: 'number', label: 'Number', type: 'text', required: true },
-  { name: 'customer_name', label: 'Customer', type: 'text', required: true },
+  // Never typed: Go gives every new invoice the next number of the company's
+  // yearly invoice sequence (INV-2026-0001 — modules/sale/sequence.go).
+  { name: 'number', label: 'Number', type: 'text', readOnly: true },
+  // The bill-to snapshot printed on the PDF (Invoice.CustomerName's own doc
+  // comment, module.go) — kept in the compact/list set since it's what the
+  // List's DataGrid can actually render as a readable column (a many2one's
+  // raw FK id would not). customer_id below (form-only) is the PRIMARY way
+  // to fill it now: picking a contact there auto-fills this via
+  // widgetOptions.fillFields, though it stays manually editable/overridable
+  // for a customer with no real Contact record.
+  { name: 'customer_name', label: 'Customer name', type: 'text', required: true },
   {
     name: 'status',
     label: 'Status',
     type: 'selection',
-    selection: { options: ['draft', 'sent', 'paid', 'overdue', 'cancelled'] },
+    selection: { options: ['draft', 'confirmed', 'sent', 'paid', 'overdue', 'cancelled'] },
   },
   { name: 'issue_date', label: 'Issue date', type: 'date', default: 'sale.defaultIssueDate' },
   { name: 'due_date', label: 'Due date', type: 'date' },
@@ -108,21 +151,48 @@ const formFields: ViewDescriptor['fields'] = [
     widget: 'picture',
   },
   ...fields,
-  { name: 'subject', label: 'Subject', type: 'text' },
   {
+    // The PRIMARY way to set the customer now: picking a real contact here
+    // auto-fills customer_name/customer_email above via widgetOptions.
+    // fillFields (relation-widgets.tsx's RelationSearchWidget — a plain
+    // { sourceColumn: targetField } map applied from the picked record the
+    // moment it's chosen, no extra fetch). Still just a many2one FK
+    // (nullable) behind those snapshot fields, never resolved live at print
+    // time — see Invoice.CustomerID/CustomerName's own doc comments
+    // (module.go) for why the snapshot exists at all.
     name: 'customer_id',
-    label: 'Linked customer',
+    label: 'Customer',
     type: 'relation',
+    required: true,
     relation: { entity: 'contact', kind: 'many2one', labelField: 'name' },
+    widgetOptions: { fillFields: { name: 'customer_name', email: 'customer_email' } },
   },
-  { name: 'customer_email', label: 'Customer email', type: 'text' },
+  // Filled by the Customer pick (fillFields) and used by Send, never typed:
+  // declared so it rides the draft, but not shown.
+  { name: 'customer_email', label: 'Customer email', type: 'text', invisible: true },
   { name: 'customer_address', label: 'Billing address', type: 'address', widget: 'form' },
   // No currency field: currency is now the ISSUING COMPANY's own property
   // (internal/company.Company.Currency, Settings -> Company), not duplicated
   // per document.
-  { name: 'reference', label: 'Reference', type: 'text' },
-  // System-set provenance link, never hand-picked: quote_views.ts's
-  // sale.acceptQuote is the only writer, at invoice-creation time. readOnly
+  // No subject or reference field on the form: the columns stay (the external
+  // API and an accepted quote can still set them, and the PDF prints them when
+  // set), but they're not typed here.
+  // Who else Send emails the invoice to, beside the Customer (accepting a
+  // quote copies its recipients here).
+  {
+    name: 'recipients',
+    label: 'Recipients',
+    type: 'relation',
+    relation: {
+      entity: 'contact',
+      kind: 'many2many',
+      via: 'invoice_recipient',
+      viaFields: { own: 'invoice_id', related: 'contact_id' },
+      labelField: 'name',
+    },
+  },
+  // System-set provenance link, never hand-picked: accepting a quote
+  // (workflow.go's AcceptQuote) is the only writer, at invoice creation. readOnly
   // rather than omitted from the form entirely — a user should be able to
   // SEE which quote (if any) an invoice came from.
   {
@@ -148,6 +218,21 @@ const formFields: ViewDescriptor['fields'] = [
     label: 'Line items',
     type: 'relation',
     relation: { entity: 'sale_line', kind: 'one2many', inverseField: 'invoice_id', labelField: 'variant_name' },
+    // Explicit columns: the line's Taxes tags (resolved per row from the line
+    // form's own `taxes` many2many) instead of the raw tax_rate, the unit Go
+    // prints from the line's UoM, and no raw ids (variant_id, uom_id).
+    widgetOptions: {
+      deletable: true,
+      relatedRelationField: 'taxes',
+      columns: [
+        { key: 'quantity', label: 'Quantity' },
+        { key: 'unit', label: 'Unit' },
+        { key: 'unit_price', label: 'Unit price' },
+        { key: 'subtotal', label: 'Subtotal' },
+        { key: 'taxes', label: 'Taxes' },
+        { key: 'total', label: 'Total' },
+      ],
+    },
   },
   // The HT -> tax-by-rate -> TTC recap block (docs/roadmaps — sale totals):
   // computes itself, live, from the SAME sale_lines above (each line's own
@@ -204,6 +289,7 @@ const formView: ViewDescriptor = {
   // 'status' field's own selection.options above, so this never re-declares
   // the vocabulary — it just points at it.
   statusBar: { field: 'status' },
+  headerButtons: invoiceHeaderButtons,
 }
 
 // Moves sale_lines (+ its totals recap) off the default anatomy's
@@ -231,6 +317,37 @@ export const orderLinesPageOperations: Operation[] = [
     },
     target: FORM_NOTEBOOK_ID,
     position: 'first',
+  },
+]
+
+// Below the dates, two independent columns, as on the quote: the billing
+// address on the left; the Customer on the right with the other fields
+// stacked under it (Payment method, Recipients, the source Quote). The
+// default two-column body fills row by row, which left a gap beside the tall
+// address; one sub-group per column keeps each side top-to-bottom.
+export const invoicePartiesOperations: Operation[] = [
+  {
+    op: 'addNode',
+    node: {
+      kind: 'group',
+      id: 'invoice_parties',
+      columns: 2,
+      children: [
+        { kind: 'group', id: 'invoice_parties_left', children: [{ kind: 'field', name: 'customer_address' }] },
+        {
+          kind: 'group',
+          id: 'invoice_parties_right',
+          children: [
+            { kind: 'field', name: 'customer_id' },
+            { kind: 'field', name: 'payment_method' },
+            { kind: 'field', name: 'recipients' },
+            { kind: 'field', name: 'quote_id' },
+          ],
+        },
+      ],
+    },
+    target: FORM_COLUMNS_ID,
+    position: 'after',
   },
 ]
 

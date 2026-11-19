@@ -1,0 +1,82 @@
+'use client'
+import type { DataGridProps } from '@mui/x-data-grid'
+import type { RichTreeViewProps } from '@mui/x-tree-view/RichTreeView'
+import type { TreeViewDefaultItemModelProperties } from '@mui/x-tree-view/models'
+import type { HasId } from './stores'
+import type { GraphRendererProps } from './graph-renderer'
+import type { HtmlEditorProps } from './html-editor'
+import type { OcNoteEditorProps } from './ocnote-editor'
+import type { WbsRendererProps } from './diagram/wbs-renderer'
+import type { PertRendererProps } from './diagram/pert-renderer'
+import type { ObsRendererProps } from './diagram/obs-renderer'
+import type { PbsRendererProps } from './diagram/pbs-renderer'
+import type { RiskRendererProps } from './risk/risk-renderer'
+import type { InsightsRendererProps } from './insights/insights-renderer'
+import type { MatrixRendererProps } from './matrix/matrix-renderer'
+import { lazyComponent } from './lazy-component'
+
+// The engine's heavy widgets, each in its own chunk (see lazy-component.tsx).
+// Import these, never the libraries directly: one static import of
+// '@mui/x-data-grid' (types aside) puts the whole grid back in every page.
+
+export const DataGrid = lazyComponent<DataGridProps>(() =>
+  import('@mui/x-data-grid').then((m) => m.DataGrid as React.ComponentType<DataGridProps>),
+)
+
+type TreeProps = RichTreeViewProps<TreeViewDefaultItemModelProperties, false>
+
+export const RichTreeView = lazyComponent<TreeProps>(() =>
+  import('@mui/x-tree-view/RichTreeView').then(
+    (m) => m.RichTreeView as unknown as React.ComponentType<TreeProps>,
+  ),
+)
+
+export const HtmlEditor = lazyComponent<HtmlEditorProps>(() =>
+  import('./html-editor').then((m) => m.HtmlEditor),
+)
+
+export const OcNoteEditor = lazyComponent<OcNoteEditorProps>(() =>
+  import('./ocnote-editor').then((m) => m.OcNoteEditor),
+)
+
+export const GraphRenderer = lazyComponent<GraphRendererProps<HasId>>(() =>
+  import('./graph-renderer').then(
+    (m) => m.GraphRenderer as React.ComponentType<GraphRendererProps<HasId>>,
+  ),
+)
+
+// React Flow (and its CSS) only loads with the WBS/PERT modes; jspdf and html-to-image
+// load later still, on the first export (diagram-canvas.tsx).
+export const WbsRenderer = lazyComponent<WbsRendererProps<HasId>>(() =>
+  import('./diagram/wbs-renderer').then(
+    (m) => m.WbsRenderer as React.ComponentType<WbsRendererProps<HasId>>,
+  ),
+)
+
+export const PertRenderer = lazyComponent<PertRendererProps<HasId>>(() =>
+  import('./diagram/pert-renderer').then(
+    (m) => m.PertRenderer as React.ComponentType<PertRendererProps<HasId>>,
+  ),
+)
+
+export const ObsRenderer = lazyComponent<ObsRendererProps>(() =>
+  import('./diagram/obs-renderer').then((m) => m.ObsRenderer),
+)
+
+export const RiskRenderer = lazyComponent<RiskRendererProps>(() =>
+  import('./risk/risk-renderer').then((m) => m.RiskRenderer),
+)
+
+// Insights and Matrices modes (ADR-041): stubs for now — their own tasks fill
+// the renderers, the chunk and the dispatch stay.
+export const InsightsRenderer = lazyComponent<InsightsRendererProps>(() =>
+  import('./insights/insights-renderer').then((m) => m.InsightsRenderer),
+)
+
+export const MatrixRenderer = lazyComponent<MatrixRendererProps>(() =>
+  import('./matrix/matrix-renderer').then((m) => m.MatrixRenderer),
+)
+
+export const PbsRenderer = lazyComponent<PbsRendererProps>(() =>
+  import('./diagram/pbs-renderer').then((m) => m.PbsRenderer),
+)

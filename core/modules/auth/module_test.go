@@ -1,18 +1,14 @@
 package auth
 
 import (
+	"slices"
 	"testing"
 
 	"core/orm"
 )
 
 func contains(haystack []string, needle string) bool {
-	for _, s := range haystack {
-		if s == needle {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(haystack, needle)
 }
 
 // The auth tables must be managed by the ORM (so their schemas migrate) but must

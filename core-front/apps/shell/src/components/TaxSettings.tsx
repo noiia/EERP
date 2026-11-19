@@ -1,13 +1,12 @@
 'use client'
 import { useState } from 'react'
-import Alert from '@mui/material/Alert'
 import FormControl from '@mui/material/FormControl'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import Radio from '@mui/material/Radio'
 import RadioGroup from '@mui/material/RadioGroup'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { useT } from '@eerp/core-front'
+import { useT, ViewBanner } from '@eerp/core-front'
 import { setTaxSettings, type TaxPriceMode, type TaxSettings } from '@/lib/tax-settings'
 
 // Settings -> Global settings -> Tax: the workspace-wide switch deciding
@@ -72,7 +71,7 @@ export default function TaxSettings({
           {t('Changing the tax price mode requires the settings:tax:write permission.')}
         </Typography>
       )}
-      {error && <Alert severity="error">{error}</Alert>}
+      {error && <ViewBanner status="error">{error}</ViewBanner>}
     </Stack>
   )
 }

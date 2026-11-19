@@ -1,5 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { useSessionStore } from './session-store'
+import { setViewportWidth } from '../test/viewport'
 
 // A card click (no drag) navigates to the record's form via the App Router.
 const pushMock = vi.fn()
@@ -7,9 +9,17 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock }),
 }))
 
+// Quick create needs RelationOps + a wizard; the phone tests only check the hand-off.
+const quickMock = vi.hoisted(() => ({ canCreate: false, open: vi.fn() }))
+vi.mock('./quick-create', async (orig) => ({
+  ...(await orig<typeof import('./quick-create')>()),
+  useQuickCreate: () => ({ canCreate: quickMock.canCreate, open: quickMock.open, dialog: null }),
+}))
+
 import { CalendarRenderer } from './calendar-renderer'
 import type { ViewDescriptor } from './descriptor'
 import type { EntityActions } from './stores'
+import { RelationOpsProvider as ColorOpsProvider, type RelationOps } from './relation-ops'
 import { useUndoToastStore } from './undo-toast'
 import { ApiError } from '../api/errors'
 
@@ -67,6 +77,27 @@ describe('CalendarRenderer', () => {
     )
     expect(screen.getByRole('group', { name: day15 })).toHaveTextContent('Alpha')
     expect(screen.getByRole('group', { name: 'Unscheduled' })).toHaveTextContent('Beta')
+  })
+
+  it('labels a record "<order> - <name>" when its first field is the order number', () => {
+    const ordered = {
+      ...descriptor,
+      fields: [{ name: 'wbs_number', label: 'Order', type: 'text' as const }, ...descriptor.fields],
+      viewModeDefaults: { wbsOrderField: 'wbs_number' },
+    } as ViewDescriptor<Task>
+    render(<CalendarRenderer descriptor={ordered} initialData={records.map((r) => ({ ...r, wbs_number: '2' }))} actions={actions} dateField="due_date" />)
+    expect(screen.getByRole('group', { name: day15 })).toHaveTextContent('2 - Alpha')
+  })
+
+  it('labels a record with its first text field, never a geo field', () => {
+    const geoDescriptor: ViewDescriptor<Task> = {
+      ...descriptor,
+      fields: [{ name: 'geo_location', label: 'Map position', type: 'geo' }, ...descriptor.fields],
+    }
+    const located = records.map((r) => ({ ...r, geo_location: { type: 'Point', coordinates: [2.35, 48.85] } }))
+    render(<CalendarRenderer descriptor={geoDescriptor} initialData={located} actions={actions} dateField="due_date" />)
+    expect(screen.getByRole('group', { name: day15 })).toHaveTextContent('Alpha')
+    expect(screen.queryByText('[object Object]')).toBeNull()
   })
 
   it('positions a record whose date field is a full RFC3339 timestamp (a real Go time.Time column), not just a bare date string', () => {
@@ -169,7 +200,7 @@ describe('CalendarRenderer', () => {
       />,
     )
     fireEvent.click(screen.getByTestId('calendar-card-1'))
-    expect(pushMock).toHaveBeenCalledWith('/tasks/1')
+    expect(pushMock).toHaveBeenCalledWith('/app/tasks/1')
   })
 
   it('does nothing on click when the descriptor has no formPath', () => {
@@ -219,7 +250,7 @@ describe('CalendarRenderer', () => {
     useUndoToastStore.getState().recover()
 
     await waitFor(() => expect(update).toHaveBeenCalledWith('1', { due_date: day15 }))
-    expect(screen.getByRole('group', { name: day15 })).toHaveTextContent('Alpha')
+    await waitFor(() => expect(screen.getByRole('group', { name: day15 })).toHaveTextContent('Alpha'))
   })
 
   it('dropping an already-unscheduled card outside the calendar does nothing (nothing to remove)', () => {
@@ -293,4 +324,187 @@ describe('CalendarRenderer', () => {
     // "colored" from "not colored" here.
     expect(badCard.className).not.toBe(okCard.className)
   })
+
+  it('server-loaded: marks month and unscheduled totals Go estimated as approximate', async () => {
+    const { RelationOpsProvider } = await import('./relation-ops')
+    const listPage = vi.fn(async (_entity: string, options?: import('../api/list-options').EntityListOptions) => {
+      if (options?.empty?.includes('due_date')) {
+        return { records: [{ id: '2', name: 'Beta', due_date: null }], total: 15_000, totalEstimated: true as const }
+      }
+      return { records: [{ id: '1', name: 'Alpha', due_date: day15 }], total: 20_000, totalEstimated: true as const }
+    })
+    const ops = { list: vi.fn(), get: vi.fn(), create: vi.fn(), remove: vi.fn(), listPage }
+    render(
+      <RelationOpsProvider ops={ops}>
+        <CalendarRenderer descriptor={descriptor} initialData={[]} actions={actions} dateField="due_date" serverOptions={{}} />
+      </RelationOpsProvider>,
+    )
+    await waitFor(() => expect(screen.getByText(/1 \/ ≈ 20000/)).toBeInTheDocument())
+    expect(screen.getByText('Unscheduled (≈ 15000)')).toBeInTheDocument()
+  })
 })
+
+const colorsField = {
+  name: 'color_groups',
+  label: 'Color groups',
+  type: 'relation' as const,
+  widget: 'colortags',
+  relation: { entity: 'color', kind: 'many2many' as const, via: 'rec_color', viaFields: { own: 'rec_id', related: 'color_id' }, labelField: 'name' },
+}
+
+/** Record 1 has red then green, record 3 red only, the rest none. */
+const colorOps: RelationOps = {
+  list: vi.fn(async (entity: string) =>
+    entity === 'rec_color'
+      ? [
+          { id: 'j1', rec_id: '1', color_id: 'c1' },
+          { id: 'j2', rec_id: '1', color_id: 'c2' },
+          { id: 'j3', rec_id: '3', color_id: 'c1' },
+        ]
+      : [
+          { id: 'c1', color: '#ff0000' },
+          { id: 'c2', color: '#00ff00' },
+        ],
+  ),
+  get: vi.fn(),
+  create: vi.fn(),
+  remove: vi.fn(),
+}
+
+const ribbonOf = (card: HTMLElement) => card.querySelector<HTMLElement>('[data-testid="color-ribbon"]')
+
+describe('color ribbon', () => {
+  it('draws a 4px ribbon in the card\'s color, equal segments for several, nothing without colors', async () => {
+    const actions = { create: vi.fn(), update: vi.fn() }
+    render(
+      <ColorOpsProvider ops={colorOps}>
+        <CalendarRenderer
+          descriptor={{ ...descriptor, fields: [...descriptor.fields, colorsField] }}
+          initialData={[...records, { id: '3', name: 'Gamma', due_date: day20 }]}
+          actions={actions}
+          dateField="due_date"
+          colorTagsField="color_groups"
+        />
+      </ColorOpsProvider>,
+    )
+    await waitFor(() => expect(ribbonOf(screen.getByTestId('calendar-card-3'))?.style.background).toBe('rgb(255, 0, 0)'))
+    const multi = ribbonOf(screen.getByTestId('calendar-card-1'))!
+    expect(multi.style.background).toBe('linear-gradient(to right, rgb(255, 0, 0) 0%, rgb(255, 0, 0) 50%, rgb(0, 255, 0) 50%, rgb(0, 255, 0) 100%)')
+    expect(multi.style.height).toBe('4px')
+    expect(ribbonOf(screen.getByTestId('calendar-card-2'))).toBeNull()
+    // The color field is not printed as a card field.
+    expect(screen.queryByText('Color groups')).toBeNull()
+  })
+})
+
+describe('CalendarRenderer phone', () => {
+  let update: ReturnType<typeof vi.fn<(id: string, body: Partial<Task>) => Promise<Task>>>
+  let actions: EntityActions<Task>
+  beforeEach(() => {
+    update = vi.fn(async (id: string, body: Partial<Task>) => ({ id, ...body }) as Task)
+    actions = { create: vi.fn(async (b) => b as Task), update }
+    pushMock.mockReset()
+    quickMock.canCreate = false
+    quickMock.open.mockReset()
+  })
+
+    const day10 = iso(thisYear, thisMonth, 10)
+    const dayLabel = new Date(thisYear, thisMonth, 10).toLocaleDateString()
+    const three: Task[] = [
+      { id: '1', name: 'Alpha', due_date: day10 },
+      { id: '2', name: 'Beta', due_date: day10 },
+      { id: '3', name: 'Gamma', due_date: day10 },
+      { id: '4', name: 'Loose', due_date: null },
+    ]
+    function grant(...permissions: string[]) {
+      useSessionStore.setState({ identity: { userId: 'u1', tenantId: 't1', roles: [], permissions } })
+    }
+    const mount = () =>
+      render(<CalendarRenderer descriptor={descriptor} initialData={three} actions={actions} dateField="due_date" />)
+    afterEach(() => useSessionStore.setState({ identity: null }))
+
+    it('shows a count badge per day instead of cards', () => {
+      setViewportWidth(390)
+      mount()
+      const cell = screen.getByRole('button', { name: new RegExp(`^${dayLabel.replace(/[/.]/g, '\\$&')} — Records: 3`) })
+      expect(cell).toHaveTextContent('3')
+      expect(screen.queryByTestId('calendar-card-1')).toBeNull()
+    })
+
+    it("lists the tapped day's records below the grid and opens a form on tap", () => {
+      setViewportWidth(390)
+      const withForm = { ...descriptor, formPath: '/tasks/:id' }
+      render(<CalendarRenderer descriptor={withForm} initialData={three} actions={actions} dateField="due_date" />)
+      fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${dayLabel.replace(/[/.]/g, '\\$&')} — Records: 3`) }))
+      const list = screen.getByRole('list', { name: dayLabel })
+      expect(within(list).getAllByRole('listitem')).toHaveLength(3)
+      fireEvent.click(within(list).getByText('Beta'))
+      expect(pushMock).toHaveBeenCalledWith('/app/tasks/2')
+    })
+
+    it('stacks Unscheduled below the agenda, full width', () => {
+      setViewportWidth(390)
+      mount()
+      fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${dayLabel.replace(/[/.]/g, '\\$&')} — Records: 3`) }))
+      const list = screen.getByRole('list', { name: dayLabel })
+      const group = screen.getByRole('group', { name: 'Unscheduled' })
+      expect(list.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(group).not.toHaveStyle({ width: '220px' })
+    })
+
+    it('schedules an unscheduled record on the selected day', async () => {
+      setViewportWidth(390)
+      grant('tasks:tasks:write')
+      mount()
+      // No day picked yet beyond the default (today may be another day): pick one.
+      fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${dayLabel.replace(/[/.]/g, '\\$&')} — Records: 3`) }))
+      fireEvent.click(screen.getByRole('button', { name: `Schedule on ${dayLabel}` }))
+      await waitFor(() => expect(update).toHaveBeenCalledWith('4', { due_date: day10 }))
+    })
+
+    it('hides Schedule without write permission or without a selected day', () => {
+      setViewportWidth(390)
+      mount()
+      fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${dayLabel.replace(/[/.]/g, '\\$&')} — Records: 3`) }))
+      expect(screen.queryByRole('button', { name: /^Schedule on/ })).toBeNull()
+    })
+
+    it('offers Add on the selected day only when quick create is available, opening it with that date', () => {
+      setViewportWidth(390)
+      mount()
+      fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${dayLabel.replace(/[/.]/g, '\\$&')} — Records: 3`) }))
+      expect(screen.queryByRole('button', { name: 'Add' })).toBeNull()
+      cleanup()
+      quickMock.canCreate = true
+      mount()
+      fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${dayLabel.replace(/[/.]/g, '\\$&')} — Records: 3`) }))
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+      expect(quickMock.open).toHaveBeenCalledWith({ due_date: day10 })
+    })
+
+    it('shows no Schedule button once the shown month has no selected day', () => {
+      setViewportWidth(390)
+      grant('tasks:tasks:write')
+      mount()
+      expect(screen.getByRole('button', { name: /^Schedule on/ })).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Next month' }))
+      expect(screen.queryByRole('button', { name: /^Schedule on/ })).toBeNull()
+    })
+
+    it('keeps the desktop month grid at 1280px', () => {
+      setViewportWidth(1280)
+      mount()
+      expect(screen.getByRole('group', { name: day10 })).toHaveTextContent('Alpha')
+      expect(screen.queryByRole('button', { name: /^Schedule on/ })).toBeNull()
+    })
+
+    it('keeps the picked day when the viewport crosses 600px', () => {
+      setViewportWidth(390)
+      mount()
+      fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${dayLabel.replace(/[/.]/g, '\\$&')} — Records: 3`) }))
+      act(() => setViewportWidth(1280))
+      expect(screen.getByRole('group', { name: day10 })).toHaveTextContent('Alpha')
+      act(() => setViewportWidth(390))
+      expect(screen.getByRole('list', { name: dayLabel })).toBeInTheDocument()
+    })
+  })

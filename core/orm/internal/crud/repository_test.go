@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"core/orm/access"
 	"core/orm/internal/crud"
@@ -14,36 +15,53 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // ── fixtures ────────────────────────────────────────────────────────────────
 
-// tenantItem carries a tenant_id column, so the repository must isolate it.
+// tenantItem carries a tenant_id column, so the repository must isolate it —
+// now BaseModel's own promoted field, same as most real entities.
 type tenantItem struct {
-	model.BaseModel
-	TenantID uuid.UUID `db:"tenant_id"`
-	Label    string    `db:"label"`
-}
-
-// globalItem has no tenant_id, so it stays global (no scoping applied).
-type globalItem struct {
 	model.BaseModel
 	Label string `db:"label"`
 }
 
-// gatedItem carries one field gated to a group, for the filter/search
-// group-gating tests (ADR-013's documented follow-up).
-type gatedItem struct {
-	model.BaseModel
-	Label  string `db:"label"`
-	Secret string `db:"secret"`
+// globalItem has no tenant_id, so it stays global (no scoping applied).
+// Deliberately does NOT embed model.BaseModel (which now carries a promoted
+// TenantID) — hand-declares the other three fields instead, the same
+// "opt out of one promoted field" shape auth.Permissions/RefreshTokens/
+// module.ModuleOperationLog use for the same reason.
+type globalItem struct {
+	ID        uuid.UUID  `db:"id,pk"`
+	CreatedAt time.Time  `db:"created_at"`
+	UpdatedAt time.Time  `db:"updated_at"`
+	DeletedAt *time.Time `db:"deleted_at,softdelete"`
+	Label     string     `db:"label"`
 }
 
-// rangeItem carries a numeric and a time column, for the range-filter cast tests.
+// gatedItem carries one field gated to a group, for the filter/search
+// group-gating tests (ADR-013's documented follow-up) — kept tenant-less
+// (see globalItem's own doc comment) since tenant scoping is orthogonal to
+// what these tests exercise.
+type gatedItem struct {
+	ID        uuid.UUID  `db:"id,pk"`
+	CreatedAt time.Time  `db:"created_at"`
+	UpdatedAt time.Time  `db:"updated_at"`
+	DeletedAt *time.Time `db:"deleted_at,softdelete"`
+	Label     string     `db:"label"`
+	Secret    string     `db:"secret"`
+}
+
+// rangeItem carries a numeric and a time column, for the range-filter cast
+// tests — kept tenant-less for the same reason gatedItem is.
 type rangeItem struct {
-	model.BaseModel
-	Label string  `db:"label"`
-	Price float64 `db:"price"`
+	ID        uuid.UUID  `db:"id,pk"`
+	CreatedAt time.Time  `db:"created_at"`
+	UpdatedAt time.Time  `db:"updated_at"`
+	DeletedAt *time.Time `db:"deleted_at,softdelete"`
+	Label     string     `db:"label"`
+	Price     float64    `db:"price"`
 }
 
 func rangeMeta(t *testing.T) registry.TableMeta {
@@ -148,6 +166,7 @@ func (emptyRows) Scan(_ ...any) error                          { return nil }
 func (emptyRows) Values() ([]any, error)                       { return nil, nil }
 func (emptyRows) RawValues() [][]byte                          { return nil }
 func (emptyRows) Conn() *pgx.Conn                              { return nil }
+func (emptyRows) TypeMap() *pgtype.Map                         { return pgtype.NewMap() }
 
 type zeroRow struct{}
 
@@ -380,6 +399,25 @@ func TestRepository_FindAll_AppliesInFilter(t *testing.T) {
 	}
 }
 
+func TestRepository_FindAll_AppliesEmptyFilter(t *testing.T) {
+	ex := &captureExec{}
+	repo := crud.NewRepository(ex, rangeMeta(t))
+
+	_, _, err := repo.FindAll(context.Background(), crud.ListFilter{Empty: []string{"label"}})
+	if err != nil {
+		t.Fatalf("FindAll: %v", err)
+	}
+	for _, q := range ex.queries {
+		if !strings.Contains(q, "(label IS NULL OR label::text = '')") {
+			t.Errorf("query missing the Empty filter: %q", q)
+		}
+	}
+
+	if _, _, err := repo.FindAll(context.Background(), crud.ListFilter{Empty: []string{"nope"}}); err == nil {
+		t.Error("expected an unknown Empty column to be rejected")
+	}
+}
+
 func TestRepository_FindAll_RangeFiltersUseTypeAwareCasts(t *testing.T) {
 	ex := &captureExec{}
 	repo := crud.NewRepository(ex, rangeMeta(t))
@@ -547,5 +585,145 @@ func TestRepository_FindAll_UngatedColumnUnaffectedByAbsentGroups(t *testing.T) 
 	})
 	if err != nil {
 		t.Fatalf("FindAll on ungated column with no groups on context: %v", err)
+	}
+}
+
+// ── ADR-024: public scope ───────────────────────────────────────────────────
+
+func publicCtx(cols []string, equals map[string]string) context.Context {
+	return access.WithPublicScope(context.Background(), access.PublicScope{Columns: cols, Equals: equals})
+}
+
+func TestRepository_PublicScope_RejectsNonPublicColumns(t *testing.T) {
+	ctx := publicCtx([]string{"id", "label"}, nil)
+	tests := []struct {
+		name string
+		f    crud.ListFilter
+	}{
+		{"filter", crud.ListFilter{Equals: map[string]string{"price": "1"}}},
+		{"search", crud.ListFilter{Matches: map[string]string{"price": "1"}}},
+		{"in", crud.ListFilter{In: map[string][]string{"price": {"1"}}}},
+		{"gt", crud.ListFilter{GT: map[string]string{"price": "1"}}},
+		{"empty", crud.ListFilter{Empty: []string{"price"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ex := &captureExec{}
+			_, _, err := crud.NewRepository(ex, rangeMeta(t)).FindAll(ctx, tt.f)
+			if !errors.Is(err, crud.ErrUnknownColumn) {
+				t.Fatalf("err = %v, want ErrUnknownColumn", err)
+			}
+		})
+	}
+	t.Run("distinct", func(t *testing.T) {
+		_, err := crud.NewRepository(&captureExec{}, rangeMeta(t)).DistinctValues(ctx, "price", crud.ListFilter{})
+		if !errors.Is(err, crud.ErrUnknownColumn) {
+			t.Fatalf("err = %v, want ErrUnknownColumn", err)
+		}
+	})
+}
+
+func TestRepository_PublicScope_ForcesEqualsOnEveryRead(t *testing.T) {
+	// "price" is NOT a public column, yet the forced filter must still apply —
+	// Review Focus #2: a scope column needn't be published.
+	ctx := publicCtx([]string{"id", "label"}, map[string]string{"price": "0"})
+	ex := &captureExec{}
+	repo := crud.NewRepository(ex, rangeMeta(t))
+	if _, _, err := repo.FindAll(ctx, crud.ListFilter{Page: 1, PageSize: 20}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.FindByID(ctx, uuid.New()); !errors.Is(err, crud.ErrNotFound) {
+		t.Fatalf("FindByID err = %v, want ErrNotFound", err)
+	}
+	if _, err := repo.DistinctValues(ctx, "label", crud.ListFilter{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(ex.queries) < 3 {
+		t.Fatalf("captured %d queries, want >= 3", len(ex.queries))
+	}
+	for i, q := range ex.queries {
+		if !strings.Contains(q, "price::text = $") {
+			t.Errorf("query %d missing forced filter: %s", i, q)
+		}
+	}
+}
+
+func TestRepository_PublicScope_UnknownForcedColumnFailsClosed(t *testing.T) {
+	ctx := publicCtx([]string{"id", "label"}, map[string]string{"nope": "x"})
+	_, _, err := crud.NewRepository(&captureExec{}, rangeMeta(t)).FindAll(ctx, crud.ListFilter{})
+	// A distinct sentinel (never ErrUnknownColumn, which the handler turns
+	// into a 400 echoing the column name to the anonymous caller).
+	if !errors.Is(err, crud.ErrPublicScopeMisconfigured) || errors.Is(err, crud.ErrUnknownColumn) {
+		t.Fatalf("err = %v, want ErrPublicScopeMisconfigured only", err)
+	}
+}
+
+func TestRepository_FindAll_OrderSortsWithPKTiebreak(t *testing.T) {
+	tests := []struct {
+		name  string
+		order string
+		want  string
+	}{
+		{"ascending", "created_at", "ORDER BY created_at ASC, id ASC"},
+		{"descending", "-created_at", "ORDER BY created_at DESC, id DESC"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ex := &captureExec{}
+			repo := crud.NewRepository(ex, rangeMeta(t))
+			if _, _, err := repo.FindAll(context.Background(), crud.ListFilter{Order: tc.order}); err != nil {
+				t.Fatalf("FindAll: %v", err)
+			}
+			found := false
+			for _, q := range ex.queries {
+				found = found || strings.Contains(q, tc.want)
+			}
+			if !found {
+				t.Errorf("no query carries %q: %v", tc.want, ex.queries)
+			}
+		})
+	}
+}
+
+func TestRepository_FindAll_RejectsUnknownOrGatedOrderColumn(t *testing.T) {
+	if _, _, err := crud.NewRepository(&captureExec{}, rangeMeta(t)).
+		FindAll(context.Background(), crud.ListFilter{Order: "-nope"}); !errors.Is(err, crud.ErrUnknownColumn) {
+		t.Errorf("unknown column: err = %v, want ErrUnknownColumn", err)
+	}
+	// Sorting on a gated column would leak its values' order.
+	ex := &captureExec{}
+	if _, _, err := crud.NewRepository(ex, gatedMeta(t)).
+		FindAll(context.Background(), crud.ListFilter{Order: "secret"}); !errors.Is(err, crud.ErrUnknownColumn) {
+		t.Errorf("gated column: err = %v, want ErrUnknownColumn", err)
+	}
+	if len(ex.queries) != 0 {
+		t.Errorf("no SQL must run for a gated order column, got %v", ex.queries)
+	}
+}
+
+type seatItem struct {
+	model.BaseModel
+	Capacity       int `db:"capacity"`
+	RemainingSeats int `db:"remaining_seats,generated"`
+}
+
+func TestRepository_WritesSkipGeneratedColumns(t *testing.T) {
+	if err := registry.Register[seatItem](); err != nil {
+		t.Fatal(err)
+	}
+	m, _ := registry.Get("seat_item")
+	ex := &captureExec{}
+	repo := crud.NewRepository(ex, m)
+	ctx := access.WithTenant(context.Background(), uuid.New())
+
+	_, _ = repo.Update(ctx, uuid.New(), map[string]any{"capacity": 2, "remaining_seats": 3})
+	q, _ := ex.find(t, "UPDATE seat_item")
+	if strings.Contains(q, "remaining_seats") {
+		t.Errorf("UPDATE writes a generated column: %q", q)
+	}
+	_, _ = repo.Create(ctx, map[string]any{"capacity": 2, "remaining_seats": 3})
+	q, _ = ex.find(t, "INSERT INTO seat_item")
+	if strings.Contains(q, "remaining_seats") {
+		t.Errorf("INSERT writes a generated column: %q", q)
 	}
 }

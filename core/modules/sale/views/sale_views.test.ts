@@ -1,16 +1,19 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
+  FORM_COLUMNS_ID,
   FORM_NOTEBOOK_ID,
   ModuleRegistry,
   headerButtonRegistry,
   headerMenuRegistry,
   normalizeLayout,
+  DEFAULT_REPORT_NAME,
   reportCompanyFallbackFields,
+  reportImageSources,
   reportTableRelations,
   type HeaderButtonContext,
-  type RelationOps,
 } from '@eerp/core-front'
 import sale from './sale_views'
+import warehouse from '../../warehouse/views/warehouse_views'
 
 // The module's contribution is descriptors + route wiring; assert it stays correct.
 describe('sale FrontModule', () => {
@@ -100,6 +103,43 @@ describe('sale FrontModule', () => {
     expect(formFieldNames).toContain('legal_notice')
   })
 
+  it.each([
+    ['invoice', '/sale/:id'],
+    ['quote', '/sale/quote/:id'],
+  ])(
+    '%s: customer_id is the required, primary Customer many2one, auto-filling the customer_name/email snapshot on pick',
+    (_entity, path) => {
+      const fields = sale.routes.find((r) => r.path === path)!.descriptor.fields
+      const customerId = fields.find((f) => f.name === 'customer_id')
+      expect(customerId).toMatchObject({
+        label: 'Customer',
+        type: 'relation',
+        required: true,
+        relation: { entity: 'contact', kind: 'many2one', labelField: 'name' },
+      })
+      expect(customerId?.widgetOptions).toEqual({
+        fillFields: { name: 'customer_name', email: 'customer_email' },
+      })
+      // The bill-to snapshot itself is relabeled so it reads as distinct
+      // from customer_id's own "Customer" — still required (a customer with
+      // no linked contact still needs SOME printed name).
+      const customerName = fields.find((f) => f.name === 'customer_name')
+      expect(customerName).toMatchObject({ label: 'Customer name', type: 'text', required: true })
+    },
+  )
+
+  it('quote form: no subject; customer name/email and status declared but hidden', () => {
+    const fields = sale.routes.find((r) => r.path === '/sale/quote/:id')!.descriptor.fields
+    expect(fields.find((f) => f.name === 'subject')).toBeUndefined()
+    for (const name of ['customer_name', 'customer_email', 'status']) {
+      expect(fields.find((f) => f.name === name)?.invisible, name).toBe(true)
+    }
+    // The list keeps showing them.
+    const list = sale.routes.find((r) => r.path === '/sale/quote/list')!.descriptor.fields
+    expect(list.find((f) => f.name === 'customer_name')?.invisible).toBeUndefined()
+    expect(list.find((f) => f.name === 'status')?.invisible).toBeUndefined()
+  })
+
   it('exposes sale_lines as a real one2many relation over sale_line, scoped by invoice_id', () => {
     const linesField = sale.routes
       .find((r) => r.path === '/sale/:id')!
@@ -141,26 +181,54 @@ describe('sale FrontModule', () => {
     expect(sale.reports?.[1].entity).toBe('quote')
   })
 
-  it('prints the logo as an image node and the line items as a relation-backed table node', () => {
+  it('prints the line items as a relation-backed table node', () => {
     const layout = sale.reports?.[0].layout ?? []
-    const masthead = layout.find((n) => n.kind === 'section' && n.className === 'eerp-report-masthead')
-    expect(masthead && masthead.kind === 'section' ? masthead.children[0] : null).toEqual({
-      kind: 'image',
-      source: 'logo',
-      className: 'eerp-report-logo',
-      alt: 'Company logo',
-    })
-
     const table = layout.find((n) => n.kind === 'table')
     expect(table?.kind === 'table' ? table.source : null).toBe('lines')
     expect(table?.kind === 'table' ? table.columns.map((c) => c.name) : []).toEqual([
       'variant_name',
-      'unit',
       'quantity',
       'unit_price',
       'tax_rate',
       'total',
     ])
+  })
+
+  it("the line form shows the line's taxes as Taxes tags, not a separate Tax rate field", () => {
+    const fields = sale.routes.find((r) => r.path === '/sale/lines/:id')!.descriptor.fields
+    expect(fields.some((f) => f.name === 'tax_rate')).toBe(false)
+    expect(fields.find((f) => f.name === 'taxes')?.relation).toMatchObject({ kind: 'many2many', via: 'sale_line_tax' })
+  })
+
+  it('the line tables show the unit and, on the invoice, the Taxes tags — never raw ids', () => {
+    const field = (path: string, name: string) =>
+      sale.routes.find((r) => r.path === path)!.descriptor.fields.find((f) => f.name === name)!
+    const invoiceLines = field('/sale/:id', 'sale_lines').widgetOptions!
+    expect(invoiceLines.relatedRelationField).toBe('taxes')
+    expect((invoiceLines.columns as unknown as { key: string }[]).map((c) => c.key)).toEqual([
+      'quantity',
+      'unit',
+      'unit_price',
+      'subtotal',
+      'taxes',
+      'total',
+    ])
+    const quoteLines = field('/sale/quote/:id', 'quote_lines').widgetOptions!
+    expect((quoteLines.columns as unknown as { key: string }[]).map((c) => c.key)).toEqual([
+      'quantity',
+      'unit',
+      'unit_price',
+      'tax_rate',
+    ])
+  })
+
+  it.each(['/sale/lines/:id', '/sale/quote/lines/:id'])('%s: the line picks its unit of measure', (path) => {
+    const route = sale.routes.find((r) => r.path === path)
+    expect(route, `no route ${path}`).toBeDefined()
+    expect(route!.descriptor.fields.find((f) => f.name === 'uom_id')?.relation).toMatchObject({
+      entity: 'product_uoms',
+      kind: 'many2one',
+    })
   })
 
   it('resolves the printed line items from sale_line, scoped by invoice_id', () => {
@@ -169,20 +237,8 @@ describe('sale FrontModule', () => {
     ])
   })
 
-  it('falls back the printed issuer block to the active company profile when the invoice\'s own snapshot is blank (multi-company)', () => {
-    // issuer_address_number carries no fallback (see reportPartyAddressFields'
-    // own doc comment: a NUMBER field can't distinguish "blank" from a real 0
-    // the way company[companyField] ?? '' does for strings).
-    expect(reportCompanyFallbackFields(sale.reports![0])).toEqual([
-      { recordField: 'issuer_name', companyField: 'name' },
-      { recordField: 'issuer_address_street', companyField: 'address_street' },
-      { recordField: 'issuer_address_complement', companyField: 'address_complement' },
-      { recordField: 'issuer_address_zip_code', companyField: 'address_zip_code' },
-      { recordField: 'issuer_address_city', companyField: 'address_city' },
-      { recordField: 'issuer_address_country', companyField: 'address_country' },
-      { recordField: 'issuer_phone', companyField: 'phone' },
-      { recordField: 'issuer_email', companyField: 'email' },
-    ])
+  it('prints no issuer block of its own: the letterhead header shows the company', () => {
+    expect(reportCompanyFallbackFields(sale.reports![0])).toEqual([])
   })
 
   it('wires the form options menu with a Print > Invoice action', () => {
@@ -204,7 +260,8 @@ describe('sale FrontModule', () => {
 describe('sale — self-extended "Order lines" notebook page (registry-level)', () => {
   function register(): ModuleRegistry {
     const registry = new ModuleRegistry()
-    registry.register(sale)
+    registry.register(warehouse)
+    registry.register(sale, { depends: ['warehouse'] })
     return registry
   }
 
@@ -287,7 +344,8 @@ describe('sale — quote registers ahead of invoice (dashboard tile ordering)', 
 describe('sale — self-extended "Quote lines" notebook page (registry-level)', () => {
   function register(): ModuleRegistry {
     const registry = new ModuleRegistry()
-    registry.register(sale)
+    registry.register(warehouse)
+    registry.register(sale, { depends: ['warehouse'] })
     return registry
   }
 
@@ -299,6 +357,65 @@ describe('sale — self-extended "Quote lines" notebook page (registry-level)', 
     expect(notebook && notebook.kind !== 'field' ? notebook.children.map((p) => p.kind !== 'field' && p.title) : []).toEqual([
       'Quote lines',
       'Settings',
+    ])
+  })
+
+  it('stacks the billing address alone on the left, Customer / Payment method / Recipients on the right', () => {
+    const nodes = normalizeLayout(register().buildRegistry().get('/sale/quote/:id')!.descriptor)
+    const ids = nodes.map((n) => (n.kind === 'field' ? n.name : n.id))
+    expect(ids.indexOf('quote_parties')).toBe(ids.indexOf(FORM_COLUMNS_ID) + 1)
+    const names = (id: string): string[] => {
+      const find = (list: typeof nodes): (typeof nodes)[number] | undefined => {
+        for (const n of list) {
+          if (n.kind === 'field') continue
+          if (n.id === id) return n
+          const hit = find(n.children)
+          if (hit) return hit
+        }
+        return undefined
+      }
+      const node = find(nodes)
+      if (!node || node.kind === 'field') throw new Error(`no ${id}`)
+      return node.children.map((c) => (c.kind === 'field' ? c.name : (c.id ?? '')))
+    }
+    expect(names('quote_parties')).toEqual(['quote_parties_left', 'quote_parties_right'])
+    expect(names('quote_parties_left')).toEqual(['customer_address'])
+    expect(names('quote_parties_right')).toEqual(['customer_id', 'payment_method', 'recipients'])
+    // The dates stay in the main columns, alone.
+    expect(names(FORM_COLUMNS_ID).filter((n) => !['customer_name', 'status', 'customer_email'].includes(n))).toEqual([
+      'issue_date',
+      'due_date',
+    ])
+  })
+
+  it('invoice: no subject, customer email hidden; billing address left, Customer and the rest stacked right', () => {
+    const descriptor = register().buildRegistry().get('/sale/:id')!.descriptor
+    expect(descriptor.fields.find((f) => f.name === 'subject')).toBeUndefined()
+    expect(descriptor.fields.find((f) => f.name === 'customer_email')?.invisible).toBe(true)
+    const nodes = normalizeLayout(descriptor)
+    const ids = nodes.map((n) => (n.kind === 'field' ? n.name : n.id))
+    expect(ids.indexOf('invoice_parties')).toBe(ids.indexOf(FORM_COLUMNS_ID) + 1)
+    const childrenOf = (id: string): string[] => {
+      const find = (list: typeof nodes): (typeof nodes)[number] | undefined => {
+        for (const n of list) {
+          if (n.kind === 'field') continue
+          if (n.id === id) return n
+          const hit = find(n.children)
+          if (hit) return hit
+        }
+        return undefined
+      }
+      const node = find(nodes)
+      if (!node || node.kind === 'field') throw new Error(`no ${id}`)
+      return node.children.map((c) => (c.kind === 'field' ? c.name : (c.id ?? '')))
+    }
+    expect(childrenOf('invoice_parties_left')).toEqual(['customer_address'])
+    expect(childrenOf('invoice_parties_right')).toEqual(['customer_id', 'payment_method', 'recipients', 'quote_id'])
+    expect(childrenOf(FORM_COLUMNS_ID).filter((n) => n !== 'customer_email')).toEqual([
+      'customer_name',
+      'status',
+      'issue_date',
+      'due_date',
     ])
   })
 
@@ -349,17 +466,23 @@ describe('sale — quote workflow (header buttons)', () => {
     return {
       entity: 'quote',
       recordId: 'q1',
-      draft: { number: 'QUO-0001' },
+      draft: { number: 'Q-2026-0001' },
       setFieldAndCommit: vi.fn(async (patch) => ({ id: 'q1', ...patch })),
       relationOps: null,
+      runAction: vi.fn(async () => ({ record: { id: 'q1' } })),
+      navigate: vi.fn(),
       ...overrides,
     }
   }
 
-  it('sale.confirmQuote sets status to confirmed', async () => {
+  it.each([
+    ['sale.confirmQuote', 'confirm'],
+    ['sale.sendQuote', 'send'],
+  ])('%s runs the server-side %s step, nothing client-side', async (name, action) => {
     const ctx = context()
-    await headerButtonRegistry.get('sale.confirmQuote')!.handler(ctx)
-    expect(ctx.setFieldAndCommit).toHaveBeenCalledWith({ status: 'confirmed' })
+    await headerButtonRegistry.get(name)!.handler(ctx)
+    expect(ctx.runAction).toHaveBeenCalledWith(action, { revalidate: undefined })
+    expect(ctx.setFieldAndCommit).not.toHaveBeenCalled()
   })
 
   it('sale.declineQuote sets status to declined', async () => {
@@ -368,75 +491,65 @@ describe('sale — quote workflow (header buttons)', () => {
     expect(ctx.setFieldAndCommit).toHaveBeenCalledWith({ status: 'declined' })
   })
 
-  describe('sale.sendQuote', () => {
-    afterEach(() => vi.restoreAllMocks())
-
-    it('advances status to sent, then prints the quote report', async () => {
-      // Sale's own tsconfig has no DOM lib (views/descriptors are plain TS,
-      // no browser APIs at compile time) — a plain ok/json stub matches what
-      // exportReportPDF actually reads, without needing the real Response type.
-      const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ download_url: '/api/reports/pdf?key=x' }) }))
-      vi.stubGlobal('fetch', fetchMock)
-      // This module's tests run under Node, not jsdom — window doesn't exist
-      // at all until stubbed (exportReportPDF calls window.open directly).
-      vi.stubGlobal('window', { open: vi.fn() })
-      const ctx = context()
-
-      await headerButtonRegistry.get('sale.sendQuote')!.handler(ctx)
-
-      expect(ctx.setFieldAndCommit).toHaveBeenCalledWith({ status: 'sent' })
-      expect(fetchMock).toHaveBeenCalledWith('/api/reports/sale.quote/q1', { method: 'POST' })
-    })
+  it('sale.acceptQuote converts server-side, then opens the new invoice', async () => {
+    const ctx = context({ runAction: vi.fn(async () => ({ record: { id: 'q1' }, invoice_id: 'inv1' })) })
+    await headerButtonRegistry.get('sale.acceptQuote')!.handler(ctx)
+    expect(ctx.runAction).toHaveBeenCalledWith('accept', { revalidate: ['invoice', 'sale_line', 'invoice_recipient'] })
+    expect(ctx.navigate).toHaveBeenCalledWith('/sale/inv1')
   })
 
-  describe('sale.acceptQuote', () => {
-    it('does nothing without a wired RelationOpsProvider', async () => {
-      const ctx = context({ relationOps: null })
-      await headerButtonRegistry.get('sale.acceptQuote')!.handler(ctx)
-      expect(ctx.setFieldAndCommit).not.toHaveBeenCalled()
-    })
+  it('fails loudly where the host binds no record actions', async () => {
+    const ctx = context({ runAction: undefined })
+    await expect(headerButtonRegistry.get('sale.confirmQuote')!.handler(ctx)).rejects.toThrow()
+  })
+})
 
-    it('creates an invoice snapshotting the quote, one sale_line per quote_line, links quote_id, then marks accepted', async () => {
-      const quoteLines = [
-        { id: 'ql1', quote_id: 'q1', variant_id: 'v1', quantity: 2 },
-        { id: 'ql2', quote_id: 'q1', variant_id: 'v2', quantity: 1 },
-      ]
-      const ops: RelationOps = {
-        list: vi.fn(async () => quoteLines),
-        get: vi.fn(),
-        create: vi.fn(async (entity: string, body: Record<string, unknown>) => ({
-          id: entity === 'invoice' ? 'inv1' : 'sl-new',
-          ...body,
-        })),
-        remove: vi.fn(),
-      }
-      const ctx = context({
-        draft: {
-          number: 'QUO-0001',
-          customer_name: 'Acme',
-          customer_id: 'c1',
-          subject: 'Consulting',
-        },
-        relationOps: ops,
+describe('sale — invoice workflow (header buttons)', () => {
+  const invoiceForm = () => sale.routes.find((r) => r.path === '/sale/:id')!.descriptor
+
+  it('adds a confirmed step between draft and sent', () => {
+    const status = invoiceForm().fields.find((f) => f.name === 'status')
+    expect(status?.selection?.options).toEqual(['draft', 'confirmed', 'sent', 'paid', 'overdue', 'cancelled'])
+  })
+
+  it('shows Confirm on a draft and Send once confirmed, both server-side steps', async () => {
+    expect(invoiceForm().headerButtons?.map((b) => [b.name, b.states?.visible])).toEqual([
+      ['sale.confirmInvoice', { field: 'status', op: 'eq', value: 'draft' }],
+      ['sale.sendInvoice', { field: 'status', op: 'eq', value: 'confirmed' }],
+    ])
+    for (const [name, action] of [['sale.confirmInvoice', 'confirm'], ['sale.sendInvoice', 'send']]) {
+      const runAction = vi.fn(async () => ({}))
+      await headerButtonRegistry.get(name)!.handler({
+        entity: 'invoice', recordId: 'i1', draft: {}, setFieldAndCommit: vi.fn(), relationOps: null, runAction,
       })
+      expect(runAction).toHaveBeenCalledWith(action)
+    }
+  })
+})
 
-      await headerButtonRegistry.get('sale.acceptQuote')!.handler(ctx)
+describe('sale — numbers and recipients', () => {
+  const form = (path: string) => sale.routes.find((r) => r.path === path)!.descriptor
 
-      expect(ops.list).toHaveBeenCalledWith('quote_line', { filter: { quote_id: 'q1' }, pageSize: 200 })
-      expect(ops.create).toHaveBeenCalledWith(
-        'invoice',
-        expect.objectContaining({
-          number: 'INV-QUO-0001',
-          customer_name: 'Acme',
-          customer_id: 'c1',
-          subject: 'Consulting',
-          status: 'draft',
-          quote_id: 'q1',
-        }),
-      )
-      expect(ops.create).toHaveBeenCalledWith('sale_line', { invoice_id: 'inv1', variant_id: 'v1', quantity: 2 })
-      expect(ops.create).toHaveBeenCalledWith('sale_line', { invoice_id: 'inv1', variant_id: 'v2', quantity: 1 })
-      expect(ctx.setFieldAndCommit).toHaveBeenCalledWith({ status: 'accepted' })
+  it.each(['/sale/:id', '/sale/quote/:id'])('%s: the number is read-only (Go assigns it), never required', (path) => {
+    expect(form(path).fields.find((f) => f.name === 'number')).toMatchObject({ readOnly: true })
+    expect(form(path).fields.find((f) => f.name === 'number')?.required).toBeUndefined()
+  })
+
+  it('neither form has a reference field (the invoice PDF still prints a stored one)', () => {
+    expect(form('/sale/quote/:id').fields.some((f) => f.name === 'reference')).toBe(false)
+    expect(form('/sale/:id').fields.some((f) => f.name === 'reference')).toBe(false)
+  })
+
+  it.each([
+    ['/sale/quote/:id', 'quote_recipient', 'quote_id'],
+    ['/sale/:id', 'invoice_recipient', 'invoice_id'],
+  ])('%s has a Recipients many2many over %s', (path, via, own) => {
+    expect(form(path).fields.find((f) => f.name === 'recipients')?.relation).toEqual({
+      entity: 'contact',
+      kind: 'many2many',
+      via,
+      viaFields: { own, related: 'contact_id' },
+      labelField: 'name',
     })
   })
 })
@@ -452,20 +565,54 @@ describe('sale — invoice.quote_id (provenance link)', () => {
   })
 })
 
-describe('sale — quote.quote report', () => {
-  it('prints the logo, the quote_line table, and a "Valid until" date instead of "Due date"', () => {
-    const report = sale.reports?.find((r) => r.name === 'sale.quote')!
-    const masthead = report.layout.find((n) => n.kind === 'section' && n.className === 'eerp-report-masthead')
-    expect(masthead && masthead.kind === 'section' ? masthead.children[0] : null).toEqual({
-      kind: 'image',
-      source: 'logo',
-      className: 'eerp-report-logo',
-      alt: 'Company logo',
+describe('sale — quote and invoice reports', () => {
+  const registry = () => new ModuleRegistry().register(warehouse).register(sale, { depends: ['warehouse'] })
+  const report = (name: string) => registry().buildReportRegistry().get(name)!
+
+  it.each(['sale.quote', 'sale.invoice'])('%s extends the default report: letterhead header + footer', (name) => {
+    expect(sale.reports?.find((r) => r.name === name)?.extends).toBe(DEFAULT_REPORT_NAME)
+    expect(report(name).chrome).toEqual({ header: true, footer: true })
+  })
+
+  it.each(['sale.quote', 'sale.invoice'])(
+    '%s prints the Customer in the rent receipt\'s address block, no own logo or issuer block',
+    (name) => {
+      const layout = report(name).layout
+      const customer = layout.find((n) => n.kind === 'section' && n.className === 'eerp-report-address')
+      expect(customer && customer.kind === 'section' ? customer.children[0] : null).toEqual({
+        kind: 'text',
+        text: 'Customer:',
+        className: 'eerp-report-label',
+      })
+      expect(reportImageSources(report(name))).toEqual([])
+      expect(JSON.stringify(layout)).not.toContain('issuer_')
+    },
+  )
+
+  it('the quote lists quote_line rows and "Valid until", the invoice sale_line rows and "Due date"', () => {
+    expect(reportTableRelations(report('sale.quote'))).toEqual([{ source: 'lines', entity: 'quote_line', inverseField: 'quote_id' }])
+    expect(reportTableRelations(report('sale.invoice'))).toEqual([{ source: 'lines', entity: 'sale_line', inverseField: 'invoice_id' }])
+    expect(JSON.stringify(report('sale.quote').layout)).toContain('Valid until:')
+    expect(JSON.stringify(report('sale.invoice').layout)).toContain('Due date:')
+    // The quote PDF prints no reference; the invoice PDF prints a stored one.
+    expect(JSON.stringify(report('sale.quote').layout)).not.toContain('"reference"')
+    expect(JSON.stringify(report('sale.invoice').layout)).toContain('"reference"')
+  })
+})
+
+describe('sale — product Taxes (extends the warehouse product form)', () => {
+  it('adds a Taxes many2many over product_tax next to the price', () => {
+    const registry = new ModuleRegistry().register(warehouse).register(sale, { depends: ['warehouse'] })
+    const form = registry.buildRegistry().get('/warehouse/products/:id')!.descriptor
+    expect(form.fields.find((f) => f.name === 'taxes')?.relation).toEqual({
+      entity: 'sale_tax',
+      kind: 'many2many',
+      via: 'product_tax',
+      viaFields: { own: 'product_id', related: 'sale_tax_id' },
+      labelField: 'name',
     })
-    expect(reportTableRelations(report)).toEqual([{ source: 'lines', entity: 'quote_line', inverseField: 'quote_id' }])
-    const validUntil = report.layout.find(
-      (n) => n.kind === 'section' && n.children.some((c) => c.kind === 'text' && c.text === 'Valid until:'),
-    )
-    expect(validUntil).toBeDefined()
+    const columns = normalizeLayout(form).find((n) => n.kind !== 'field' && n.id === '__form_columns')
+    const names = columns && columns.kind !== 'field' ? columns.children.map((c) => (c.kind === 'field' ? c.name : c.kind)) : []
+    expect(names).toEqual(['reference', 'unit_price', 'taxes', 'uom_id'])
   })
 })

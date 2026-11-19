@@ -55,43 +55,6 @@ func Rows[T any](rows pgx.Rows, meta cache.StructMeta) ([]T, error) {
 	return results, nil
 }
 
-// Row scans a single pgx.Row into T using positional column order.
-// The query must select columns in the same order as meta.Fields — this is
-// guaranteed when using SelectBuilder (which lists columns explicitly) but
-// NOT when using RETURNING *. For RETURNING *, use Rows instead.
-func Row[T any](row pgx.Row, meta cache.StructMeta) (T, error) {
-	var zero T
-
-	dest := make([]any, len(meta.Fields))
-	for i, f := range meta.Fields {
-		dest[i] = newPtr(f.Type)
-	}
-
-	if err := row.Scan(dest...); err != nil {
-		return zero, fmt.Errorf("scan: %w", err)
-	}
-
-	rv := reflect.New(reflect.TypeOf(zero)).Elem()
-	for i, f := range meta.Fields {
-		fv := f.FieldValue(rv)
-		if !fv.CanSet() {
-			continue
-		}
-		val := reflect.ValueOf(dest[i])
-		if val.Kind() == reflect.Ptr {
-			if val.IsNil() {
-				continue
-			}
-			val = val.Elem()
-		}
-		if val.Type().AssignableTo(fv.Type()) {
-			fv.Set(val)
-		}
-	}
-
-	return rv.Interface().(T), nil
-}
-
 // ── internals ─────────────────────────────────────────────────────────────────
 
 // colMapping maps a column position in the pgx result set → index in meta.Fields.
@@ -140,7 +103,7 @@ func applyDest[T any](dest []any, mapping colMapping, meta cache.StructMeta) (T,
 		}
 
 		val := reflect.ValueOf(dest[colPos])
-		if val.Kind() == reflect.Ptr {
+		if val.Kind() == reflect.Pointer {
 			if val.IsNil() {
 				continue
 			}
@@ -164,7 +127,7 @@ func applyDest[T any](dest []any, mapping colMapping, meta cache.StructMeta) (T,
 func newPtr(t reflect.Type) any {
 	// For pointer fields (e.g. *time.Time for soft-delete), pgx expects **T
 	// so it can set the outer pointer to nil on NULL.
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		return reflect.New(t).Interface() // **T
 	}
 	return reflect.New(t).Interface() // *T

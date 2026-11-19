@@ -1,14 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_PALETTE } from './palette'
-import { elevation, focusRing, layout, neutral, radius, withAlpha } from './tokens'
+import { elevation, focusRing, layout, neutral, radius, status, withAlpha } from './tokens'
 
 describe('design tokens', () => {
-  it('neutral ramp is a superset of the brand greys (anchors line up)', () => {
-    // The neutrals must not be a second, competing grey scale — the 50/500/800 stops
-    // are exactly Soft White / Steel Grey / Deep Ocean.
-    expect(neutral[50]).toBe(DEFAULT_PALETTE.softWhite)
-    expect(neutral[500]).toBe(DEFAULT_PALETTE.steelGrey)
-    expect(neutral[800]).toBe(DEFAULT_PALETTE.deepOcean)
+  it('neutral ramp runs light to dark, and the success status is the default palette\'s', () => {
+    expect(neutral[0]).toBe('#FFFFFF')
+    expect(neutral[900]).toBe('#0F172A')
+    expect(status.success).toBe(DEFAULT_PALETTE.successGreen)
   })
 
   it('uses an 8px corner radius for direction B', () => {
@@ -40,5 +38,9 @@ describe('design tokens', () => {
 
   it('focusRing builds a 3px ring in the given color', () => {
     expect(focusRing('#00ADD8')).toBe('0 0 0 3px rgba(0, 173, 216, 0.4)')
+  })
+
+  it('has an 8px phone page inset', () => {
+    expect(layout.pageInsetPhone).toBe('8px')
   })
 })

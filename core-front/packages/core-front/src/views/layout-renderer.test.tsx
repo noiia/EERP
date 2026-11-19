@@ -83,6 +83,147 @@ describe('LayoutForm', () => {
     expect(screen.getByLabelText('A')).toBeInTheDocument()
   })
 
+  it('offsetTop on a columns group applies an approximate top margin (rem) — the AddressWidget-row alignment hint', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [textField('a'), textField('b')],
+      layout: [
+        {
+          kind: 'group',
+          columns: 2,
+          offsetTop: 8.75,
+          children: [{ kind: 'field', name: 'a' }, { kind: 'field', name: 'b' }],
+        },
+      ],
+    }
+    const { container } = render(
+      <LayoutForm descriptor={descriptor} draft={{}} onFieldChange={vi.fn()} entity="crm" recordId={null} />,
+    )
+    const outer = [...container.querySelectorAll('div')].find(
+      (el) => getComputedStyle(el).containerType === 'inline-size',
+    )
+    expect(outer).toBeDefined()
+    // The hint is 8.75rem; getComputedStyle resolves it against the 16px root.
+    expect(getComputedStyle(outer!).marginTop).toBe('140px')
+  })
+
+  it('a NEGATIVE offsetTop overrides the outer form Stack\'s own sibling-spacing margin (needs !important to win the specificity fight)', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [textField('a'), textField('b'), textField('c')],
+      layout: [
+        { kind: 'group', children: [{ kind: 'field', name: 'a' }] },
+        { kind: 'group', offsetTop: -1.25, children: [{ kind: 'field', name: 'b' }, { kind: 'field', name: 'c' }] },
+      ],
+    }
+    render(<LayoutForm descriptor={descriptor} draft={{}} onFieldChange={vi.fn()} entity="crm" recordId={null} />)
+    // The second top-level group is the one carrying offsetTop — its own
+    // rendered Stack, found by locating field 'b' and walking up to the
+    // nearest Stack-rendered ancestor that ISN'T the single-field 'a' group.
+    const bInput = screen.getByLabelText('B')
+    const group = bInput.closest('.MuiStack-root')
+    expect(group).not.toBeNull()
+    expect(getComputedStyle(group!).marginTop).toBe('-20px')
+  })
+
+  // The uneven split only applies inside a `@container (min-width: ...)`
+  // query (layoutTokens.formTwoColumnMinWidth) — jsdom never MATCHES
+  // container queries, so getComputedStyle always reports the base
+  // single-column rule regardless of columnWidths/columns. Reading the
+  // emotion-injected stylesheet text directly is what actually proves the
+  // hint reached the generated CSS.
+  function injectedCss(): string {
+    return [...document.querySelectorAll('style')].map((s) => s.textContent ?? '').join('\n')
+  }
+
+  it('columnWidths gives an uneven split instead of the default even one', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [textField('a'), textField('b')],
+      layout: [
+        {
+          kind: 'group',
+          columns: 2,
+          columnWidths: [2, 1],
+          children: [{ kind: 'field', name: 'a' }, { kind: 'field', name: 'b' }],
+        },
+      ],
+    }
+    render(<LayoutForm descriptor={descriptor} draft={{}} onFieldChange={vi.fn()} entity="crm" recordId={null} />)
+    expect(injectedCss()).toContain('grid-template-columns:2fr 1fr')
+  })
+
+  it('a columnWidths length mismatch with columns falls back to the even split', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [textField('a'), textField('b')],
+      layout: [
+        {
+          kind: 'group',
+          columns: 2,
+          columnWidths: [2, 1, 1],
+          children: [{ kind: 'field', name: 'a' }, { kind: 'field', name: 'b' }],
+        },
+      ],
+    }
+    render(<LayoutForm descriptor={descriptor} draft={{}} onFieldChange={vi.fn()} entity="crm" recordId={null} />)
+    expect(injectedCss()).toContain('grid-template-columns:repeat(2, 1fr)')
+  })
+
+  it('minWidth overrides the default 640px container-query breakpoint (e.g. a columns group nested inside an already-halved column)', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [textField('a'), textField('b')],
+      layout: [
+        {
+          kind: 'group',
+          columns: 2,
+          minWidth: 280,
+          children: [{ kind: 'field', name: 'a' }, { kind: 'field', name: 'b' }],
+        },
+      ],
+    }
+    render(<LayoutForm descriptor={descriptor} draft={{}} onFieldChange={vi.fn()} entity="crm" recordId={null} />)
+    // Emotion's style cache persists across tests in this file (old <style>
+    // tags aren't cleaned up between renders), so a positive check for the
+    // override is the reliable assertion here — an EARLIER test's own 640px
+    // rule can legitimately still be present from prior renders.
+    expect(injectedCss()).toContain('@container (min-width: 280px)')
+  })
+
+  it('omitting minWidth keeps the default 640px breakpoint', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [textField('a'), textField('b')],
+      layout: [{ kind: 'group', columns: 2, children: [{ kind: 'field', name: 'a' }, { kind: 'field', name: 'b' }] }],
+    }
+    render(<LayoutForm descriptor={descriptor} draft={{}} onFieldChange={vi.fn()} entity="crm" recordId={null} />)
+    expect(injectedCss()).toContain('@container (min-width: 640px)')
+  })
+
+  it('omitting offsetTop leaves the columns group with no extra top margin', () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'crm',
+      viewType: 'form',
+      fields: [textField('a'), textField('b')],
+      layout: [{ kind: 'group', columns: 2, children: [{ kind: 'field', name: 'a' }, { kind: 'field', name: 'b' }] }],
+    }
+    const { container } = render(
+      <LayoutForm descriptor={descriptor} draft={{}} onFieldChange={vi.fn()} entity="crm" recordId={null} />,
+    )
+    const outer = [...container.querySelectorAll('div')].find(
+      (el) => getComputedStyle(el).containerType === 'inline-size',
+    )
+    expect(outer).toBeDefined()
+    expect(parseFloat(getComputedStyle(outer!).marginTop)).toBe(0)
+  })
+
   it('a row groups its fields — both render, side by side in the tree', () => {
     const descriptor: ViewDescriptor = {
       entity: 'crm',
@@ -349,6 +490,40 @@ describe('LayoutForm — the synthesized notebook', () => {
     expect(screen.getByLabelText('NOTES').closest('[hidden]')).toBeNull()
     // Still the SAME input, never remounted.
     expect(screen.getByLabelText('NOTES')).toHaveValue('kept')
+  })
+
+  it("drops a page's tab while every field on it is hidden, falling back to a shown page", () => {
+    const descriptor: ViewDescriptor = {
+      entity: 'contact',
+      viewType: 'form',
+      fields: [
+        textField('kind'),
+        { ...textField('members'), states: { visible: { field: 'kind', op: 'eq', value: 'company' } } },
+        { ...textField('parents'), states: { visible: { field: 'kind', op: 'ne', value: 'company' } } },
+      ],
+      layout: [
+        { kind: 'field', name: 'kind' },
+        {
+          kind: 'notebook',
+          children: [
+            { kind: 'page', title: 'Contacts', children: [{ kind: 'field', name: 'members' }] },
+            { kind: 'page', title: 'Companies', children: [{ kind: 'field', name: 'parents' }] },
+          ],
+        },
+      ],
+    }
+    const { rerender } = render(
+      <LayoutForm descriptor={descriptor} draft={{ kind: 'company' }} onFieldChange={vi.fn()} entity="contact" recordId={null} />,
+    )
+    expect(screen.getByRole('tab', { name: 'Contacts' })).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Companies' })).toBeNull()
+
+    rerender(
+      <LayoutForm descriptor={descriptor} draft={{ kind: 'contact' }} onFieldChange={vi.fn()} entity="contact" recordId={null} />,
+    )
+    expect(screen.queryByRole('tab', { name: 'Contacts' })).toBeNull()
+    expect(screen.getByRole('tab', { name: 'Companies' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByLabelText('PARENTS').closest('[hidden]')).toBeNull()
   })
 
   it('a notebook with no long field still renders — the Settings tab, empty', () => {

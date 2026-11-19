@@ -17,6 +17,9 @@ type Identity struct {
 	// role it transitively belongs to. Stamped onto the request context via
 	// core/orm/access.WithGroups so the generic CRUD layer can gate fields.
 	Groups []string
+	// MustChangePassword mirrors Claims.MustChangePassword — see its own doc
+	// comment. Read by PermissionMiddleware, not by any handler.
+	MustChangePassword bool
 }
 
 type contextKey struct{}
@@ -47,9 +50,10 @@ func SetIdentity(ctx context.Context, id Identity) context.Context {
 // NewIdentityFromClaims builds an Identity from parsed JWT claims.
 func NewIdentityFromClaims(claims *Claims) Identity {
 	return Identity{
-		UserID:   claims.Sub,
-		TenantID: claims.Tenant,
-		Roles:    claims.Roles,
-		Groups:   claims.Groups,
+		UserID:             claims.Sub,
+		TenantID:           claims.Tenant,
+		Roles:              claims.Roles,
+		Groups:             claims.Groups,
+		MustChangePassword: claims.MustChangePassword,
 	}
 }

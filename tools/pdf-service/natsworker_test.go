@@ -146,7 +146,7 @@ func TestNATSWorker_QueueGroupLoadBalances(t *testing.T) {
 
 	client := connect(t, url)
 	const requests = 20
-	for i := 0; i < requests; i++ {
+	for i := range requests {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		reply, err := client.RequestWithContext(ctx, renderSubject, []byte(`{"url":"http://x"}`))
 		cancel()
@@ -191,7 +191,7 @@ func TestNATSWorker_SurvivesAWorkerCrash(t *testing.T) {
 	conn1.Close()
 
 	client := connect(t, url)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		reply, err := client.RequestWithContext(ctx, renderSubject, []byte(`{"url":"http://x"}`))
 		cancel()
@@ -215,4 +215,21 @@ func (c *countingRenderer) Render(_ context.Context, _ renderer.RenderRequest) (
 		return c.pdf, nil
 	}
 	return []byte("%PDF-ok"), nil
+}
+
+func TestAnswerVersion_RepliesWithTheBuildVersion(t *testing.T) {
+	url := startEmbeddedNATS(t)
+	sub, err := answerVersion(connect(t, url))
+	if err != nil {
+		t.Fatalf("answerVersion: %v", err)
+	}
+	defer func() { _ = sub.Unsubscribe() }()
+
+	msg, err := connect(t, url).Request(versionSubject, nil, 2*time.Second)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	if string(msg.Data) != version {
+		t.Errorf("reply = %q, want %q", msg.Data, version)
+	}
 }

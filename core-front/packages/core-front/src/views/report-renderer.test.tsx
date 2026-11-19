@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import { translationRegistry } from '../i18n/registry'
 import { ReportRenderer } from './report-renderer'
 import type { ReportDescriptor } from './report-descriptor'
 
@@ -33,6 +34,24 @@ describe('ReportRenderer', () => {
     const descriptor: ReportDescriptor = {
       ...baseDescriptor,
       layout: [{ kind: 'field', name: 'total', format: 'number' }],
+    }
+    render(<ReportRenderer descriptor={descriptor} record={{ total: 1234.5 }} />)
+    expect(screen.getByText('1,234.5')).toBeInTheDocument()
+  })
+
+  it('formats a monetary field with the record\'s own currency field as a suffix', () => {
+    const descriptor: ReportDescriptor = {
+      ...baseDescriptor,
+      layout: [{ kind: 'field', name: 'total', format: 'monetary' }],
+    }
+    render(<ReportRenderer descriptor={descriptor} record={{ total: 1234.5, currency: 'USD' }} />)
+    expect(screen.getByText('1,234.5 USD')).toBeInTheDocument()
+  })
+
+  it('formats a monetary field with no suffix when the record carries no currency', () => {
+    const descriptor: ReportDescriptor = {
+      ...baseDescriptor,
+      layout: [{ kind: 'field', name: 'total', format: 'monetary' }],
     }
     render(<ReportRenderer descriptor={descriptor} record={{ total: 1234.5 }} />)
     expect(screen.getByText('1,234.5')).toBeInTheDocument()
@@ -114,6 +133,35 @@ describe('ReportRenderer', () => {
     expect(screen.getByText('Hosting')).toBeInTheDocument()
   })
 
+  it.each([
+    [true, true],
+    [false, false],
+    [undefined, false],
+  ])('prints a column with a display condition only while it holds (flag %s)', (flag, shown) => {
+    const descriptor: ReportDescriptor = {
+      ...baseDescriptor,
+      layout: [
+        {
+          kind: 'table',
+          source: 'line_items',
+          columns: [
+            { name: 'description', label: 'Description' },
+            { name: 'tax', label: 'Tax', display: { field: 'show_tax', op: 'eq', value: true } },
+          ],
+        },
+      ],
+    }
+    const { container } = render(
+      <ReportRenderer
+        descriptor={descriptor}
+        record={{ show_tax: flag, line_items: [{ description: 'Rent', tax: 'VAT 20%' }] }}
+      />,
+    )
+    expect(screen.queryByText('Tax') !== null).toBe(shown)
+    expect(screen.queryByText('VAT 20%') !== null).toBe(shown)
+    expect(container.querySelectorAll('tbody td')).toHaveLength(shown ? 2 : 1)
+  })
+
   it('renders a table with a header row and no body rows when the source is absent', () => {
     const descriptor: ReportDescriptor = {
       ...baseDescriptor,
@@ -172,5 +220,103 @@ describe('ReportRenderer', () => {
     const descriptor: ReportDescriptor = { ...baseDescriptor, layout: [{ kind: 'pageBreak' }] }
     const { container } = render(<ReportRenderer descriptor={descriptor} record={{}} />)
     expect(container.querySelector('.eerp-page-break')).not.toBeNull()
+  })
+
+  it('renders nothing for a field node whose display condition is unmet, avoiding a blank line', () => {
+    const descriptor: ReportDescriptor = {
+      ...baseDescriptor,
+      layout: [
+        {
+          kind: 'field',
+          name: 'address_complement',
+          className: 'complement',
+          display: { field: 'address_complement', op: 'set' },
+        },
+      ],
+    }
+    const { container } = render(<ReportRenderer descriptor={descriptor} record={{ address_complement: '' }} />)
+    expect(container.querySelector('.complement')).toBeNull()
+  })
+
+  it('renders a field node whose display condition is met', () => {
+    const descriptor: ReportDescriptor = {
+      ...baseDescriptor,
+      layout: [{ kind: 'field', name: 'address_complement', display: { field: 'address_complement', op: 'set' } }],
+    }
+    render(<ReportRenderer descriptor={descriptor} record={{ address_complement: 'Suite 4' }} />)
+    expect(screen.getByText('Suite 4')).toBeInTheDocument()
+  })
+
+  it('renders nothing for a section node whose display condition is unmet, avoiding an empty wrapper', () => {
+    const descriptor: ReportDescriptor = {
+      ...baseDescriptor,
+      layout: [
+        {
+          kind: 'section',
+          className: 'optional-block',
+          display: { field: 'show_block', op: 'eq', value: true },
+          children: [{ kind: 'text', text: 'Hidden' }],
+        },
+      ],
+    }
+    const { container } = render(<ReportRenderer descriptor={descriptor} record={{ show_block: false }} />)
+    expect(container.querySelector('.optional-block')).toBeNull()
+  })
+
+  describe('locale', () => {
+    beforeEach(() => {
+      translationRegistry.register({
+        locale: 'fr',
+        module: 'sale',
+        entries: { 'Due date:': "Date d'échéance:", Product: 'Produit' },
+      })
+    })
+
+    afterEach(() => translationRegistry.clear())
+
+    it('translates a text node\'s content when a known locale is passed', () => {
+      const descriptor: ReportDescriptor = {
+        ...baseDescriptor,
+        layout: [{ kind: 'text', text: 'Due date:' }],
+      }
+      render(<ReportRenderer descriptor={descriptor} record={{}} locale="fr" />)
+      expect(screen.getByText("Date d'échéance:")).toBeInTheDocument()
+    })
+
+    it('translates a table column label when a known locale is passed', () => {
+      const descriptor: ReportDescriptor = {
+        ...baseDescriptor,
+        layout: [{ kind: 'table', source: 'lines', columns: [{ name: 'variant_name', label: 'Product' }] }],
+      }
+      render(<ReportRenderer descriptor={descriptor} record={{ lines: [] }} locale="fr" />)
+      expect(screen.getByText('Produit')).toBeInTheDocument()
+    })
+
+    it('leaves field VALUES untranslated regardless of locale — only report-authored text/labels translate', () => {
+      const descriptor: ReportDescriptor = {
+        ...baseDescriptor,
+        layout: [{ kind: 'field', name: 'name' }],
+      }
+      render(<ReportRenderer descriptor={descriptor} record={{ name: 'Due date:' }} locale="fr" />)
+      expect(screen.getByText('Due date:')).toBeInTheDocument()
+    })
+
+    it('falls back to the source string with no locale (the existing default behavior)', () => {
+      const descriptor: ReportDescriptor = {
+        ...baseDescriptor,
+        layout: [{ kind: 'text', text: 'Due date:' }],
+      }
+      render(<ReportRenderer descriptor={descriptor} record={{}} />)
+      expect(screen.getByText('Due date:')).toBeInTheDocument()
+    })
+
+    it('falls back to the source string for an unmapped locale', () => {
+      const descriptor: ReportDescriptor = {
+        ...baseDescriptor,
+        layout: [{ kind: 'text', text: 'Due date:' }],
+      }
+      render(<ReportRenderer descriptor={descriptor} record={{}} locale="de" />)
+      expect(screen.getByText('Due date:')).toBeInTheDocument()
+    })
   })
 })

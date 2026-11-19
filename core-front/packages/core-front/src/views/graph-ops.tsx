@@ -1,5 +1,6 @@
 'use client'
-import type { GraphLayout, Tile } from '../api/graph'
+import type { GraphAggregateRequest, GraphAggregateRow, GraphField, GraphFieldDraft, GraphLayout, Tile } from '../api/graph'
+import type { EntityListOptions } from '../api/list-options'
 import { createOpsContext } from './ops-context'
 
 // How GraphRenderer reaches the Graph mode tile layout (docs/roadmaps/
@@ -13,6 +14,21 @@ export type GraphSaveResult = { ok: true } | { ok: false; message: string }
 export interface GraphOps {
   get: (entity: string) => Promise<GraphLayout>
   save: (entity: string, tiles: Tile[]) => Promise<GraphSaveResult>
+  /** Calculated fields (optional: a host without them just shows none). */
+  listFields?: (entity: string) => Promise<GraphField[]>
+  createField?: (entity: string, draft: GraphFieldDraft) => Promise<GraphSaveResult>
+  /** Edit label/formula/roles/dated (the key is immutable). */
+  updateField?: (id: string, draft: Omit<GraphFieldDraft, 'key'>) => Promise<GraphSaveResult>
+  /** Hard delete — tiles that used it then read 0. */
+  deleteField?: (id: string) => Promise<GraphSaveResult>
+  /** Server-side aggregation over every matching row (ADR-023). Optional: a
+   * host without it — or a null answer (failed call) — keeps the tile on the
+   * client-side path over the fetched page. */
+  aggregate?: (
+    entity: string,
+    req: GraphAggregateRequest,
+    options?: EntityListOptions,
+  ) => Promise<GraphAggregateRow[] | null>
 }
 
 const graphOpsContext = createOpsContext<GraphOps>()

@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
+	"maps"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -16,7 +18,7 @@ import (
 	"core/orm"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // ── Stubs ─────────────────────────────────────────────────────────────────────
@@ -36,6 +38,7 @@ type stubPictures struct {
 	deleteErr error
 
 	gotTenant uuid.UUID
+	flags     []string // SetFlag calls, as table.field=value
 }
 
 func (s *stubPictures) Create(_ context.Context, p Picture) (Picture, error) {
@@ -52,6 +55,11 @@ func (s *stubPictures) Update(_ context.Context, p Picture, _ uuid.UUID) (Pictur
 func (s *stubPictures) FindInTenant(_ context.Context, tenantID, _ uuid.UUID) (Picture, error) {
 	s.gotTenant = tenantID
 	return s.found, s.foundErr
+}
+
+func (s *stubPictures) SetFlag(_ context.Context, _ uuid.UUID, table string, _ uuid.UUID, field string, has bool) error {
+	s.flags = append(s.flags, fmt.Sprintf("%s.%s=%v", table, field, has))
+	return nil
 }
 
 func (s *stubPictures) FindByAnchor(_ context.Context, tenantID uuid.UUID, _ string, _ uuid.UUID, _ string) (Picture, error) {
@@ -149,11 +157,10 @@ func serve(t *testing.T, h echo.HandlerFunc, method, target, contentType string,
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 	for k, v := range params {
-		c.SetParamNames(k)
-		c.SetParamValues(v)
+		c.SetPathValues(append(c.PathValues(), echo.PathValue{Name: k, Value: v}))
 	}
 	if err := h(c); err != nil {
-		e.HTTPErrorHandler(err, c)
+		e.HTTPErrorHandler(c, err)
 	}
 	return rec
 }
@@ -187,7 +194,7 @@ func TestUpload(t *testing.T) {
 		objects := &stubObjects{}
 		body, contentType := multipartUpload(t, anchor, "image/png", []byte("png-bytes"))
 
-		rec := serve(t, newHandlerWith(store, objects).Upload,
+		rec := serve(t, NewHandler(store, objects).Upload,
 			http.MethodPost, "/api/v1/pictures", contentType, body, identity, nil)
 
 		if rec.Code != http.StatusCreated {
@@ -212,6 +219,10 @@ func TestUpload(t *testing.T) {
 		if string(objects.putData) != "png-bytes" || objects.putMime != "image/png" {
 			t.Errorf("stored (%q, %s), want (png-bytes, image/png)", objects.putData, objects.putMime)
 		}
+		// The site reads the flag: set it now, not on the form's next Save.
+		if len(store.flags) != 1 || store.flags[0] != "contact.signature=true" {
+			t.Errorf("flags = %v, want [contact.signature=true]", store.flags)
+		}
 	})
 
 	t.Run("replaces the existing picture on the same anchor", func(t *testing.T) {
@@ -224,7 +235,7 @@ func TestUpload(t *testing.T) {
 		objects := &stubObjects{}
 		body, contentType := multipartUpload(t, anchor, "image/webp", []byte("new-bytes"))
 
-		rec := serve(t, newHandlerWith(store, objects).Upload,
+		rec := serve(t, NewHandler(store, objects).Upload,
 			http.MethodPost, "/api/v1/pictures", contentType, body, identity, nil)
 
 		if rec.Code != http.StatusCreated {
@@ -250,9 +261,7 @@ func TestUpload(t *testing.T) {
 	t.Run("validation failures", func(t *testing.T) {
 		valid := func() map[string]string {
 			m := map[string]string{}
-			for k, v := range anchor {
-				m[k] = v
-			}
+			maps.Copy(m, anchor)
 			return m
 		}
 		tests := []struct {
@@ -272,7 +281,7 @@ func TestUpload(t *testing.T) {
 				objects := &stubObjects{}
 				body, contentType := multipartUpload(t, tt.fields, tt.mime, tt.file)
 
-				rec := serve(t, newHandlerWith(store, objects).Upload,
+				rec := serve(t, NewHandler(store, objects).Upload,
 					http.MethodPost, "/api/v1/pictures", contentType, body, identity, nil)
 
 				if rec.Code != http.StatusBadRequest {
@@ -300,7 +309,7 @@ func TestGet(t *testing.T) {
 		store := &stubPictures{found: row}
 		objects := &stubObjects{getBody: "the-bytes", getMime: "application/octet-stream"}
 
-		rec := serve(t, newHandlerWith(store, objects).Get,
+		rec := serve(t, NewHandler(store, objects).Get,
 			http.MethodGet, "/api/v1/pictures/"+row.ID.String(), "", nil, identity,
 			map[string]string{"id": row.ID.String()})
 
@@ -321,7 +330,7 @@ func TestGet(t *testing.T) {
 
 	t.Run("unknown id is 404", func(t *testing.T) {
 		store := &stubPictures{foundErr: orm.ErrNotFound}
-		rec := serve(t, newHandlerWith(store, &stubObjects{}).Get,
+		rec := serve(t, NewHandler(store, &stubObjects{}).Get,
 			http.MethodGet, "/api/v1/pictures/"+uuid.NewString(), "", nil, identity,
 			map[string]string{"id": uuid.NewString()})
 		if rec.Code != http.StatusNotFound {
@@ -330,7 +339,7 @@ func TestGet(t *testing.T) {
 	})
 
 	t.Run("malformed id is 400", func(t *testing.T) {
-		rec := serve(t, newHandlerWith(&stubPictures{}, &stubObjects{}).Get,
+		rec := serve(t, NewHandler(&stubPictures{}, &stubObjects{}).Get,
 			http.MethodGet, "/api/v1/pictures/nope", "", nil, identity,
 			map[string]string{"id": "nope"})
 		if rec.Code != http.StatusBadRequest {
@@ -354,7 +363,7 @@ func TestFind(t *testing.T) {
 		row.ID = uuid.New()
 		store := &stubPictures{anchor: row}
 
-		rec := serve(t, newHandlerWith(store, &stubObjects{}).Find,
+		rec := serve(t, NewHandler(store, &stubObjects{}).Find,
 			http.MethodGet, target, "", nil, identity, nil)
 
 		if rec.Code != http.StatusOK {
@@ -375,7 +384,7 @@ func TestFind(t *testing.T) {
 
 	t.Run("anchor without a picture is 404", func(t *testing.T) {
 		store := &stubPictures{anchorErr: orm.ErrNotFound}
-		rec := serve(t, newHandlerWith(store, &stubObjects{}).Find,
+		rec := serve(t, NewHandler(store, &stubObjects{}).Find,
 			http.MethodGet, target, "", nil, identity, nil)
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("status = %d, want 404", rec.Code)
@@ -383,7 +392,7 @@ func TestFind(t *testing.T) {
 	})
 
 	t.Run("malformed anchor is 400", func(t *testing.T) {
-		rec := serve(t, newHandlerWith(&stubPictures{}, &stubObjects{}).Find,
+		rec := serve(t, NewHandler(&stubPictures{}, &stubObjects{}).Find,
 			http.MethodGet, "/api/v1/pictures?table=Bad!&record="+recordID.String()+"&field=photo",
 			"", nil, identity, nil)
 		if rec.Code != http.StatusBadRequest {
@@ -398,12 +407,12 @@ func TestDelete(t *testing.T) {
 	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
 
 	t.Run("removes the row then the object", func(t *testing.T) {
-		row := Picture{ObjectKey: "k/1", Mime: "image/png"}
+		row := Picture{ObjectKey: "k/1", Mime: "image/png", TableName: "contact", Field: "signature"}
 		row.ID = uuid.New()
 		store := &stubPictures{found: row}
 		objects := &stubObjects{}
 
-		rec := serve(t, newHandlerWith(store, objects).Delete,
+		rec := serve(t, NewHandler(store, objects).Delete,
 			http.MethodDelete, "/api/v1/pictures/"+row.ID.String(), "", nil, identity,
 			map[string]string{"id": row.ID.String()})
 
@@ -416,11 +425,14 @@ func TestDelete(t *testing.T) {
 		if len(objects.deletedKeys) != 1 || objects.deletedKeys[0] != "k/1" {
 			t.Errorf("deleted objects = %v, want [k/1]", objects.deletedKeys)
 		}
+		if len(store.flags) != 1 || store.flags[0] != "contact.signature=false" {
+			t.Errorf("flags = %v, want [contact.signature=false]", store.flags)
+		}
 	})
 
 	t.Run("unknown id is 404", func(t *testing.T) {
 		store := &stubPictures{foundErr: orm.ErrNotFound}
-		rec := serve(t, newHandlerWith(store, &stubObjects{}).Delete,
+		rec := serve(t, NewHandler(store, &stubObjects{}).Delete,
 			http.MethodDelete, "/api/v1/pictures/"+uuid.NewString(), "", nil, identity,
 			map[string]string{"id": uuid.NewString()})
 		if rec.Code != http.StatusNotFound {
@@ -434,7 +446,7 @@ func TestDelete(t *testing.T) {
 		store := &stubPictures{found: row, deleteErr: context.DeadlineExceeded}
 		objects := &stubObjects{}
 
-		rec := serve(t, newHandlerWith(store, objects).Delete,
+		rec := serve(t, NewHandler(store, objects).Delete,
 			http.MethodDelete, "/api/v1/pictures/"+row.ID.String(), "", nil, identity,
 			map[string]string{"id": row.ID.String()})
 
@@ -443,6 +455,31 @@ func TestDelete(t *testing.T) {
 		}
 		if len(objects.deletedKeys) != 0 {
 			t.Error("object deleted although the row removal failed")
+		}
+	})
+}
+
+// The (users, *, avatar) anchor belongs to LDAP photo sync: the generic routes refuse it.
+func TestReservedAvatarAnchor(t *testing.T) {
+	identity := auth.Identity{UserID: uuid.New(), TenantID: uuid.New()}
+	t.Run("upload is 403", func(t *testing.T) {
+		store := &stubPictures{anchorErr: orm.ErrNotFound}
+		objects := &stubObjects{}
+		body, ct := multipartUpload(t, map[string]string{"table_name": "users", "record_id": uuid.NewString(), "field": "avatar"}, "image/png", []byte("x"))
+		rec := serve(t, NewHandler(store, objects).Upload, http.MethodPost, "/api/v1/pictures", ct, body, identity, nil)
+		if rec.Code != http.StatusForbidden || len(objects.putKeys) != 0 || store.created != nil {
+			t.Fatalf("status = %d, puts %v, created %v", rec.Code, objects.putKeys, store.created)
+		}
+	})
+	t.Run("delete is 403", func(t *testing.T) {
+		row := Picture{ObjectKey: "k/a", TableName: "users", Field: "avatar"}
+		row.ID = uuid.New()
+		store := &stubPictures{found: row}
+		objects := &stubObjects{}
+		rec := serve(t, NewHandler(store, objects).Delete, http.MethodDelete, "/api/v1/pictures/"+row.ID.String(), "", nil, identity,
+			map[string]string{"id": row.ID.String()})
+		if rec.Code != http.StatusForbidden || store.deletedID != uuid.Nil || len(objects.deletedKeys) != 0 {
+			t.Fatalf("status = %d, deleted %s %v", rec.Code, store.deletedID, objects.deletedKeys)
 		}
 	})
 }

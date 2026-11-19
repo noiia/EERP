@@ -1,0 +1,216 @@
+'use client'
+import { useState, type FormEvent } from 'react'
+import { useRouter } from 'next/navigation'
+import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
+import FormControlLabel from '@mui/material/FormControlLabel'
+import Radio from '@mui/material/Radio'
+import RadioGroup from '@mui/material/RadioGroup'
+import Stack from '@mui/material/Stack'
+import TextField from '@mui/material/TextField'
+import Typography from '@mui/material/Typography'
+import { byPrefixAndName, FontAwesomeIcon, formatDatePattern, useI18nStore, useT, ViewBanner } from '@eerp/core-front'
+import { convertPrice } from '../site-prefs'
+import { useSitePrefs } from '../site-prefs-store'
+
+/** One bookable time: a session (id = session id) or a slot (id = its start). */
+export interface BookingChoice { id: string; start: string; seatsLeft: number; price?: number | null }
+
+/** A paid session's price, tax included, in `currency` (bare when unknown). `narrow`:
+ * the currency as its symbol only ($, €) — the phone layout's. */
+function formatPrice(price: number, currency: string | undefined, locale: string | null, narrow = false): string {
+  const tag = locale && locale !== 'source' ? locale : undefined
+  try {
+    if (currency) return new Intl.NumberFormat(tag, { style: 'currency', currency, currencyDisplay: narrow ? 'narrowSymbol' : 'symbol' }).format(price)
+  } catch {
+    // an unknown currency code: fall through to the bare amount
+  }
+  return price.toFixed(2)
+}
+
+/** Choices render in the event's own time zone, in the visitor's language. */
+export function formatChoice(start: string, timeZone: string, locale: string | null): string {
+  const tag = locale && locale !== 'source' ? locale : undefined
+  try {
+    return new Intl.DateTimeFormat(tag, { dateStyle: 'full', timeStyle: 'short', timeZone }).format(new Date(start))
+  } catch {
+    return new Date(start).toLocaleString(tag) // unknown zone: the browser's own
+  }
+}
+
+/** The form's width below which it takes the phone layout. A container query, not a
+ * viewport breakpoint: the page editor previews a phone inside a wide window, and on
+ * desktop the block may sit in a narrow grid cell. */
+const COMPACT = '@container (max-width: 479.95px)'
+const WIDE = '@container (min-width: 480px)'
+
+/** One choice's label. Wide: the full text date, " — " separated. A phone: the
+ * workspace short date, the seats left as a seat icon and count, the price with its
+ * currency symbol. A price shown in another currency than the stored one is a
+ * conversion (prefixed ≈); the booking is still charged in the stored currency. */
+function ChoiceLabel({ c, kind, timeZone, currency }: { c: BookingChoice; kind: 'session' | 'slot'; timeZone: string; currency?: string }) {
+  const t = useT()
+  const locale = useI18nStore((s) => s.locale)
+  const site = useSitePrefs()
+  const tag = locale && locale !== 'source' ? locale : undefined
+  const shown = site.currency || currency
+  const converted = c.price != null && c.price > 0 && shown ? convertPrice(c.price, currency, shown, site) : null
+  // No rate for the visitor's currency: the stored price, as is.
+  const [amount, unit] = converted != null ? [converted, shown] : [c.price ?? 0, currency]
+  const approx = unit !== currency ? '≈ ' : ''
+  const paid = c.price != null && c.price > 0
+  const full = c.seatsLeft <= 0
+  return (
+    <span suppressHydrationWarning>
+      <Box component="span" sx={{ display: 'inline', [COMPACT]: { display: 'none' } }}>
+        {formatChoice(c.start, timeZone, locale)}
+        {paid ? ` — ${approx}${formatPrice(amount, unit, locale)}` : ''}
+        {full ? ` — ${kind === 'session' ? t('Full — join the waiting list') : t('Full')}` : ` — ${c.seatsLeft === 1 ? t('1 seat left') : `${c.seatsLeft} ${t('seats left')}`}`}
+      </Box>
+      <Box component="span" sx={{ display: 'none', [COMPACT]: { display: 'inline-flex' }, alignItems: 'center', columnGap: 1.5, flexWrap: 'wrap' }}>
+        <span>{formatDatePattern(c.start, site.dateFormat, { timeZone, locale: tag, time: true })}</span>
+        <Box component="span" title={full ? t('Full') : t('seats left')} sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, color: full ? 'error.main' : 'text.secondary' }}>
+          <FontAwesomeIcon icon={byPrefixAndName.fas.chair} aria-label={t('seats left')} />
+          {Math.max(c.seatsLeft, 0)}
+        </Box>
+        {paid && <span>{approx}{formatPrice(amount, unit, locale, true)}</span>}
+      </Box>
+    </span>
+  )
+}
+
+type Status =
+  | { kind: 'idle' | 'submitting' }
+  | { kind: 'confirmed' | 'waitlisted'; email: string }
+  | { kind: 'paying' }
+  | { kind: 'error'; message: string }
+
+// Seat caps shown here are hints (seat counts are cached up to a minute); Go's 409
+// is the truth, answered with "just taken" and a refresh of the choices.
+export function BookingForm({ eventId, kind, choices, timeZone, maxSeats = 10, currency, defaults, onTaken }: {
+  eventId: string
+  kind: 'session' | 'slot'
+  choices: BookingChoice[]
+  timeZone: string
+  maxSeats?: number
+  /** ISO 4217 code prices are shown in (Go's /sessions `currency`). */
+  currency?: string
+  defaults?: { name?: string; email?: string }
+  onTaken?: () => void
+}) {
+  const t = useT()
+  const router = useRouter()
+  const [choice, setChoice] = useState('')
+  const [seats, setSeats] = useState(1)
+  const [status, setStatus] = useState<Status>({ kind: 'idle' })
+  const picked = choices.find((c) => c.id === choice)
+  // A full session can still be picked to join its waiting list (sessions only:
+  // a full appointment slot is just another time to avoid).
+  const waitlist = kind === 'session' && picked !== undefined && picked.seatsLeft <= 0
+  const cap = waitlist ? maxSeats : Math.max(1, Math.min(maxSeats, picked?.seatsLeft ?? maxSeats))
+
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    const f = new FormData(e.currentTarget)
+    const email = String(f.get('email') ?? '')
+    setStatus({ kind: 'submitting' })
+    const res = await fetch('/api/site-booking', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event_id: eventId,
+        ...(kind === 'session' ? { session_id: choice } : { slot_start: choice }),
+        seats,
+        name: String(f.get('name') ?? ''),
+        email,
+        phone: String(f.get('phone') ?? ''),
+        ...(waitlist ? { waitlist: true } : {}),
+      }),
+    }).catch(() => null)
+    if (res?.ok) {
+      const ok = (await res.json().catch(() => null)) as { status?: string; checkout_url?: string } | null
+      if (ok?.checkout_url) {
+        // Held for payment: the provider's page confirms it (seats held 30 minutes).
+        setStatus({ kind: 'paying' })
+        window.location.assign(ok.checkout_url)
+        return
+      }
+      setStatus({ kind: ok?.status === 'waitlisted' ? 'waitlisted' : 'confirmed', email })
+      return
+    }
+    const body = (await res?.json().catch(() => null)) as { error?: { message?: string } } | null
+    if (res?.status === 409 || res?.status === 404) {
+      setStatus({ kind: 'error', message: t('Just taken — pick another time.') })
+      setChoice('')
+      if (onTaken) onTaken()
+      else router.refresh()
+    } else if (res?.status === 400 && body?.error?.message) {
+      setStatus({ kind: 'error', message: body.error.message })
+    } else if (res?.status === 502) {
+      setStatus({ kind: 'error', message: t('Online payment is unavailable right now. Please try again in a few minutes.') })
+    } else if (res?.status === 429) {
+      setStatus({ kind: 'error', message: t('Too many attempts. Please wait a minute and try again.') })
+    } else {
+      setStatus({ kind: 'error', message: t('Something went wrong. Please try again.') })
+    }
+  }
+
+  if (status.kind === 'paying') {
+    return <ViewBanner status="info">{t('Taking you to the payment page…')}</ViewBanner>
+  }
+  if (status.kind === 'waitlisted') {
+    return (
+      <ViewBanner status="info">
+        {t("You're on the waiting list — we'll email you if a seat frees up:")} {status.email}
+      </ViewBanner>
+    )
+  }
+  if (status.kind === 'confirmed') {
+    return (
+      <ViewBanner status="info">
+        {t('Booking confirmed — a confirmation email is on its way to')} {status.email}
+      </ViewBanner>
+    )
+  }
+  if (choices.length === 0) {
+    return <Typography color="text.secondary">{t('No dates available right now.')}</Typography>
+  }
+  // Wide: the times in columns and the contact fields two by two, so the block stays short.
+  return (
+    <Box sx={{ containerType: 'inline-size' }}>
+    <Stack component="form" spacing={2} onSubmit={(e) => void submit(e)}>
+      {status.kind === 'error' && <ViewBanner status="error">{status.message}</ViewBanner>}
+      <RadioGroup name="choice" value={choice}
+        sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))', columnGap: 2 }} onChange={(e) => { setChoice(e.target.value); setSeats(1) }}>
+        {choices.map((c) => (
+          <FormControlLabel
+            key={c.id}
+            value={c.id}
+            disabled={c.seatsLeft <= 0 && kind !== 'session'}
+            control={<Radio required size="small" />}
+            label={<ChoiceLabel c={c} kind={kind} timeZone={timeZone} currency={currency} />}
+          />
+        ))}
+      </RadioGroup>
+      <Box sx={{ display: 'grid', gap: 2, [WIDE]: { gridTemplateColumns: '1fr 1fr' } }}>
+      <TextField
+        name="seats"
+        label={t('Seats')}
+        type="number"
+        value={seats}
+        onChange={(e) => setSeats(Math.max(1, Math.min(cap, Number(e.target.value) || 1)))}
+        slotProps={{ htmlInput: { min: 1, max: cap } }}
+        size="small"
+        sx={{ maxWidth: 120, [WIDE]: { maxWidth: 'none' } }}
+      />
+      <TextField name="name" label={t('Name')} size="small" required defaultValue={defaults?.name} slotProps={{ htmlInput: { maxLength: 200 } }} />
+      <TextField name="email" label={t('Email')} size="small" type="email" required defaultValue={defaults?.email} />
+      <TextField name="phone" label={t('Phone')} size="small" type="tel" slotProps={{ htmlInput: { maxLength: 50 } }} />
+      </Box>
+      <Button type="submit" variant="contained" disabled={!choice || status.kind === 'submitting'} sx={{ alignSelf: 'flex-start' }}>
+        {waitlist ? t('Join the waiting list') : t('Book')}
+      </Button>
+    </Stack>
+    </Box>
+  )
+}

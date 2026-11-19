@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -11,6 +13,7 @@ import (
 	"core/orm/access"
 	"core/orm/internal/registry"
 	"core/orm/pool/executor"
+	"core/orm/qcache"
 	"core/orm/query"
 
 	"github.com/google/uuid"
@@ -75,6 +78,55 @@ func (r *Repository) tenantCondition(ctx context.Context) (query.Condition, bool
 	return query.NewCondition(tenantColumn+" = $1", tid), true, nil
 }
 
+// scopeConditions returns every per-request row restriction of a query: the
+// caller's tenant, then the table's row scope (ADR-038). Every generic read
+// and write applies it, so a row outside it reads as missing (404).
+func (r *Repository) scopeConditions(ctx context.Context) ([]query.Condition, error) {
+	var conds []query.Condition
+	if cond, ok, err := r.tenantCondition(ctx); err != nil {
+		return nil, err
+	} else if ok {
+		conds = append(conds, cond)
+	}
+	if r.meta.RowScope != nil {
+		cond, ok, err := r.meta.RowScope(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("crud: row scope %s: %w", r.meta.TableName, err)
+		}
+		if ok {
+			conds = append(conds, cond)
+		}
+	}
+	return conds, nil
+}
+
+// publicConditions returns the forced row filter of a public-scoped request
+// (ADR-024), sorted for a deterministic SQL (the read cache keys on it). A
+// forced column the table lacks fails closed — it came from admin config.
+// Deliberately NOT routed through checkColumn: scope columns need not be public.
+func (r *Repository) publicConditions(ctx context.Context) ([]query.Condition, error) {
+	scope, ok := access.PublicScopeFromContext(ctx)
+	if !ok {
+		return nil, nil
+	}
+	cols := slices.Sorted(maps.Keys(scope.Equals))
+	conds := make([]query.Condition, 0, len(cols))
+	for _, col := range cols {
+		if !r.meta.HasField(col) {
+			return nil, fmt.Errorf("%w: %s.%s", ErrPublicScopeMisconfigured, r.meta.TableName, col)
+		}
+		conds = append(conds, query.NewCondition(col+"::text = $1", scope.Equals[col]))
+	}
+	return conds, nil
+}
+
+// ErrPublicScopeMisconfigured is returned when a public scope forces a filter
+// on a column the table lacks (bad admin config). Deliberately distinct from
+// ErrUnknownColumn: that one becomes a 400 echoing the column name, while this
+// one falls through to the generic 500 (logged server-side, never shown to the
+// anonymous caller).
+var ErrPublicScopeMisconfigured = errors.New("crud: public scope forces an unknown column")
+
 // ErrUnknownColumn is returned when a list filter names a column the table
 // does not have. Column names end up as SQL identifiers, so the whitelist
 // check is a security boundary, not a convenience.
@@ -94,6 +146,9 @@ var ErrUnknownColumn = errors.New("crud: unknown filter column")
 func (r *Repository) checkColumn(ctx context.Context, col string) error {
 	fm, ok := r.meta.FieldByColumn(col)
 	if !ok {
+		return fmt.Errorf("%w: %s.%s", ErrUnknownColumn, r.meta.TableName, col)
+	}
+	if scope, ok := access.PublicScopeFromContext(ctx); ok && !scope.Allows(col) {
 		return fmt.Errorf("%w: %s.%s", ErrUnknownColumn, r.meta.TableName, col)
 	}
 	if len(fm.Groups) > 0 {
@@ -137,6 +192,15 @@ func (r *Repository) filterConditions(ctx context.Context, f ListFilter) ([]quer
 		conds = append(conds, query.NewCondition(fmt.Sprintf("%s::text = ANY($1)", col), f.In[col]))
 	}
 
+	empty := append([]string(nil), f.Empty...)
+	sort.Strings(empty)
+	for _, col := range empty {
+		if err := r.checkColumn(ctx, col); err != nil {
+			return nil, err
+		}
+		conds = append(conds, query.NewCondition(fmt.Sprintf("(%s IS NULL OR %s::text = '')", col, col)))
+	}
+
 	appendRange := func(conds []query.Condition, m map[string]string, op string) ([]query.Condition, error) {
 		for _, col := range sortedKeys(m) {
 			if err := r.checkColumn(ctx, col); err != nil {
@@ -159,6 +223,11 @@ func (r *Repository) filterConditions(ctx context.Context, f ListFilter) ([]quer
 			return nil, err
 		}
 	}
+	geoConds, err := r.geoConditions(ctx, f.Geo)
+	if err != nil {
+		return nil, err
+	}
+	conds = append(conds, geoConds...)
 	return conds, nil
 }
 
@@ -185,29 +254,65 @@ func sortedKeys[V any](m map[string]V) []string {
 	return keys
 }
 
+// ExactCountLimit is how many matching rows a list's total counts exactly.
+// Past it the total is the planner's estimate (Total.Estimated): an exact
+// count scans every matching row, so it grows with the table (22 ms at 100k
+// contacts, ~2 s at 10M) while the page itself stays a few milliseconds.
+const ExactCountLimit = 10_000
+
+// countRows is FindAll's total (SelectBuilder.BoundedTotal at ExactCountLimit).
+func (r *Repository) countRows(ctx context.Context, b query.SelectBuilder[struct{}]) (Total, error) {
+	n, estimated, err := b.BoundedTotal(ctx, r.db, ExactCountLimit)
+	return Total{Rows: int(n), Estimated: estimated}, err
+}
+
 // FindAll returns a paginated slice of rows and the total count of rows that
 // match the filter (non-deleted, tenant-scoped).
-func (r *Repository) FindAll(ctx context.Context, f ListFilter) ([]map[string]any, int, error) {
+func (r *Repository) FindAll(ctx context.Context, f ListFilter) ([]map[string]any, Total, error) {
 	b := query.Select[struct{}](r.meta.StructMeta)
 	if r.meta.SoftDelete {
 		b = b.Where(query.NewCondition("deleted_at IS NULL"))
 	}
-	if cond, ok, err := r.tenantCondition(ctx); err != nil {
-		return nil, 0, err
-	} else if ok {
+	scope, err := r.scopeConditions(ctx)
+	if err != nil {
+		return nil, Total{}, err
+	}
+	for _, cond := range scope {
+		b = b.Where(cond)
+	}
+	pubConds, err := r.publicConditions(ctx)
+	if err != nil {
+		return nil, Total{}, err
+	}
+	for _, cond := range pubConds {
 		b = b.Where(cond)
 	}
 	filters, err := r.filterConditions(ctx, f)
 	if err != nil {
-		return nil, 0, err
+		return nil, Total{}, err
 	}
 	for _, cond := range filters {
 		b = b.Where(cond)
 	}
-
-	total, err := b.Count(ctx, r.db)
+	distanceExpr, orderExpr, err := r.nearClause(ctx, f.Geo)
 	if err != nil {
-		return nil, 0, fmt.Errorf("crud: count %s: %w", r.meta.TableName, err)
+		return nil, Total{}, err
+	}
+	if distanceExpr != "" {
+		// PK tiebreak: equal distances (all unlocated rows are NULL) must page stably.
+		b = b.Columns(append(r.meta.StructMeta.Columns(), distanceExpr)...).
+			OrderBy(orderExpr).OrderBy(r.meta.PKField.Column)
+	} else if f.Order != "" {
+		col, dir := strings.TrimPrefix(f.Order, "-"), "ASC"
+		if col != f.Order {
+			dir = "DESC"
+		}
+		// Same gate as every filter column: unknown, unpublished or group-gated
+		// columns can't be sorted on (sorting would leak their order).
+		if err := r.checkColumn(ctx, col); err != nil {
+			return nil, Total{}, err
+		}
+		b = b.OrderBy(col + " " + dir).OrderBy(r.meta.PKField.Column + " " + dir)
 	}
 
 	page, pageSize := f.Page, f.PageSize
@@ -218,19 +323,98 @@ func (r *Repository) FindAll(ctx context.Context, f ListFilter) ([]map[string]an
 		pageSize = 20
 	}
 	offset := (page - 1) * pageSize
-
 	sql, args := b.Offset(offset).Limit(pageSize).ToSQL()
+
+	// The page SQL's WHERE fully determines the total too, so one entry holds both.
+	var cached pageEntry
+	key, hit := r.lookup(ctx, f.cacheable(), sql, args, &cached)
+	if hit {
+		return cached.Rows, Total{Rows: cached.Total, Estimated: cached.Estimated}, nil
+	}
+
+	total, err := r.countRows(ctx, b)
+	if err != nil {
+		return nil, Total{}, fmt.Errorf("crud: count %s: %w", r.meta.TableName, err)
+	}
+
 	rows, err := r.db.Query(ctx, sql, args...)
 	if err != nil {
-		return nil, 0, fmt.Errorf("crud: find all %s: %w", r.meta.TableName, err)
+		return nil, Total{}, fmt.Errorf("crud: find all %s: %w", r.meta.TableName, err)
 	}
 
 	results, err := scanToMaps(rows)
 	if err != nil {
-		return nil, 0, err
+		return nil, Total{}, err
 	}
-	return results, int(total), nil
+	r.store(ctx, key, pageEntry{Rows: results, Total: total.Rows, Estimated: total.Estimated})
+	return results, total, nil
 }
+
+// pageEntry is FindAll's cached value. Estimated is omitempty so entries
+// cached before it existed still decode as exact.
+type pageEntry struct {
+	Rows      []map[string]any `json:"rows"`
+	Total     int              `json:"total"`
+	Estimated bool             `json:"estimated,omitempty"`
+}
+
+// cachingDB is what the executor offers when the optional read cache is wired
+// (core/orm/qcache, ADR-022): only *db.DB does. Inside a transaction the
+// executor is a *tx.Tx, which never caches — a tx must see its own writes.
+type cachingDB interface {
+	QueryCache() *qcache.Cache
+	Name() string
+}
+
+// lookup/store are no-ops unless r.db is a caching *db.DB with a cache set.
+// Rows come back from a hit with JSON types (json.Number, strings for
+// uuid/time): they only ever feed BuildResponse → the JSON response, which
+// encodes them byte-identically.
+//
+// cacheable=false skips the cache entirely (no lookup, so no store either):
+// entries are invalidated by THIS table's generation only, so a read whose
+// result depends on another table can't be cached — see ListFilter.cacheable.
+func (r *Repository) lookup(ctx context.Context, cacheable bool, sql string, args []any, dst any) (string, bool) {
+	// A row-scoped result depends on who asks, which the key doesn't capture.
+	if !cacheable || r.meta.RowScope != nil {
+		return "", false
+	}
+	c, name := cacheFor(r.db)
+	if c == nil {
+		return "", false
+	}
+	return c.Lookup(ctx, name, r.meta.TableName, sql, args, dst)
+}
+
+func (r *Repository) store(ctx context.Context, key string, v any) {
+	if key == "" {
+		return
+	}
+	if c, _ := cacheFor(r.db); c != nil {
+		c.Store(ctx, key, v)
+	}
+}
+
+// readCache is what lookup/store use of *qcache.Cache.
+type readCache interface {
+	Lookup(ctx context.Context, database, table, sql string, args []any, dst any) (string, bool)
+	Store(ctx context.Context, key string, v any)
+}
+
+// cacheFor returns the executor's read cache and database name (nil when the
+// executor doesn't cache). A var so tests can stub the cache.
+var cacheFor = func(ex executor.Executor) (readCache, string) {
+	cdb, ok := ex.(cachingDB)
+	if !ok {
+		return nil, ""
+	}
+	return cdb.QueryCache(), cdb.Name()
+}
+
+// cacheable reports whether a read under f may use the read cache. An inside[]
+// filter reads another table's zone (a subquery), which that table's writes
+// don't invalidate here — so those reads always go to Postgres.
+func (f ListFilter) cacheable() bool { return len(f.Geo.Inside) == 0 }
 
 // distinctCap ceilings how many distinct buckets a single DistinctValues call
 // returns — a real column with more than this many distinct values needs
@@ -254,9 +438,18 @@ func (r *Repository) DistinctValues(ctx context.Context, column string, f ListFi
 	if r.meta.SoftDelete {
 		b = b.Where(query.NewCondition("deleted_at IS NULL"))
 	}
-	if cond, ok, err := r.tenantCondition(ctx); err != nil {
+	scope, err := r.scopeConditions(ctx)
+	if err != nil {
 		return nil, err
-	} else if ok {
+	}
+	for _, cond := range scope {
+		b = b.Where(cond)
+	}
+	pubConds, err := r.publicConditions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, cond := range pubConds {
 		b = b.Where(cond)
 	}
 	filters, err := r.filterConditions(ctx, f)
@@ -268,11 +461,20 @@ func (r *Repository) DistinctValues(ctx context.Context, column string, f ListFi
 	}
 
 	sql, args := b.GroupBy(column).OrderBy(column).Limit(distinctCap).ToSQL()
+	var cached []DistinctValue
+	key, hit := r.lookup(ctx, f.cacheable(), sql, args, &cached)
+	if hit {
+		return cached, nil
+	}
 	rows, err := r.db.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, fmt.Errorf("crud: distinct values %s.%s: %w", r.meta.TableName, column, err)
 	}
-	return scanDistinct(rows)
+	out, err := scanDistinct(rows)
+	if err == nil {
+		r.store(ctx, key, out)
+	}
+	return out, err
 }
 
 // scanDistinct reads the (value, total) shape DistinctValues' custom column
@@ -306,26 +508,55 @@ func (r *Repository) FindByID(ctx context.Context, id any) (map[string]any, erro
 	if r.meta.SoftDelete {
 		b = b.Where(query.NewCondition("deleted_at IS NULL"))
 	}
-	if cond, ok, err := r.tenantCondition(ctx); err != nil {
+	scope, err := r.scopeConditions(ctx)
+	if err != nil {
 		return nil, err
-	} else if ok {
+	}
+	for _, cond := range scope {
+		b = b.Where(cond)
+	}
+	pubConds, err := r.publicConditions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, cond := range pubConds {
 		b = b.Where(cond)
 	}
 
 	sql, args := b.Limit(1).ToSQL()
-	rows, err := r.db.Query(ctx, sql, args...)
-	if err != nil {
-		return nil, fmt.Errorf("crud: find by id: %w", err)
-	}
-
-	results, err := scanToMaps(rows)
-	if err != nil {
-		return nil, err
+	var results []map[string]any
+	key, hit := r.lookup(ctx, true, sql, args, &results)
+	if !hit {
+		rows, err := r.db.Query(ctx, sql, args...)
+		if err != nil {
+			return nil, fmt.Errorf("crud: find by id: %w", err)
+		}
+		if results, err = scanToMaps(rows); err != nil {
+			return nil, err
+		}
+		r.store(ctx, key, results)
 	}
 	if len(results) == 0 {
 		return nil, fmt.Errorf("crud: find by id %v: %w", id, ErrNotFound)
 	}
 	return results[0], nil
+}
+
+// CanSeeRecord reports whether the caller may see row id of table under its
+// row scope (ADR-038), for services anchored on another table's record. A
+// table that is unregistered or has no row scope answers true (no
+// restriction to apply); otherwise the row must be live, in the caller's
+// tenant and inside the scope.
+func CanSeeRecord(ctx context.Context, db executor.Executor, table string, id uuid.UUID) (bool, error) {
+	meta, ok := registry.Get(table)
+	if !ok || meta.RowScope == nil {
+		return true, nil
+	}
+	_, err := NewRepository(db, meta).FindByID(ctx, id)
+	if errors.Is(err, ErrNotFound) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // Create inserts a new row and returns it with all server-set columns populated
@@ -385,6 +616,9 @@ func (r *Repository) Update(ctx context.Context, id any, data map[string]any) (m
 		if f.Column == tenantColumn {
 			continue // tenant is immutable — a client cannot move a row across tenants
 		}
+		if r.isGenerated(f.Column) {
+			continue
+		}
 		val, ok := data[f.Column]
 		if !ok {
 			continue
@@ -399,9 +633,11 @@ func (r *Repository) Update(ctx context.Context, id any, data map[string]any) (m
 	if r.meta.SoftDelete {
 		b = b.Where(query.NewCondition("deleted_at IS NULL"))
 	}
-	if cond, ok, err := r.tenantCondition(ctx); err != nil {
+	scope, err := r.scopeConditions(ctx)
+	if err != nil {
 		return nil, err
-	} else if ok {
+	}
+	for _, cond := range scope {
 		b = b.Where(cond)
 	}
 
@@ -443,9 +679,11 @@ func (r *Repository) Restore(ctx context.Context, id any) (map[string]any, error
 		Set("updated_at", time.Now()).
 		Where(query.NewCondition(r.meta.PKField.Column+" = $1", id)).
 		Returning("*")
-	if cond, ok, err := r.tenantCondition(ctx); err != nil {
+	scope, err := r.scopeConditions(ctx)
+	if err != nil {
 		return nil, err
-	} else if ok {
+	}
+	for _, cond := range scope {
 		b = b.Where(cond)
 	}
 
@@ -477,9 +715,11 @@ func (r *Repository) softDelete(ctx context.Context, id any) error {
 		Set("updated_at", time.Now()).
 		Where(query.NewCondition(r.meta.PKField.Column+" = $1", id)).
 		Where(query.NewCondition("deleted_at IS NULL"))
-	if cond, ok, err := r.tenantCondition(ctx); err != nil {
+	scope, err := r.scopeConditions(ctx)
+	if err != nil {
 		return err
-	} else if ok {
+	}
+	for _, cond := range scope {
 		b = b.Where(cond)
 	}
 
@@ -501,9 +741,11 @@ func (r *Repository) softDelete(ctx context.Context, id any) error {
 func (r *Repository) hardDelete(ctx context.Context, id any) error {
 	b := query.Delete[struct{}](r.meta.StructMeta).
 		Where(query.NewCondition(r.meta.PKField.Column+" = $1", id))
-	if cond, ok, err := r.tenantCondition(ctx); err != nil {
+	scope, err := r.scopeConditions(ctx)
+	if err != nil {
 		return err
-	} else if ok {
+	}
+	for _, cond := range scope {
 		b = b.Where(cond)
 	}
 
@@ -522,12 +764,22 @@ func (r *Repository) hardDelete(ctx context.Context, id any) error {
 	return nil
 }
 
+// isGenerated reports whether col is a Postgres generated column, which
+// rejects any explicit write.
+func (r *Repository) isGenerated(col string) bool {
+	i := r.meta.StructMeta.ColumnIndex(col)
+	return i >= 0 && r.meta.StructMeta.Fields[i].Generated
+}
+
 // orderedData iterates meta.Fields in order and returns aligned cols/vals slices
 // for only the columns present in data. Deterministic ordering ensures stable SQL.
 func (r *Repository) orderedData(data map[string]any) ([]string, []any) {
 	cols := make([]string, 0, len(data))
 	vals := make([]any, 0, len(data))
 	for _, f := range r.meta.Fields {
+		if r.isGenerated(f.Column) {
+			continue
+		}
 		if val, ok := data[f.Column]; ok {
 			cols = append(cols, f.Column)
 			vals = append(vals, val)

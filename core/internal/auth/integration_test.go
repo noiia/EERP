@@ -1,13 +1,11 @@
-//go:build integration
-
 package auth_test
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"reflect"
 	"sort"
 	"strings"
@@ -16,12 +14,15 @@ import (
 
 	"core/internal/auth"
 	authmw "core/internal/middleware"
+	"core/internal/testdb"
 	"core/internal/types"
+	_ "core/modules/auth" // registers the auth module for testdb.MigrateModules
 	"core/orm"
 	"core/orm/model"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/jackc/pgx/v5"
+	"github.com/labstack/echo/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -44,131 +45,45 @@ func init() {
 
 func integrationSetup(t *testing.T) (*orm.App, *types.Config) {
 	t.Helper()
-	dsn := os.Getenv("TEST_DSN")
-	if dsn == "" {
-		t.Skip("TEST_DSN not set")
-	}
 	cfg := &types.Config{
 		MasterPassword:    "integration-test-key-at-least-32!",
 		AccessTTLSeconds:  3600,
 		RefreshTTLSeconds: 604800,
 	}
-	app, err := orm.New(orm.Config{DSN: dsn}, nil)
-	if err != nil {
-		t.Fatalf("orm.New: %v", err)
-	}
+	app := testdb.Open(t)
 
-	ctx := context.Background()
-	// Ensure auth tables exist (matches what the module migration does).
-	tables := []string{
-		`CREATE TABLE IF NOT EXISTS users (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			deleted_at TIMESTAMPTZ,
-			tenant_id UUID NOT NULL,
-			email TEXT NOT NULL,
-			password_hash TEXT NOT NULL
-		)`,
-		`CREATE TABLE IF NOT EXISTS roles (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			deleted_at TIMESTAMPTZ,
-			tenant_id UUID NOT NULL,
-			name TEXT NOT NULL,
-			description TEXT NOT NULL DEFAULT '',
-			technical_name TEXT
-		)`,
-		`CREATE TABLE IF NOT EXISTS permissions (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			deleted_at TIMESTAMPTZ,
-			code TEXT NOT NULL,
-			description TEXT NOT NULL DEFAULT '',
-			module TEXT NOT NULL DEFAULT ''
-		)`,
-		`CREATE TABLE IF NOT EXISTS user_roles (
-			id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			deleted_at TIMESTAMPTZ,
-			tenant_id UUID NOT NULL,
-			user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-			role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE
-		)`,
-		`CREATE TABLE IF NOT EXISTS role_permissions (
-			role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
-			permission_id UUID NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
-			PRIMARY KEY (role_id, permission_id)
-		)`,
-		`CREATE TABLE IF NOT EXISTS role_belongs (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			deleted_at TIMESTAMPTZ,
-			tenant_id UUID NOT NULL,
-			role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
-			belongs_to_role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE
-		)`,
-		`CREATE TABLE IF NOT EXISTS refresh_tokens (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			deleted_at TIMESTAMPTZ,
-			user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-			token_hash TEXT NOT NULL,
-			expires_at TIMESTAMPTZ NOT NULL,
-			revoked BOOLEAN NOT NULL DEFAULT FALSE
-		)`,
-		`CREATE TABLE IF NOT EXISTS account_role_types (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			deleted_at TIMESTAMPTZ,
-			tenant_id UUID NOT NULL,
-			name TEXT NOT NULL
-		)`,
-		`CREATE TABLE IF NOT EXISTS role_view_permission (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			deleted_at TIMESTAMPTZ,
-			tenant_id UUID NOT NULL,
-			role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
-			entity TEXT NOT NULL
-		)`,
-		`CREATE TABLE IF NOT EXISTS role_view_permission_right (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			deleted_at TIMESTAMPTZ,
-			tenant_id UUID NOT NULL,
-			role_view_permission_id UUID NOT NULL REFERENCES role_view_permission(id) ON DELETE CASCADE,
-			account_role_type_id UUID NOT NULL REFERENCES account_role_types(id) ON DELETE CASCADE
-		)`,
-	}
-	for _, sql := range tables {
-		if _, err := app.DB.Exec(ctx, sql); err != nil {
-			t.Fatalf("setup table: %v", err)
-		}
-	}
+	// The real auth schema (tables, join tables, unique indexes), as boot creates it.
+	testdb.MigrateModules(t, app, "auth")
 
-	t.Cleanup(func() {
-		app.DB.Exec(ctx, "DELETE FROM refresh_tokens")             //nolint:errcheck
-		app.DB.Exec(ctx, "DELETE FROM role_view_permission_right") //nolint:errcheck
-		app.DB.Exec(ctx, "DELETE FROM role_view_permission")       //nolint:errcheck
-		app.DB.Exec(ctx, "DELETE FROM account_role_types")         //nolint:errcheck
-		app.DB.Exec(ctx, "DELETE FROM role_belongs")               //nolint:errcheck
-		app.DB.Exec(ctx, "DELETE FROM user_roles")                 //nolint:errcheck
-		app.DB.Exec(ctx, "DELETE FROM role_permissions")           //nolint:errcheck
-		app.DB.Exec(ctx, "DELETE FROM users")                      //nolint:errcheck
-		app.DB.Exec(ctx, "DELETE FROM roles")                      //nolint:errcheck
-		app.DB.Exec(ctx, "DELETE FROM permissions")                //nolint:errcheck
-		app.Close()                                                //nolint:errcheck
-	})
 	return app, cfg
+}
+
+// newTenant returns a fresh tenant id and deletes every row seeded under it when
+// the test ends. Scoped on purpose: the suite may run against a live dev DB
+// (testdb derives it from CONFIG), so a blanket DELETE FROM users would wipe
+// real accounts.
+func newTenant(t *testing.T, app *orm.App) uuid.UUID {
+	t.Helper()
+	tenantID := uuid.New()
+	t.Cleanup(func() {
+		ctx := context.Background()
+		for _, sql := range []string{
+			`DELETE FROM refresh_tokens WHERE user_id IN (SELECT id FROM users WHERE tenant_id = $1)`,
+			`DELETE FROM role_view_permission_right WHERE tenant_id = $1`,
+			`DELETE FROM role_view_permission WHERE tenant_id = $1`,
+			`DELETE FROM account_role_types WHERE tenant_id = $1`,
+			`DELETE FROM role_belongs WHERE tenant_id = $1`,
+			`DELETE FROM user_roles WHERE tenant_id = $1`,
+			`DELETE FROM role_permissions WHERE role_id IN (SELECT id FROM roles WHERE tenant_id = $1)`,
+			`DELETE FROM users WHERE tenant_id = $1`,
+			`DELETE FROM roles WHERE tenant_id = $1`,
+		} {
+			if _, err := app.DB.Exec(ctx, sql, tenantID); err != nil {
+				t.Errorf("cleanup tenant %s: %v", tenantID, err)
+			}
+		}
+	})
+	return tenantID
 }
 
 func seedUser(t *testing.T, db *orm.DB, email, password string, tenantID uuid.UUID) uuid.UUID {
@@ -199,13 +114,29 @@ func seedRoleWithPermission(t *testing.T, db *orm.DB, userID uuid.UUID, tenantID
 		t.Fatalf("seed role: %v", err)
 	}
 
+	// Permission codes are unique (among live rows) and global — "*:*:*" already
+	// exists once the default admin is seeded — so reuse an existing row, and
+	// delete the permission afterwards only if this test created it.
 	var permID uuid.UUID
-	if err := db.QueryRow(ctx,
-		`INSERT INTO permissions (code, description, module) VALUES ($1, $2, $3) RETURNING id`,
+	created := true
+	err := db.QueryRow(ctx,
+		`INSERT INTO permissions (code, description, module) VALUES ($1, $2, $3)
+		 ON CONFLICT (code) WHERE deleted_at IS NULL DO NOTHING RETURNING id`,
 		permCode, "test permission", strings.SplitN(permCode, ":", 2)[0],
-	).Scan(&permID); err != nil {
+	).Scan(&permID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		created = false
+		err = db.QueryRow(ctx, `SELECT id FROM permissions WHERE code = $1 AND deleted_at IS NULL`, permCode).Scan(&permID)
+	}
+	if err != nil {
 		t.Fatalf("seed permission: %v", err)
 	}
+	t.Cleanup(func() {
+		_, _ = db.Exec(context.Background(), `DELETE FROM role_permissions WHERE permission_id = $1 AND role_id = $2`, permID, roleID)
+		if created {
+			_, _ = db.Exec(context.Background(), `DELETE FROM permissions WHERE id = $1`, permID)
+		}
+	})
 
 	if _, err := db.Exec(ctx, `INSERT INTO user_roles (tenant_id, user_id, role_id) VALUES ($1, $2, $3)`, tenantID, userID, roleID); err != nil {
 		t.Fatalf("seed user_role: %v", err)
@@ -253,7 +184,6 @@ func buildTestStack(app *orm.App, cfg *types.Config) (*echo.Echo, *auth.Handler)
 	handler := auth.NewHandler(userRepo, tokenSvc, refreshStore, permRepo)
 
 	e := echo.New()
-	e.HideBanner = true
 	e.Use(echo.WrapMiddleware(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set(echo.HeaderXRequestID, "test-req-id")
@@ -269,7 +199,7 @@ func buildTestStack(app *orm.App, cfg *types.Config) (*echo.Echo, *auth.Handler)
 	jwtMw := authmw.JWTMiddleware(tokenSvc)
 	permMw := authmw.PermissionMiddleware(permRepo)
 	api := e.Group("/api/v1", jwtMw, permMw)
-	api.GET("/products", func(c echo.Context) error {
+	api.GET("/products", func(c *echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"ok": "true"})
 	})
 
@@ -280,7 +210,7 @@ func buildTestStack(app *orm.App, cfg *types.Config) (*echo.Echo, *auth.Handler)
 
 func TestIntegration_Login_ValidCredentials(t *testing.T) {
 	app, cfg := integrationSetup(t)
-	tenantID := uuid.New()
+	tenantID := newTenant(t, app)
 	seedUser(t, app.DB, "alice@example.com", "hunter2", tenantID)
 
 	e, _ := buildTestStack(app, cfg)
@@ -305,7 +235,7 @@ func TestIntegration_Login_ValidCredentials(t *testing.T) {
 
 func TestIntegration_Login_WrongPassword_SameAs_UnknownEmail(t *testing.T) {
 	app, cfg := integrationSetup(t)
-	tenantID := uuid.New()
+	tenantID := newTenant(t, app)
 	seedUser(t, app.DB, "bob@example.com", "correct", tenantID)
 
 	e, _ := buildTestStack(app, cfg)
@@ -338,7 +268,7 @@ func TestIntegration_Login_WrongPassword_SameAs_UnknownEmail(t *testing.T) {
 
 func TestIntegration_PasswordHash_NeverInResponse(t *testing.T) {
 	app, cfg := integrationSetup(t)
-	tenantID := uuid.New()
+	tenantID := newTenant(t, app)
 	seedUser(t, app.DB, "carol@example.com", "secret", tenantID)
 
 	e, _ := buildTestStack(app, cfg)
@@ -356,7 +286,7 @@ func TestIntegration_PasswordHash_NeverInResponse(t *testing.T) {
 
 func TestIntegration_Refresh_ValidCookie(t *testing.T) {
 	app, cfg := integrationSetup(t)
-	tenantID := uuid.New()
+	tenantID := newTenant(t, app)
 	seedUser(t, app.DB, "dave@example.com", "pass", tenantID)
 
 	e, _ := buildTestStack(app, cfg)
@@ -399,7 +329,7 @@ func TestIntegration_Refresh_ValidCookie(t *testing.T) {
 
 func TestIntegration_Refresh_RevokedToken_Returns401(t *testing.T) {
 	app, cfg := integrationSetup(t)
-	tenantID := uuid.New()
+	tenantID := newTenant(t, app)
 	seedUser(t, app.DB, "eve@example.com", "pass", tenantID)
 
 	e, _ := buildTestStack(app, cfg)
@@ -463,7 +393,7 @@ func TestIntegration_ProtectedRoute_NoToken_Returns401(t *testing.T) {
 
 func TestIntegration_ProtectedRoute_ValidToken_NoPermission_Returns403(t *testing.T) {
 	app, cfg := integrationSetup(t)
-	tenantID := uuid.New()
+	tenantID := newTenant(t, app)
 	userID := seedUser(t, app.DB, "frank@example.com", "pass", tenantID)
 	// Role with write-only permission — no "products:read".
 	seedRoleWithPermission(t, app.DB, userID, tenantID, "inventory:items:write")
@@ -496,7 +426,7 @@ func TestIntegration_ProtectedRoute_ValidToken_NoPermission_Returns403(t *testin
 
 func TestIntegration_ProtectedRoute_SuperAdmin_Returns200(t *testing.T) {
 	app, cfg := integrationSetup(t)
-	tenantID := uuid.New()
+	tenantID := newTenant(t, app)
 	userID := seedUser(t, app.DB, "grace@example.com", "pass", tenantID)
 	seedRoleWithPermission(t, app.DB, userID, tenantID, "*:*:*")
 
@@ -523,7 +453,7 @@ func TestIntegration_ProtectedRoute_SuperAdmin_Returns200(t *testing.T) {
 
 func TestIntegration_FindGroups_TransitiveClosure_CycleSafe(t *testing.T) {
 	app, _ := integrationSetup(t)
-	tenantID := uuid.New()
+	tenantID := newTenant(t, app)
 	userID := seedUser(t, app.DB, "henry@example.com", "pass", tenantID)
 
 	// henry directly holds role "a". a belongs_to b, b belongs_to c, and c
@@ -568,7 +498,7 @@ func TestIntegration_FindGroups_TransitiveClosure_CycleSafe(t *testing.T) {
 
 func TestIntegration_Login_EmbedsGroupsClaim(t *testing.T) {
 	app, cfg := integrationSetup(t)
-	tenantID := uuid.New()
+	tenantID := newTenant(t, app)
 	userID := seedUser(t, app.DB, "iris@example.com", "pass", tenantID)
 	other := seedUser(t, app.DB, "other2@example.com", "pass", tenantID)
 	roleA := seedRole(t, app.DB, userID, tenantID, "support_agent")
@@ -605,7 +535,7 @@ func TestIntegration_Login_EmbedsGroupsClaim(t *testing.T) {
 func TestIntegration_SeedDefaultRoles_AdminGetsEveryViewWithGrantedRights(t *testing.T) {
 	app, _ := integrationSetup(t)
 	ctx := context.Background()
-	tenantID := uuid.New()
+	tenantID := newTenant(t, app)
 
 	if err := auth.SeedDefaultRoles(ctx, app.DB, tenantID); err != nil {
 		t.Fatalf("seed default roles: %v", err)
@@ -673,7 +603,108 @@ func TestIntegration_SeedDefaultRoles_AdminGetsEveryViewWithGrantedRights(t *tes
 	}
 }
 
+// TestIntegration_SeedDefaultRoles_SecondTenantSharesTheSamePermissionRow
+// reproduces the production incident this test guards against: preparing a
+// restored database that already has its OWN tenant (and its own "*:*:*"
+// permission row, seeded under some other id) used to fail outright —
+// SeedDevAdmin/SeedDefaultRoles derived a per-TENANT id for a value
+// (permissions.code) that's actually globally unique across the whole table
+// (permissions has no tenant_id at all), so a second tenant's seed always
+// tried to INSERT a second row sharing that code and hit
+// idx_permissions_code's real unique-violation. Seeding two DIFFERENT
+// tenants in the same test reproduces that collision directly.
+func TestIntegration_SeedDefaultRoles_SecondTenantSharesTheSamePermissionRow(t *testing.T) {
+	app, _ := integrationSetup(t)
+	ctx := context.Background()
+	tenantA := uuid.New()
+	tenantB := uuid.New()
+
+	if err := auth.SeedDefaultRoles(ctx, app.DB, tenantA); err != nil {
+		t.Fatalf("seed default roles (tenant A): %v", err)
+	}
+	// Must NOT fail with a duplicate-key error on idx_permissions_code — this
+	// is the exact call that 500'd in production against a restored database.
+	if err := auth.SeedDefaultRoles(ctx, app.DB, tenantB); err != nil {
+		t.Fatalf("seed default roles (tenant B): %v", err)
+	}
+
+	var permCount int
+	if err := app.DB.QueryRow(ctx,
+		`SELECT count(*) FROM permissions WHERE code = '*:*:*'`,
+	).Scan(&permCount); err != nil {
+		t.Fatalf("count '*:*:*' permission rows: %v", err)
+	}
+	if permCount != 1 {
+		t.Fatalf("permissions rows with code '*:*:*' = %d, want exactly 1 (global catalog, shared across tenants)", permCount)
+	}
+
+	var permID uuid.UUID
+	if err := app.DB.QueryRow(ctx,
+		`SELECT id FROM permissions WHERE code = '*:*:*'`,
+	).Scan(&permID); err != nil {
+		t.Fatalf("find the shared '*:*:*' permission row: %v", err)
+	}
+
+	// Both tenants' Admin roles must be granted THIS SAME row, not each
+	// pointing at their own (nonexistent) locally-derived id.
+	for _, tenantID := range []uuid.UUID{tenantA, tenantB} {
+		var adminRoleID uuid.UUID
+		if err := app.DB.QueryRow(ctx,
+			`SELECT id FROM roles WHERE tenant_id = $1 AND technical_name = 'admin'`, tenantID,
+		).Scan(&adminRoleID); err != nil {
+			t.Fatalf("find admin role for tenant %s: %v", tenantID, err)
+		}
+		var granted bool
+		if err := app.DB.QueryRow(ctx,
+			`SELECT EXISTS (SELECT 1 FROM role_permissions WHERE role_id = $1 AND permission_id = $2)`,
+			adminRoleID, permID,
+		).Scan(&granted); err != nil {
+			t.Fatalf("check grant for tenant %s: %v", tenantID, err)
+		}
+		if !granted {
+			t.Errorf("tenant %s's admin role is not granted the shared '*:*:*' permission row", tenantID)
+		}
+	}
+}
+
 // adminGrantedRightNamesForTest mirrors auth.adminGrantedRightNames
 // (unexported) so this external test package doesn't need to reach into
 // internals for one constant.
 var adminGrantedRightNamesForTest = []string{"read", "write", "delete"}
+
+// A live account whose email differs only by case blocks website signup.
+func TestIntegration_CreateWebsiteUser_EmailTakenCaseInsensitive(t *testing.T) {
+	app, _ := integrationSetup(t)
+	tenantID := newTenant(t, app)
+	if err := auth.SeedWebsiteRoles(context.Background(), app.DB, tenantID); err != nil {
+		t.Fatal(err)
+	}
+	email := "Dup-" + uuid.NewString() + "@Example.test"
+	seedUser(t, app.DB, email, "pw-123456789", tenantID)
+	_, err := auth.NewUserRepository(app.DB).CreateWebsiteUser(context.Background(), tenantID, strings.ToLower(email), "pw-123456789", "Dup", "")
+	if !errors.Is(err, auth.ErrEmailTaken) {
+		t.Fatalf("err = %v, want ErrEmailTaken", err)
+	}
+}
+
+// website_admin runs the site's events and reads its outbox (plan 4).
+func TestIntegration_SeedWebsiteRoles_EventPermissions(t *testing.T) {
+	app, _ := integrationSetup(t)
+	tenantID := newTenant(t, app)
+	if err := auth.SeedWebsiteRoles(context.Background(), app.DB, tenantID); err != nil {
+		t.Fatal(err)
+	}
+	for _, code := range []string{"event:*:*", "event_session:*:*", "event_availability:*:*", "event_booking:*:*",
+		"mail_outbox:mail_outbox:read", "mail_outbox:mail_outbox:write"} {
+		var n int
+		if err := app.DB.QueryRow(context.Background(), `
+			SELECT count(*) FROM role_permissions rp
+			JOIN roles r ON r.id = rp.role_id JOIN permissions p ON p.id = rp.permission_id
+			WHERE r.tenant_id = $1 AND r.technical_name = 'website_admin' AND p.code = $2`, tenantID, code).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 1 {
+			t.Errorf("website_admin lacks %s", code)
+		}
+	}
+}

@@ -81,6 +81,29 @@ describe('GraphRenderer', () => {
     measured.containerWidth = 900
   })
 
+  it('aggregates a tile server-side over every row when the host supports it (no partial badge)', async () => {
+    const statTile: Tile = { ...savedTile, config: { field: 'amount', aggregate: 'sum' } }
+    const aggregate = vi.fn(async () => [{ value: 123456, count: 100000 }])
+    const ops = fakeOps({ get: vi.fn(async () => ({ tiles: [statTile] })), aggregate })
+    render(
+      <GraphOpsProvider ops={ops}>
+        <GraphRenderer
+          descriptor={{ ...descriptor, listFilter: { filter: { kind: 'deal' } } }}
+          records={[{ id: '1', name: 'a' }]}
+          recordTotal={100000}
+          listOptions={{ filter: { status: 'won' } }}
+        />
+      </GraphOpsProvider>,
+    )
+    expect(await screen.findByText('123,456.00')).toBeInTheDocument()
+    expect(screen.queryByText(/Partial data/)).not.toBeInTheDocument()
+    expect(aggregate).toHaveBeenCalledWith(
+      'crm',
+      { aggregate: 'sum', value: 'amount' },
+      { filter: { kind: 'deal', status: 'won' } },
+    )
+  })
+
   it('renders an inert message with no crash when no GraphOpsProvider is mounted', () => {
     render(<GraphRenderer descriptor={descriptor} records={[]} />)
     expect(screen.getByText(/Graph layouts are not available/)).toBeInTheDocument()
@@ -103,6 +126,25 @@ describe('GraphRenderer', () => {
     expect(rgl().resizeConfig!.enabled).toBe(false)
   })
 
+  it('centers the tiles in read mode, and gives the editor the full canvas', async () => {
+    useSessionStore.setState({ identity: identityWith(['settings:views:write']) })
+    const ops = fakeOps({ get: vi.fn(async () => ({ tiles: [savedTile, { ...savedTile, id: 't2', x: 6 }] })) })
+    render(
+      <GraphOpsProvider ops={ops}>
+        <GraphRenderer descriptor={descriptor} records={[]} />
+      </GraphOpsProvider>,
+    )
+    await screen.findByTestId('graph-tile-t2')
+    // Two 6-column tiles = 12 × 30px, centered in the 900px container.
+    expect(rgl().width).toBe(360)
+    expect(rgl().gridConfig!.cols).toBe(12)
+    expect(screen.getByTestId('graph-grid')).toHaveStyle({ width: '360px', marginLeft: 'auto', marginRight: 'auto' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    expect(rgl().width).toBe(900)
+    expect(rgl().gridConfig!.cols).toBe(30)
+  })
+
   it('shows Edit only for a session granted settings:views:write', async () => {
     useSessionStore.setState({ identity: identityWith(['settings:views:write']) })
     render(
@@ -113,7 +155,7 @@ describe('GraphRenderer', () => {
     expect(await screen.findByRole('button', { name: 'Edit' })).toBeInTheDocument()
   })
 
-  it('the grid uses a fixed GRID_UNIT row height and a container-width-derived column count', async () => {
+  it('the editing grid uses a fixed GRID_UNIT row height and a container-width-derived column count', async () => {
     useSessionStore.setState({ identity: identityWith(['settings:views:write']) })
     render(
       <GraphOpsProvider ops={fakeOps({ get: vi.fn(async () => ({ tiles: [savedTile] })) })}>
@@ -121,6 +163,7 @@ describe('GraphRenderer', () => {
       </GraphOpsProvider>,
     )
     await screen.findByTestId('graph-tile-t1')
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
     // useContainerWidth is mocked to 900px; cols = round(900/30) = 30.
     expect(rgl().gridConfig).toMatchObject({ cols: 30, rowHeight: 30 })
   })

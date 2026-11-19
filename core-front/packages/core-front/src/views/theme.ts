@@ -1,6 +1,7 @@
 'use client'
-import { createTheme, type Theme } from '@mui/material/styles'
-import { DEFAULT_PALETTE, type ThemePalette } from './palette'
+import Grow from '@mui/material/Grow'
+import { createTheme, getContrastRatio, lighten, type Theme } from '@mui/material/styles'
+import { DEFAULT_PALETTE, isHexColor, type BrandColorKey, type ThemePalette } from './palette'
 import type { ThemeMode } from './ui-store'
 import {
   elevation,
@@ -22,17 +23,35 @@ import {
 //
 // Mapping rationale (direction "B — Surfaced"):
 // - Go Blue   → primary  : the CTA / accent. Its CONTRAST TEXT is auto-derived (see
-//   contrastThreshold below) so filled buttons stay WCAG AA even though #00ADD8 is light.
+//   contrastThreshold below) so filled buttons stay WCAG AA whatever color is picked; in
+//   dark mode it is lightened until it reads on the dark surfaces (readablePrimary).
 // - Deep Ocean→ secondary + the structural app-bar; light-mode headings/body text.
 // - Success Green / status tokens → success / error / warning / info.
 // - Neutral ramp → backgrounds, text, dividers (a superset of the brand greys).
 // - tokens → radius (8), 3-step elevation, type scale, motion, focus ring.
 
+/** The primary as used in dark mode: lightened in steps until it reaches AA (4.5:1)
+ * against the dark paper, since a saturated light-mode accent (the default indigo)
+ * reads as near-invisible link text on navy. A light enough color passes unchanged. */
+function readablePrimary(primary: string, paper: string): string {
+  let color = primary
+  for (let i = 1; i <= 8 && getContrastRatio(color, paper) < 4.5; i++) color = lighten(primary, i * 0.1)
+  return color
+}
+
 export function buildAppTheme(
-  palette: ThemePalette = DEFAULT_PALETTE,
+  editedPalette: ThemePalette = DEFAULT_PALETTE,
   mode: ThemeMode = 'light',
 ): Theme {
   const isLight = mode === 'light'
+  // A slot being typed in Settings (empty, "#12"…) would make createTheme throw and
+  // take every page down: it falls back to its default until it's a valid hex again.
+  const palette = Object.fromEntries(
+    (Object.keys(DEFAULT_PALETTE) as BrandColorKey[]).map((k) => [
+      k,
+      isHexColor(editedPalette[k] ?? '') ? editedPalette[k] : DEFAULT_PALETTE[k],
+    ]),
+  ) as ThemePalette
 
   const theme = createTheme({
     // Raise the contrast threshold so MUI picks the higher-contrast text on each palette
@@ -40,7 +59,7 @@ export function buildAppTheme(
     palette: {
       mode,
       contrastThreshold: 4.5,
-      primary: { main: palette.goBlue },
+      primary: { main: isLight ? palette.goBlue : readablePrimary(palette.goBlue, palette.deepOcean) },
       secondary: { main: palette.deepOcean },
       success: { main: palette.successGreen },
       error: { main: status.error },
@@ -68,8 +87,25 @@ export function buildAppTheme(
       ...typeScale,
       button: { fontSize: '0.875rem', lineHeight: 1.5, fontWeight: 600, textTransform: 'none' },
     },
+    // Every MUI transition (dialogs, menus, popovers, snackbars, collapses, tooltips)
+    // takes its timing from the motion tokens, so appearing/disappearing feels the same
+    // everywhere: decelerate in, accelerate out.
     transitions: {
-      duration: { shortest: motion.duration.short, standard: motion.duration.standard },
+      duration: {
+        shortest: motion.duration.short,
+        shorter: motion.duration.short + 30,
+        short: motion.duration.standard - 20,
+        standard: motion.duration.standard,
+        complex: motion.duration.page,
+        enteringScreen: motion.duration.enter,
+        leavingScreen: motion.duration.exit,
+      },
+      easing: {
+        easeInOut: motion.easing,
+        easeOut: motion.easingEnter,
+        easeIn: motion.easingExit,
+        sharp: motion.easing,
+      },
     },
   })
 
@@ -127,6 +163,29 @@ export function buildAppTheme(
     MuiTextField: {
       defaultProps: { size: 'small', variant: 'outlined' },
     },
+    // Read-only form fields render as MUI "disabled". In dark mode text.disabled
+    // (neutral[600]) all but vanishes on the dark surfaces, so a read-only value
+    // (a line's unit price, a computed total) reads in neutral[100] instead and
+    // its label in the normal label color. Light mode keeps MUI's own. Disabled
+    // BUTTONS still use text.disabled, so they don't look clickable.
+    ...(isLight
+      ? {}
+      : {
+          MuiInputBase: {
+            styleOverrides: {
+              root: {
+                '&.Mui-disabled': { color: neutral[100] },
+                '& .MuiInputBase-input.Mui-disabled': { WebkitTextFillColor: neutral[100] },
+              },
+            },
+          },
+          MuiFormLabel: {
+            styleOverrides: { root: { '&.Mui-disabled': { color: theme.palette.text.secondary } } },
+          },
+          MuiFormControlLabel: {
+            styleOverrides: { label: { '&.Mui-disabled': { color: neutral[100] } } },
+          },
+        }),
     MuiAlert: {
       styleOverrides: { root: { borderRadius: radius.sm } },
     },
@@ -134,6 +193,10 @@ export function buildAppTheme(
       // The top bar carries the structural Deep Ocean tone in both modes, hairline shadow.
       defaultProps: { color: 'secondary', elevation: 0 },
       styleOverrides: { root: { boxShadow: elevation.header } },
+    },
+    MuiDialog: {
+      // A dialog grows out of the page instead of only fading (and shrinks back on close).
+      defaultProps: { slots: { transition: Grow } },
     },
     MuiTooltip: {
       styleOverrides: {

@@ -45,8 +45,11 @@ package orm
 
 import (
 	"context"
+	"core/orm/geo"
+	"core/orm/qcache"
 
 	"core/orm/internal/cache"
+	"core/orm/internal/crud"
 	"core/orm/log"
 	"core/orm/model"
 	"core/orm/pool/config"
@@ -56,7 +59,16 @@ import (
 	"core/orm/query"
 	"core/orm/repo"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+)
+
+// GeoPoint and GeoShape are the geographic column types (ADR-029): a
+// geography(Point,4326) and a geography(Geometry,4326) column, GeoJSON on the
+// wire. Declare them as pointers: `Location *orm.GeoPoint `+"`"+`db:"geo_location,index=gist"`+"`"+`.
+type (
+	GeoPoint = geo.Point
+	GeoShape = geo.Shape
 )
 
 // ── Sentinel errors ───────────────────────────────────────────────────────────
@@ -85,6 +97,10 @@ type Logger = log.Logger
 // LogEntry is the structured payload emitted on every query execution.
 type LogEntry = log.LogEntry
 
+// Condition is a WHERE fragment with its bound $n arguments (orm.Cond builds
+// one); a RowScopeFunc returns it.
+type Condition = query.Condition
+
 // Executor is the interface shared by *DB and *Tx.
 // Accept it in your own helpers so they work inside and outside transactions.
 type Executor = executor.Executor
@@ -96,6 +112,16 @@ type Executor = executor.Executor
 //
 //	db, err := orm.Open(ctx, orm.Config{DSN: os.Getenv("DATABASE_URL")})
 var Open = db.Open
+
+// ── Read cache ────────────────────────────────────────────────────────────────
+
+// QueryCache is the optional Redis read cache for generic CRUD reads
+// (docs/adr/ADR-022-optional-redis-query-cache.md). Enable it with
+// db.SetQueryCache(c); a nil cache (the default) means no Redis at all.
+type QueryCache = qcache.Cache
+
+// NewQueryCache connects to redisURL and pings it; see qcache.New.
+var NewQueryCache = qcache.New
 
 // ── Logging ───────────────────────────────────────────────────────────────────
 
@@ -146,12 +172,48 @@ func Select[T model.Entity](meta cache.StructMeta) query.SelectBuilder[T] {
 	return query.Select[T](meta)
 }
 
+// SelectForUpdate is Select with row locking (SELECT … FOR UPDATE): the rows
+// read stay locked until the transaction ends. It must run on a *Tx (All/One
+// return ErrLockOutsideTx otherwise). Chain SkipLocked() for work queues,
+// NoWait() to fail instead of waiting, Of(tables…) with joins.
+//
+//	err := orm.Transact(ctx, db, func(tx *orm.Tx) error {
+//	    due, err := orm.SelectForUpdate[Job](jobs.Meta()).SkipLocked().
+//	        Where(orm.Cond("status = $1", "pending")).Limit(20).All(ctx, tx)
+//	    …
+//	})
+func SelectForUpdate[T model.Entity](meta cache.StructMeta) query.SelectBuilder[T] {
+	return query.Select[T](meta).ForUpdate()
+}
+
+// ErrLockOutsideTx: a SelectForUpdate query ran outside a transaction.
+var ErrLockOutsideTx = query.ErrLockOutsideTx
+
+// ErrLockWithAggregate: a SelectForUpdate query has GROUP BY or HAVING.
+var ErrLockWithAggregate = query.ErrLockWithAggregate
+
+// ExactCountLimit is how many matching rows a list total counts exactly —
+// pass it to SelectBuilder.BoundedTotal so hand-written list endpoints report
+// totals exactly like the generic one (ADR-032).
+const ExactCountLimit = crud.ExactCountLimit
+
 // Cond is a shorthand for query.NewCondition.
 // Lets ERP code stay readable without importing the query sub-package.
 //
 //	orders.FindAll(ctx, orm.Cond("status = $1", "open"))
 func Cond(sql string, args ...any) query.Condition {
 	return query.NewCondition(sql, args...)
+}
+
+// In matches col against any of values — the idiomatic Postgres way ("col =
+// ANY($1)", one array parameter pgx encodes natively) to express what SQL's
+// IN (…) does, without hand-building an "IN ($1,$2,$3,…)" placeholder list
+// per call site (core/orm/internal/crud's own generic ?in[col]= filter uses
+// this exact idiom internally).
+//
+//	roles.FindAll(ctx, orm.In("name", []string{"admin", "viewer"}))
+func In[V any](col string, values []V) query.Condition {
+	return query.NewCondition(col+" = ANY($1)", values)
 }
 
 // ── Transaction ───────────────────────────────────────────────────────────────
@@ -171,3 +233,36 @@ func Cond(sql string, args ...any) query.Condition {
 func Transact(ctx context.Context, db *db.DB, fn func(*tx.Tx) error) error {
 	return db.Transaction(ctx, fn)
 }
+
+// GeoDistance returns the distance in meters between two "table:id:column"
+// references (nil when either side is empty), checking the caller may read
+// both (ADR-029).
+func GeoDistance(ctx context.Context, db Executor, from, to string) (*float64, error) {
+	return crud.Distance(ctx, db, from, to)
+}
+
+// CanSeeRecord reports whether the caller may see row id of table under the
+// table's row scope (ADR-038) — for services anchored on another table's
+// record (chatter, attachments…). True when the table has no row scope or
+// isn't registered.
+func CanSeeRecord(ctx context.Context, db Executor, table string, id uuid.UUID) (bool, error) {
+	return crud.CanSeeRecord(ctx, db, table, id)
+}
+
+// ErrGeoParam (malformed geo parameter, 400) and ErrGeoRef (unusable
+// reference, 404), returned by GeoDistance and the generic list.
+var (
+	ErrGeoParam = crud.ErrGeoParam
+	ErrGeoRef   = crud.ErrGeoRef
+)
+
+// SetTableActiveCheck wires the live module state (module.Registry.IsTableActive)
+// at boot so geo references to a deactivated module's table are refused.
+func SetTableActiveCheck(fn func(table string) bool) { crud.SetTableActiveCheck(fn) }
+
+// ParseLonLat parses "lon,lat" and GeoPointSQL renders a geography literal
+// from parsed numbers — for hand-written geo SQL (e.g. event's public list).
+var (
+	ParseLonLat = geo.ParseLonLat
+	GeoPointSQL = geo.PointSQL
+)

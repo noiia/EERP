@@ -25,10 +25,15 @@ import {
 } from '@eerp/core-front'
 import type { OSMConnector } from '@/lib/osm-settings'
 import type { TaxSettings as TaxSettingsValue } from '@/lib/tax-settings'
+import type { UnitSettings as UnitSettingsValue } from '@/lib/unit-settings'
 import AccountsSettings from './AccountsSettings'
 import OSMConnectorSettings from './OSMConnectorSettings'
+import StripeConnectorSettings from './StripeConnectorSettings'
+import type { StripeStatus } from '@/lib/stripe-settings'
 import ReportsGlobalSettings from './ReportsGlobalSettings'
 import TaxSettings from './TaxSettings'
+import UnitSettings from './UnitSettings'
+import { FaviconSettings } from './FaviconSettings'
 
 // Settings → Global settings (formerly "Appearance", docs/roadmaps/
 // pdf-reports.md's Reports settings subsection): three collapsible sections —
@@ -43,8 +48,12 @@ export default function AppearanceSettings({
   reportPageFormats,
   canEditIntegrations = false,
   initialOSMConnector = { enabled: false, base_url: '', user_agent: '' },
+  initialStripe = null,
+  stripeWebhookURL = '',
   canEditTax = false,
   initialTaxSettings = { price_mode: 'tax_excluded' },
+  canEditUnits = false,
+  initialUnitSettings = { system: 'metric' },
   canEditAccounts = false,
   initialUsernameAtFormat = false,
 }: {
@@ -58,8 +67,13 @@ export default function AppearanceSettings({
   reportPageFormats?: ReactNode
   canEditIntegrations?: boolean
   initialOSMConnector?: OSMConnector
+  /** null: the payment_stripe module isn't installed — no Stripe section. */
+  initialStripe?: StripeStatus | null
+  stripeWebhookURL?: string
   canEditTax?: boolean
   initialTaxSettings?: TaxSettingsValue
+  canEditUnits?: boolean
+  initialUnitSettings?: UnitSettingsValue
   canEditAccounts?: boolean
   initialUsernameAtFormat?: boolean
 }) {
@@ -69,6 +83,8 @@ export default function AppearanceSettings({
   const setPaletteColor = useUiStore((s) => s.setPaletteColor)
   const resetPalette = useUiStore((s) => s.resetPalette)
   const setTheme = useUiStore((s) => s.setTheme)
+  const uiStyle = useUiStore((s) => s.uiStyle)
+  const setUiStyle = useUiStore((s) => s.setUiStyle)
 
   return (
     <Container maxWidth="md" sx={{ py: 6 }}>
@@ -106,6 +122,24 @@ export default function AppearanceSettings({
                 }
                 label={t('Dark mode')}
               />
+
+              <Box>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={uiStyle === 'performance'}
+                      onChange={(e) => setUiStyle(e.target.checked ? 'performance' : 'pretty')}
+                      slotProps={{ input: { 'aria-label': 'Performance mode' } }}
+                    />
+                  }
+                  label={t('Performance mode')}
+                />
+                <Typography variant="body2" color="text.secondary">
+                  {t(
+                    'Turns off the ERP animations and shadows for a faster interface on slow devices. The public website is not affected.',
+                  )}
+                </Typography>
+              </Box>
 
               <Stack spacing={2}>
                 {BRAND_COLORS.map((color) => {
@@ -230,7 +264,12 @@ export default function AppearanceSettings({
             <Typography variant="subtitle1">{t('Integrations')}</Typography>
           </AccordionSummary>
           <AccordionDetails>
-            <OSMConnectorSettings canEdit={canEditIntegrations} initialConnector={initialOSMConnector} />
+            <Stack spacing={4}>
+              <OSMConnectorSettings canEdit={canEditIntegrations} initialConnector={initialOSMConnector} />
+              {initialStripe && (
+                <StripeConnectorSettings canEdit={canEditIntegrations} initial={initialStripe} webhookURL={stripeWebhookURL} />
+              )}
+            </Stack>
           </AccordionDetails>
         </Accordion>
 
@@ -242,6 +281,28 @@ export default function AppearanceSettings({
           </AccordionSummary>
           <AccordionDetails>
             <TaxSettings canEdit={canEditTax} initialSettings={initialTaxSettings} />
+          </AccordionDetails>
+        </Accordion>
+
+        <Accordion disableGutters>
+          <AccordionSummary
+            expandIcon={<FontAwesomeIcon icon={byPrefixAndName.fas['chevron-down']} />}
+          >
+            <Typography variant="subtitle1">{t('Units')}</Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <UnitSettings canEdit={canEditUnits} initialSettings={initialUnitSettings} />
+          </AccordionDetails>
+        </Accordion>
+
+        <Accordion disableGutters>
+          <AccordionSummary
+            expandIcon={<FontAwesomeIcon icon={byPrefixAndName.fas['chevron-down']} />}
+          >
+            <Typography variant="subtitle1">{t('Favicon')}</Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <FaviconSettings />
           </AccordionDetails>
         </Accordion>
 

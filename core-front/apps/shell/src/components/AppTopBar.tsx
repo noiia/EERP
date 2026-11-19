@@ -1,9 +1,7 @@
 'use client'
 import { useEffect, useMemo, useState, type MouseEvent } from 'react'
-import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import AppBar from '@mui/material/AppBar'
-import Avatar from '@mui/material/Avatar'
 import Box from '@mui/material/Box'
 import Breadcrumbs from '@mui/material/Breadcrumbs'
 import Divider from '@mui/material/Divider'
@@ -18,12 +16,21 @@ import Typography from '@mui/material/Typography'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import {
   AppHeaderMenuBar,
+  AvatarWithPresence,
+  avatarUrl,
   byPrefixAndName,
+  ERP_BASE,
+  erpPath,
   FontAwesomeIcon,
+  IntentLink,
   layout,
   moduleRegistry,
   nextBreadcrumbTrail,
+  withTeamsRoot,
+  PresenceDot,
+  setPresenceStatus,
   useBreadcrumbStore,
+  usePresenceStore,
   useRecordLabelStore,
   useSessionStore,
   useT,
@@ -33,6 +40,8 @@ import {
 } from '@eerp/core-front'
 import { authBffUrl } from '@/lib/auth-url'
 import { setActiveCompany, type CompanyRecord } from '@/lib/company'
+import { CompanyLogo } from './CompanyLogo'
+import { NotificationBell } from './NotificationBell'
 
 // The persistent application top bar (shell chrome). Shown on every authenticated route:
 // left = the module breadcrumb (fil d'Ariane) derived from the path, rooted at the menu;
@@ -126,20 +135,25 @@ function PathBreadcrumbs({ pathname }: { pathname: string }) {
   // — otherwise it would fall back to the raw titleized id the moment the
   // user navigates one step further.
   const recordLabel = useRecordLabelStore((s) => (s.id === lastSegment ? s.label : null))
+  // The crumb keeps the page's query (a list's filter[...] seeds), so coming back from a
+  // record through the breadcrumb restores the same filtered list.
+  const search = useSearchParams()?.toString() ?? ''
 
   // This page's own crumb (never an ancestor chain — see crumbForPath), with
   // its label swapped for the resolved record name once known.
   const currentCrumb = useMemo(() => {
-    const base = crumbForPath(pathname, t)
+    const found = crumbForPath(pathname, t)
+    const base = found && search ? { ...found, href: `${found.href}?${search}` } : found
     return base && recordLabel ? { ...base, label: recordLabel } : base
-  }, [pathname, recordLabel])
+  }, [pathname, search, recordLabel])
   // Merged with whatever was already in the cross-navigation trail (see
   // breadcrumb-store.ts): a genuinely new page appends after it, and
   // returning to an already-visited page truncates the forward history —
   // computed here (not just inside the effect below) so the FIRST render
   // after a navigation already shows the merged trail with no one-frame
   // flash of the stale one.
-  const storedTrail = useBreadcrumbStore((s) => s.trail)
+  const rawTrail = useBreadcrumbStore((s) => s.trail)
+  const storedTrail = useMemo(() => withTeamsRoot(rawTrail, pathname), [rawTrail, pathname])
   const trail = useMemo(
     () => nextBreadcrumbTrail(storedTrail, currentCrumb),
     [storedTrail, currentCrumb],
@@ -148,16 +162,28 @@ function PathBreadcrumbs({ pathname }: { pathname: string }) {
     // Also re-fires once recordLabel resolves (asynchronously, shortly after
     // a form route mounts) so the already-visited entry gets its baked-in
     // friendly name too, not just crumbs visited from here on.
+    const stored = useBreadcrumbStore.getState().trail
+    const rooted = withTeamsRoot(stored, pathname)
+    if (rooted !== stored) useBreadcrumbStore.getState().visit(rooted[0])
     useBreadcrumbStore.getState().visit(currentCrumb)
-  }, [pathname, recordLabel])
-  const narrow = useMediaQuery(`(max-width:${layout.breadcrumbCollapseWidth}px)`)
+  }, [pathname, search, recordLabel])
+  const narrow = useMediaQuery(`(max-width:${layout.topBarCompactWidth}px)`)
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
 
-  // Below breadcrumbCollapseWidth, a full trail rarely fits next to the nav/avatar —
-  // collapse it to a single "…" summary button plus the current page only. Clicking
-  // it opens every crumb in a Menu (which stacks its MenuItems VERTICALLY by nature)
-  // instead of falling through to MUI Breadcrumbs' own built-in collapse below, which
-  // would re-expand everything back INLINE — still too wide for this screen.
+  // Below topBarCompactWidth, a full trail (crumb text, let alone the module
+  // header menu/company name/avatar sharing the same row) rarely fits —
+  // collapse to ONE bare icon button, no text and no separate home button:
+  // 'angles-right' (three>>) reads as "a breadcrumb trail" the same way the
+  // wide layout's own separator glyph (chevron-right) already does, just
+  // repeated — the closest match Font Awesome's free solid set actually
+  // ships (no literal 3-chevron/"breadcrumb" icon exists there; angles-right
+  // is 2 chevrons, its own alias is "angle-double-right"). Clicking it opens
+  // every visited crumb as a vertical Menu (MenuItems stack that way by
+  // nature, unlike falling through to MUI Breadcrumbs' own built-in collapse
+  // below, which would re-expand everything back INLINE, still too wide for
+  // this screen) — that Menu's own first line is still the "Menu"/home
+  // entry, so going home stays one tap away without a second, dedicated
+  // button competing for this narrow row's space.
   if (narrow && trail.length > 0) {
     const open = Boolean(anchorEl)
     function close() {
@@ -173,18 +199,10 @@ function PathBreadcrumbs({ pathname }: { pathname: string }) {
           aria-expanded={open}
           onClick={(e: MouseEvent<HTMLElement>) => setAnchorEl(e.currentTarget)}
         >
-          <FontAwesomeIcon icon={byPrefixAndName.fas['ellipsis-vertical']} size="sm" />
+          <FontAwesomeIcon icon={byPrefixAndName.fas['angles-right']} size="sm" />
         </IconButton>
-        <Typography
-          variant="subtitle2"
-          component="span"
-          color="inherit"
-          sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-        >
-          {recordLabel ?? t(trail[trail.length - 1].label)}
-        </Typography>
         <Menu anchorEl={anchorEl} open={open} onClose={close}>
-          <MenuItem component={Link} href="/" onClick={close}>
+          <MenuItem component={IntentLink} href={erpPath('/')} onClick={close}>
             <ListItemIcon>
               <FontAwesomeIcon icon={byPrefixAndName.fas['house']} size="sm" />
             </ListItemIcon>
@@ -196,7 +214,7 @@ function PathBreadcrumbs({ pathname }: { pathname: string }) {
                 <ListItemText>{recordLabel ?? t(crumb.label)}</ListItemText>
               </MenuItem>
             ) : (
-              <MenuItem key={crumb.href} component={Link} href={crumb.href} onClick={close}>
+              <MenuItem key={crumb.href} component={IntentLink} href={erpPath(crumb.href)} onClick={close}>
                 <ListItemText>{t(crumb.label)}</ListItemText>
               </MenuItem>
             ),
@@ -231,8 +249,8 @@ function PathBreadcrumbs({ pathname }: { pathname: string }) {
         </Box>
       ) : (
         <MuiLink
-          component={Link}
-          href="/"
+          component={IntentLink}
+          href={erpPath('/')}
           color="inherit"
           underline="hover"
           sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}
@@ -254,8 +272,8 @@ function PathBreadcrumbs({ pathname }: { pathname: string }) {
         ) : (
           <MuiLink
             key={crumb.href}
-            component={Link}
-            href={crumb.href}
+            component={IntentLink}
+            href={erpPath(crumb.href)}
             color="inherit"
             underline="hover"
           >
@@ -299,7 +317,18 @@ function CurrentModuleHeaderMenus({
   )
 }
 
-function UserMenu({ identity, email }: { identity: Identity; email?: string }) {
+// The three manual overrides a user can pick for themselves — "Online" clears
+// the override (setPresenceStatus(null)) rather than being a distinct stored
+// value, since with no override an already-connected user shows online
+// anyway (see core/internal/presence/status.go's Effective). absent/offline
+// are never offered here — they're purely connection-derived.
+const STATUS_OPTIONS: { value: 'online' | 'busy' | 'do_not_disturb'; label: string }[] = [
+  { value: 'online', label: 'Online' },
+  { value: 'busy', label: 'Busy' },
+  { value: 'do_not_disturb', label: 'Do not disturb' },
+]
+
+function UserMenu({ identity, email, hasAvatar }: { identity: Identity; email?: string; hasAvatar?: boolean }) {
   const t = useT()
   const router = useRouter()
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
@@ -308,17 +337,22 @@ function UserMenu({ identity, email }: { identity: Identity; email?: string }) {
   // carries no separate name field) — falls back to the raw user id only
   // when the preferences read that supplies it hasn't resolved yet.
   const displayName = email || identity.userId
-  const initial = displayName.trim().charAt(0).toUpperCase() || '?'
+  const ownStatus = usePresenceStore((s) => s.statuses[identity.userId] ?? 'offline')
 
   function close() {
     setAnchorEl(null)
+  }
+
+  function onSetStatus(value: 'online' | 'busy' | 'do_not_disturb') {
+    close()
+    void setPresenceStatus(value === 'online' ? null : value)
   }
 
   async function onLogout() {
     close()
     await fetch(authBffUrl('logout'), { method: 'POST' }).catch(() => {})
     useSessionStore.getState().clear()
-    router.push('/login')
+    router.push(erpPath('/login'))
     router.refresh()
   }
 
@@ -332,9 +366,7 @@ function UserMenu({ identity, email }: { identity: Identity; email?: string }) {
         aria-expanded={open}
         color="inherit"
       >
-        <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main', fontSize: '0.875rem' }}>
-          {initial}
-        </Avatar>
+        <AvatarWithPresence userId={identity.userId} label={displayName} size={32} src={avatarUrl(identity.userId, hasAvatar)} />
       </IconButton>
       <Menu
         anchorEl={anchorEl}
@@ -351,7 +383,20 @@ function UserMenu({ identity, email }: { identity: Identity; email?: string }) {
           {t('Signed in as')} {displayName}
         </Typography>
         <Divider />
-        <MenuItem component={Link} href="/settings" onClick={close}>
+        {STATUS_OPTIONS.map((opt) => (
+          <MenuItem
+            key={opt.value}
+            selected={ownStatus === opt.value}
+            onClick={() => onSetStatus(opt.value)}
+          >
+            <ListItemIcon>
+              <PresenceDot status={opt.value} size={15} />
+            </ListItemIcon>
+            <ListItemText>{t(opt.label)}</ListItemText>
+          </MenuItem>
+        ))}
+        <Divider />
+        <MenuItem component={IntentLink} href={erpPath('/settings')} onClick={close}>
           <ListItemIcon>
             <FontAwesomeIcon icon={byPrefixAndName.fas['gear']} size="sm" />
           </ListItemIcon>
@@ -391,6 +436,13 @@ function CompanySwitcher({
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const [switching, setSwitching] = useState(false)
   const open = Boolean(anchorEl)
+  // Below topBarCompactWidth (layout's own doc comment): icon-only, no
+  // company-name text — the row already dropped the breadcrumb's own text
+  // labels at this width, so the building icon alone (real aria-label below,
+  // since the visible text it used to double as is gone) is what's left.
+  const compact = useMediaQuery(`(max-width:${layout.topBarCompactWidth}px)`)
+  // On a phone the building icon grows 3px per side, like the notification bell.
+  const phone = useMediaQuery(`(max-width:${layout.phoneMaxWidth - 0.05}px)`)
 
   function close() {
     setAnchorEl(null)
@@ -413,11 +465,13 @@ function CompanySwitcher({
         onClick={(e: MouseEvent<HTMLElement>) => setAnchorEl(e.currentTarget)}
         aria-haspopup="true"
         aria-expanded={open}
+        aria-label={activeCompany.name}
         sx={{
           display: 'flex',
           alignItems: 'center',
           gap: 0.5,
-          mr: 2,
+          // The same gap the notification bell keeps before this switcher.
+          mr: 3,
           color: 'inherit',
           background: 'none',
           border: 'none',
@@ -426,8 +480,12 @@ function CompanySwitcher({
           p: 0,
         }}
       >
-        <FontAwesomeIcon icon={byPrefixAndName.fas['building']} size="sm" />
-        {activeCompany.name}
+        <FontAwesomeIcon
+          icon={byPrefixAndName.fas['building']}
+          data-testid="company-building-icon"
+          style={{ fontSize: phone ? 20 : 14 }}
+        />
+        {!compact && activeCompany.name}
       </Box>
       <Menu
         anchorEl={anchorEl}
@@ -455,7 +513,7 @@ function CompanySwitcher({
           </MenuItem>
         ))}
         <Divider />
-        <MenuItem component={Link} href="/settings/company" onClick={close}>
+        <MenuItem component={IntentLink} href={erpPath('/settings/company')} onClick={close}>
           <ListItemText>{t('Manage companies')}</ListItemText>
         </MenuItem>
       </Menu>
@@ -467,6 +525,7 @@ export function AppTopBar({
   identity,
   headerMenus = [],
   email,
+  hasAvatar,
   activeCompany = null,
   companies = [],
 }: {
@@ -476,6 +535,7 @@ export function AppTopBar({
   headerMenus?: ModuleHeaderMenus[]
   /** The caller's own account email — see UserMenu's displayName note. */
   email?: string
+  hasAvatar?: boolean
   /** The caller's current company (multi-company) — null while unresolved
    * (e.g. an identity-less render) or genuinely absent (the preferences
    * read failed upstream); the switcher just doesn't render either way. */
@@ -485,7 +545,10 @@ export function AppTopBar({
    * active company with nothing to switch to. */
   companies?: CompanyRecord[]
 }) {
-  const pathname = usePathname()
+  // Module-relative ('/crm/42', '/' for the menu): crumbs and the current
+  // module's header menus are keyed on module route paths, which never carry
+  // the /app base — links built from them go back through erpPath().
+  const pathname = usePathname().replace(new RegExp(`^${ERP_BASE}(?=/|$)`), '') || '/'
   // No bar before authentication (login page) or without a session.
   if (!identity || pathname === '/login') return null
 
@@ -494,13 +557,16 @@ export function AppTopBar({
       {/* position="fixed" (MUI's own default — spelled out here since sticky used to
           override it) pins the bar to the viewport top on every view, regardless of
           which element actually scrolls; it's no longer just "stuck" within its own
-          scroll container. */}
-      <AppBar position="fixed">
+          scroll container. Above every drawer (a permanent Drawer paper sits at
+          zIndex.drawer, over MUI's AppBar default) — only modals/popovers go higher. */}
+      <AppBar position="fixed" sx={{ zIndex: (theme) => theme.zIndex.drawer + 1 }}>
         <Toolbar variant="dense">
+          {activeCompany && <CompanyLogo companyId={activeCompany.id} />}
           <PathBreadcrumbs pathname={pathname} />
           <CurrentModuleHeaderMenus menus={headerMenus} pathname={pathname} />
+          <NotificationBell />
           {activeCompany && <CompanySwitcher activeCompany={activeCompany} companies={companies} />}
-          <UserMenu identity={identity} email={email} />
+          <UserMenu identity={identity} email={email} hasAvatar={hasAvatar} />
         </Toolbar>
       </AppBar>
       {/* Reserves the AppBar's height in normal document flow — position: fixed takes

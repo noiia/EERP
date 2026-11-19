@@ -13,7 +13,7 @@ import (
 	"core/orm"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // Handler serves the dedicated notebook-pages endpoints. Mounted behind
@@ -41,16 +41,29 @@ type notebookStore interface {
 
 type Handler struct {
 	store notebookStore
+	scope orm.Executor
 }
 
-// NewHandler constructs the notebook Handler from the concrete repository.
-func NewHandler(store *Repository) *Handler {
+// NewHandler constructs the notebook Handler from its dependencies (interfaces, so tests can pass fakes).
+func NewHandler(store notebookStore) *Handler {
 	return &Handler{store: store}
 }
 
-// newHandlerWith constructs a Handler from an interface value (tests).
-func newHandlerWith(store notebookStore) *Handler {
-	return &Handler{store: store}
+// WithRowScope makes the handler answer 404 for anchors the caller's row scope
+// hides (ADR-038). Unset (unit tests with fakes), no anchor check is made.
+func (h *Handler) WithRowScope(db orm.Executor) *Handler {
+	h.scope = db
+	return h
+}
+
+// hidden reports whether the anchor record is invisible to the caller; a
+// scope error is returned as is (a 500 — fail closed, never a 404).
+func (h *Handler) hidden(ctx context.Context, table string, id uuid.UUID) (bool, error) {
+	if h.scope == nil {
+		return false, nil
+	}
+	ok, err := orm.CanSeeRecord(ctx, h.scope, table, id)
+	return !ok && err == nil, err
 }
 
 type pageResponse struct {
@@ -82,7 +95,7 @@ type listEnvelope struct {
 
 // List handles GET /api/v1/notebook_pages?table=&record= — every page on the
 // anchor, ordered by Position (creation order in v1).
-func (h *Handler) List(c echo.Context) error {
+func (h *Handler) List(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	table := c.QueryParam("table")
@@ -92,6 +105,12 @@ func (h *Handler) List(c echo.Context) error {
 	recordID, err := uuid.Parse(c.QueryParam("record"))
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "record must be a UUID.")
+	}
+
+	if hide, err := h.hidden(c.Request().Context(), table, recordID); err != nil {
+		return fmt.Errorf("notebook: row scope: %w", err)
+	} else if hide {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such record.")
 	}
 
 	pages, err := h.store.ListByAnchor(c.Request().Context(), identity.TenantID, table, recordID)
@@ -109,7 +128,7 @@ func (h *Handler) List(c echo.Context) error {
 // (table_name, record_id) plus title (content optional, starts empty).
 // Position is server-assigned: the current page count for the anchor, so
 // pages always append in creation order.
-func (h *Handler) Create(c echo.Context) error {
+func (h *Handler) Create(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
 	var req struct {
@@ -133,6 +152,12 @@ func (h *Handler) Create(c echo.Context) error {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", msg)
 	}
 
+	if hide, err := h.hidden(c.Request().Context(), req.TableName, recordID); err != nil {
+		return fmt.Errorf("notebook: row scope: %w", err)
+	} else if hide {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such record.")
+	}
+
 	existing, err := h.store.ListByAnchor(c.Request().Context(), identity.TenantID, req.TableName, recordID)
 	if err != nil {
 		return fmt.Errorf("notebook: create: list anchor: %w", err)
@@ -150,10 +175,10 @@ func (h *Handler) Create(c echo.Context) error {
 
 // Update handles PUT /api/v1/notebook_pages/:id — title and content are the
 // only writable fields; the anchor and position never change after creation.
-func (h *Handler) Update(c echo.Context) error {
+func (h *Handler) Update(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "id must be a UUID.")
 	}
@@ -176,6 +201,11 @@ func (h *Handler) Update(c echo.Context) error {
 		}
 		return fmt.Errorf("notebook: update: find: %w", err)
 	}
+	if hide, err := h.hidden(c.Request().Context(), existing.TableName, existing.RecordID); err != nil {
+		return fmt.Errorf("notebook: row scope: %w", err)
+	} else if hide {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such page.")
+	}
 	existing.Title = title
 	existing.Content = req.Content
 
@@ -187,12 +217,26 @@ func (h *Handler) Update(c echo.Context) error {
 }
 
 // Delete handles DELETE /api/v1/notebook_pages/:id.
-func (h *Handler) Delete(c echo.Context) error {
+func (h *Handler) Delete(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "id must be a UUID.")
+	}
+	if h.scope != nil {
+		page, err := h.store.FindInTenant(c.Request().Context(), identity.TenantID, id)
+		if err != nil {
+			if errors.Is(err, orm.ErrNotFound) {
+				return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such page.")
+			}
+			return fmt.Errorf("notebook: delete: find: %w", err)
+		}
+		if hide, err := h.hidden(c.Request().Context(), page.TableName, page.RecordID); err != nil {
+			return fmt.Errorf("notebook: row scope: %w", err)
+		} else if hide {
+			return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "No such page.")
+		}
 	}
 	if err := h.store.Delete(c.Request().Context(), identity.TenantID, id); err != nil {
 		if errors.Is(err, orm.ErrNotFound) {
@@ -213,7 +257,7 @@ func validateTitle(title string) string {
 	return ""
 }
 
-func errorJSON(c echo.Context, status int, code, msg string) error {
+func errorJSON(c *echo.Context, status int, code, msg string) error {
 	return c.JSON(status, map[string]any{
 		"error": map[string]any{
 			"code":       code,

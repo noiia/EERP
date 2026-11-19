@@ -1,8 +1,13 @@
 'use server'
-import { ApiError, createServerApiClient } from '@eerp/core-front/server'
+import { deflateSync, crc32 } from 'node:zlib'
+import { ApiError, apiRequest, createServerApiClient, uploadPicture } from '@eerp/core-front/server'
+import { revalidateTag } from 'next/cache'
 import { seedingAllowed } from './dev-seed-allowed'
+import { buildProjectPlan, PLAN_DONE_PHASES, PROJECT_PLAN_DEMOS } from './dev-seed-plan'
+import { DEMO_SITE_PAGES, DEMO_SITE_PUBLISHED } from './dev-seed-website'
 import { getMyLocalePreferences } from './preferences'
-import { PAPER_SIZE_PRESETS } from '../../app/settings/appearance/page-formats/descriptors'
+import { getIdentity } from './session'
+import { PAPER_SIZE_PRESETS } from '../../app/app/settings/appearance/page-formats/descriptors'
 
 // Settings -> Developer: populates the workspace with realistic-looking demo
 // records through the SAME generic entity API (POST /{entity}) any other write
@@ -20,7 +25,17 @@ export interface SeedEntityResult {
   errors: string[]
 }
 
-export type SeedResult = { ok: true; results: SeedEntityResult[] } | { ok: false; message: string }
+export type SeedResult =
+  | { ok: true; results: SeedEntityResult[] }
+  /** The full volume runs in the background on Go: follow it through its notification. */
+  | { ok: true; started: string }
+  | { ok: false; message: string }
+
+/** "light" = the handful of records below, through the generic entity API;
+ * "full" = ~100 000 rows per business table, written by Go with set-based SQL
+ * (POST /dev_seed — core/internal/devseed), plus Graph views and calculated
+ * fields on every list view that ends up over 10 000 rows. */
+export type SeedVolume = 'light' | 'full'
 
 const FIRST_NAMES = [
   'Ava', 'Liam', 'Maya', 'Noah', 'Elena', 'Lucas', 'Sofia', 'Mateo',
@@ -55,18 +70,50 @@ const TAG_NAMES = ['VIP', 'Newsletter', 'Hot lead', 'Enterprise', 'Churn risk', 
 
 // warehouse.Product's small fixed catalog — a product catalog reads more
 // realistically as concrete offerings than as randomly combined words, unlike
-// contacts/CRM records above. tax_rate is a 0..1 ratio (see warehouse/module.go).
+// contacts/CRM records above. `reference`/`unit` are descriptive only (Go
+// numbers products itself, products have no unit); `tax_rate` (0..1) picks the
+// "VAT n%" tax each product gets linked to (seedProductTaxes).
 const PRODUCTS = [
-  { name: 'Standard consulting hour', reference: 'CONS-STD', unit: 'hour', unit_price: 85, tax_rate: 0.2 },
-  { name: 'Onboarding package', reference: 'ONB-PKG', unit: 'pcs', unit_price: 1200, tax_rate: 0.2 },
-  { name: 'Support retainer (monthly)', reference: 'SUP-MO', unit: 'month', unit_price: 400, tax_rate: 0.2 },
-  { name: 'Server rack unit', reference: 'HW-RACK', unit: 'pcs', unit_price: 650, tax_rate: 0.055 },
-  { name: 'Training workshop (half day)', reference: 'TRN-HD', unit: 'pcs', unit_price: 300, tax_rate: 0.2 },
-  { name: 'Custom integration', reference: 'DEV-INT', unit: 'pcs', unit_price: 2400, tax_rate: 0.2 },
+  {
+    name: 'Standard consulting hour', reference: 'CONS-STD', unit: 'hour', unit_price: 85, tax_rate: 0.2,
+    description: 'An hour of senior consulting, remote or on site, billed in quarter hours.',
+    variants: [{ name: 'Standard consulting hour — On site', unit_price: 110 }, { name: 'Standard consulting hour — Weekend', unit_price: 130 }],
+    color: [37, 99, 235],
+  },
+  {
+    name: 'Onboarding package', reference: 'ONB-PKG', unit: 'pcs', unit_price: 1200, tax_rate: 0.2,
+    description: 'Kick-off workshop, data import and two weeks of guided start for your team.',
+    variants: [{ name: 'Onboarding package — Team (up to 20)', unit_price: 1900 }],
+    color: [22, 163, 74],
+  },
+  {
+    name: 'Support retainer (monthly)', reference: 'SUP-MO', unit: 'month', unit_price: 400, tax_rate: 0.2,
+    description: 'Business-hours support with a next-day answer on every ticket.',
+    variants: [{ name: 'Support retainer — Premium 24/7', unit_price: 900 }, { name: 'Support retainer — Annual', unit_price: 4200 }],
+    color: [217, 119, 6],
+  },
+  {
+    name: 'Server rack unit', reference: 'HW-RACK', unit: 'pcs', unit_price: 650, tax_rate: 0.055,
+    description: '1U rack server, 32 GB RAM, dual power supply, three-year warranty.',
+    variants: [{ name: 'Server rack unit — 2U, 64 GB', unit_price: 1150 }, { name: 'Server rack unit — Refurbished', unit_price: 420 }],
+    color: [100, 116, 139],
+  },
+  {
+    name: 'Training workshop (half day)', reference: 'TRN-HD', unit: 'pcs', unit_price: 300, tax_rate: 0.2,
+    description: 'A hands-on half day for up to 8 people, slides and exercises included.',
+    variants: [{ name: 'Training workshop — Full day', unit_price: 550 }],
+    color: [219, 39, 119],
+  },
+  {
+    name: 'Custom integration', reference: 'DEV-INT', unit: 'pcs', unit_price: 2400, tax_rate: 0.2,
+    description: 'A connector between EERP and one of your tools, specified, built and documented.',
+    variants: [{ name: 'Custom integration — With maintenance', unit_price: 3100 }],
+    color: [124, 58, 237],
+  },
 ] as const
 
-const INVOICE_STATUSES = ['draft', 'sent', 'paid', 'overdue', 'cancelled'] as const
-const QUOTE_STATUSES = ['draft', 'sent', 'accepted', 'declined', 'expired'] as const
+const INVOICE_STATUSES = ['draft', 'confirmed', 'sent', 'paid', 'overdue', 'cancelled'] as const
+const QUOTE_STATUSES = ['draft', 'confirmed', 'sent', 'accepted', 'declined', 'expired'] as const
 
 // The seller's own letterhead — fixed rather than randomized per document,
 // since every invoice/quote from one workspace is issued by the same
@@ -113,15 +160,20 @@ function fakeEmail(first: string, last: string, company: string): string {
 }
 
 function buildContacts(): Record<string, unknown>[] {
-  return Array.from({ length: CONTACT_COUNT }, () => {
+  return Array.from({ length: CONTACT_COUNT }, (_, i) => {
     const first = pick(FIRST_NAMES)
     const last = pick(LAST_NAMES)
     const company = pick(COMPANIES)
+    // The last one is a company: the demo project's client (its OBS picks people from the rest).
+    if (i === CONTACT_COUNT - 1) {
+      return { name: company, email: fakeEmail(first, last, company), company, status: 'customer', kind: 'company' }
+    }
     return {
       name: `${first} ${last}`,
       email: fakeEmail(first, last, company),
       company,
       status: pick(['prospect', 'customer', 'archived']),
+      kind: 'contact',
     }
   })
 }
@@ -137,7 +189,6 @@ function buildCrmRecords(contacts: { id: string }[]): Record<string, unknown>[] 
     const contact = contacts.length > 0 && Math.random() > 0.33 ? pick(contacts) : null
     return {
       name: `${first} ${last}`,
-      email: fakeEmail(first, last, company),
       company,
       status,
       contact_id: contact?.id ?? null,
@@ -170,31 +221,151 @@ function buildTagLinks(
 }
 
 function buildProducts(): Record<string, unknown>[] {
-  return PRODUCTS.map((p) => ({ ...p }))
+  return PRODUCTS.map((p) => ({ name: p.name, unit_price: p.unit_price, description: p.description }))
+}
+
+/** One "VAT n%" tax per rate the catalog uses, and each product's link to its
+ * own — the product form's Taxes (sale's product_tax). */
+async function seedProductTaxes(products: { id: string; name?: unknown }[]): Promise<SeedEntityResult[]> {
+  const rates = [...new Set(PRODUCTS.map((p) => p.tax_rate))]
+  const taxes = await createMany<{ id: string; rate?: unknown }>(
+    'sale_tax',
+    rates.map((rate) => ({ name: `VAT ${Math.round(rate * 1000) / 10}%`, kind: 'percentage', rate, amount: 0 })),
+  )
+  const taxFor = new Map(taxes.records.map((t, i) => [rates[i], t.id]))
+  const links = await createMany(
+    'product_tax',
+    products.flatMap((p) => {
+      const rate = PRODUCTS.find((d) => d.name === p.name)?.tax_rate
+      const tax = rate === undefined ? undefined : taxFor.get(rate)
+      return tax ? [{ product_id: p.id, sale_tax_id: tax }] : []
+    }),
+  )
+  return [taxes.result, links.result]
 }
 
 /**
- * One variant per product, Name left BLANK on purpose — exercises
- * warehouse.Handler's Create override, which defaults it from the product's
- * own name ("each product automatically references a variant").
+ * Per product: a first variant with its Name left BLANK on purpose — exercises
+ * warehouse.Handler's Create override, which defaults it from the product's own
+ * name ("each product automatically references a variant") — then its named
+ * variants, each with its own price. `products` is in PRODUCTS order (a failed
+ * create drops out, hence the lookup by name — the reference is Go's).
  */
-function buildProductVariants(products: { id: string }[]): Record<string, unknown>[] {
-  return products.map((p) => ({ product_id: p.id }))
+function buildProductVariants(products: { id: string; name?: unknown }[]): Record<string, unknown>[] {
+  return products.flatMap((p) => {
+    const def = PRODUCTS.find((d) => d.name === p.name)
+    return [{ product_id: p.id }, ...(def?.variants ?? []).map((v) => ({ product_id: p.id, ...v }))]
+  })
+}
+
+type Rgb = readonly [number, number, number] | readonly number[]
+
+/** An RGB PNG of w×h, each pixel from `paint`. */
+function png(w: number, h: number, paint: (x: number, y: number) => Rgb): Buffer {
+  const raw = Buffer.alloc((w * 3 + 1) * h)
+  for (let y = 0; y < h; y += 1) {
+    const row = y * (w * 3 + 1)
+    for (let x = 0; x < w; x += 1) {
+      const [r, g, b] = paint(x, y)
+      raw[row + 1 + x * 3] = Math.min(255, r)
+      raw[row + 2 + x * 3] = Math.min(255, g)
+      raw[row + 3 + x * 3] = Math.min(255, b)
+    }
+  }
+  const chunk = (type: string, data: Buffer) => {
+    const head = Buffer.alloc(8)
+    head.writeUInt32BE(data.length, 0)
+    head.write(type, 4, 'ascii')
+    const crc = Buffer.alloc(4)
+    crc.writeUInt32BE(crc32(Buffer.concat([head.subarray(4), data])), 0)
+    return Buffer.concat([head, data, crc])
+  }
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(w, 0)
+  ihdr.writeUInt32BE(h, 4)
+  ihdr.set([8, 2, 0, 0, 0], 8) // 8-bit RGB
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0)),
+  ])
+}
+
+/** 96×96: the color with a lighter diagonal band — a product, a lead, an event. */
+function photoPng([r, g, b]: Rgb, shade: number): Buffer {
+  const k = Math.min(1, 0.75 + shade * 0.15)
+  return png(96, 96, (x, y) => {
+    const band = Math.abs(x - y) < 16 ? 60 : 0
+    return [r * k + band, g * k + band, b * k + band]
+  })
+}
+
+/** 128×128: a white ring on the color — a company logo. */
+function logoPng([r, g, b]: Rgb): Buffer {
+  return png(128, 128, (x, y) => {
+    const d = Math.hypot(x - 64, y - 64)
+    return d > 30 && d < 42 ? [255, 255, 255] : [r, g, b]
+  })
+}
+
+/** 240×80: a dark-blue handwriting-like stroke on white — a signature. */
+function signaturePng(seed: number): Buffer {
+  const a = 2 + seed, b = 5 + seed * 1.3
+  return png(240, 80, (x, y) => {
+    const t = (x - 12) / 216
+    const curve = 40 + 18 * Math.sin(t * a * Math.PI) * Math.cos(t * b)
+    return t >= 0 && t <= 1 && Math.abs(y - curve) < 2 ? [20, 40, 110] : [255, 255, 255]
+  })
+}
+
+const PALETTE: Rgb[] = PRODUCTS.map((p) => p.color)
+
+/** One picture to upload on a record's (table, field) anchor; Go sets the field's flag. */
+interface PictureTarget { table: string; id: string; field: string; png: () => Buffer }
+
+/** Picture targets for every product and variant (variants in their product's color). */
+function productPictures(
+  products: { id: string; reference?: unknown }[],
+  variants: { id: string; product_id?: unknown }[],
+): PictureTarget[] {
+  const colorOf = new Map(products.map((p) => [p.id, PRODUCTS.find((d) => d.reference === p.reference)?.color ?? [80, 80, 80]]))
+  return [
+    ...products.map((p) => ({ table: 'product', id: p.id, field: 'picture', png: () => photoPng(colorOf.get(p.id)!, 1) })),
+    ...variants.map((v, i) => ({ table: 'product_variant', id: v.id, field: 'picture', png: () => photoPng(colorOf.get(String(v.product_id)) ?? [80, 80, 80], i % 3) })),
+  ]
+}
+
+/** Uploads every target through the picture service, reported as one `picture` row. */
+async function seedPictures(targets: PictureTarget[]): Promise<SeedEntityResult> {
+  const result: SeedEntityResult = { entity: 'picture', created: 0, failed: 0, errors: [] }
+  for (const t of targets) {
+    const form = new FormData()
+    form.set('table_name', t.table)
+    form.set('record_id', t.id)
+    form.set('field', t.field)
+    form.set('file', new Blob([new Uint8Array(t.png())], { type: 'image/png' }), `${t.table}-${t.field}.png`)
+    try {
+      await uploadPicture(form)
+      result.created += 1
+    } catch (e) {
+      result.failed += 1
+      if (result.errors.length < 5) result.errors.push(e instanceof ApiError ? e.message : 'Unknown error')
+    }
+  }
+  return result
 }
 
 /**
  * Shared shape behind buildInvoices/buildQuotes: sale.Invoice and sale.Quote
  * carry the same field set (module.go's doc comment on Quote) — only the
- * number prefix and status vocabulary differ per document kind.
+ * status vocabulary and the reference (invoices only) differ per kind.
  */
 function buildDocuments(
   contacts: { id: string }[],
   count: number,
-  numberPrefix: string,
   statuses: readonly string[],
+  withReference: boolean,
 ): Record<string, unknown>[] {
-  const year = new Date().getFullYear()
-  return Array.from({ length: count }, (_, i) => {
+  return Array.from({ length: count }, () => {
     const first = pick(FIRST_NAMES)
     const last = pick(LAST_NAMES)
     const company = pick(COMPANIES)
@@ -205,8 +376,10 @@ function buildDocuments(
     const dueDate = new Date(issueDate)
     dueDate.setDate(dueDate.getDate() + 30)
     return {
+      // No number: Go gives each document the next of its sequence. The
+      // status is applied after the lines exist (applyStatuses) — Go keeps a
+      // document with no line a draft.
       ...ISSUER,
-      number: `${numberPrefix}-${year}-${String(i + 1).padStart(4, '0')}`,
       status: pick(statuses),
       issue_date: issueDate.toISOString().slice(0, 10),
       due_date: dueDate.toISOString().slice(0, 10),
@@ -222,7 +395,7 @@ function buildDocuments(
       customer_address_city: '',
       customer_address_state: '',
       customer_address_country: '',
-      reference: `PO-${1000 + Math.floor(Math.random() * 9000)}`,
+      ...(withReference ? { reference: `PO-${1000 + Math.floor(Math.random() * 9000)}` } : {}),
       payment_method: pick(PAYMENT_METHODS),
       payment_terms: pick(PAYMENT_TERMS),
       legal_notice: '',
@@ -277,13 +450,15 @@ function buildPageFormats(companyId: string | null): Record<string, unknown>[] {
 async function createMany<R extends { id: string }>(
   entity: string,
   bodies: Record<string, unknown>[],
-): Promise<{ result: SeedEntityResult; records: R[] }> {
+): Promise<{ result: SeedEntityResult; records: R[]; bodies: Record<string, unknown>[] }> {
   const client = createServerApiClient()
   const records: R[] = []
+  const created: Record<string, unknown>[] = []
   const result: SeedEntityResult = { entity, created: 0, failed: 0, errors: [] }
   for (const body of bodies) {
     try {
       records.push(await client.create<R>(entity, body))
+      created.push(body)
       result.created += 1
     } catch (e) {
       result.failed += 1
@@ -292,19 +467,531 @@ async function createMany<R extends { id: string }>(
       }
     }
   }
-  return { result, records }
+  return { result, records, bodies: created }
+}
+
+/**
+ * Moves each seeded document to the status its body picked, once its lines
+ * exist (Go creates every document as a draft: a status past draft needs at
+ * least one line). Same per-record failure tolerance as createMany.
+ */
+async function applyStatuses(
+  entity: string,
+  outcome: { records: { id: string }[]; bodies: Record<string, unknown>[] },
+): Promise<SeedEntityResult> {
+  const client = createServerApiClient()
+  const result: SeedEntityResult = { entity: `${entity} status`, created: 0, failed: 0, errors: [] }
+  for (const [i, record] of outcome.records.entries()) {
+    const body = outcome.bodies[i]
+    if (!body || body.status === 'draft') continue
+    try {
+      await client.update(entity, record.id, body)
+      result.created += 1
+    } catch (e) {
+      result.failed += 1
+      if (result.errors.length < 5) result.errors.push(e instanceof ApiError ? e.message : 'Unknown error')
+    }
+  }
+  return result
+}
+
+// ── Events ───────────────────────────────────────────────────────────────────
+
+type Person = { name: string; email: string }
+
+/** An ISO instant `days` from now at `hour`:00 UTC (minutes 0). */
+function inDays(days: number, hour: number): string {
+  const d = new Date()
+  d.setUTCDate(d.getUTCDate() + days)
+  d.setUTCHours(hour, 0, 0, 0)
+  return d.toISOString()
+}
+
+/** A session body `start` + `hours` long. */
+function session(eventId: string, start: string, hours: number, capacity: number): Record<string, unknown> {
+  return { event_id: eventId, starts_at: start, ends_at: new Date(Date.parse(start) + hours * 3600_000).toISOString(), capacity }
+}
+
+/**
+ * The Event app's demo set, through the real booking service (staff route
+ * POST /event_booking): seat counts, contacts, confirmation emails and the
+ * paid event's invoices come out exactly as for real bookings.
+ * - Pottery workshop: paid (the first seeded variant), weekly sessions.
+ * - Sunrise yoga: free; one session filled, with a waiting list, and a drop-in
+ *   session starting in 30 minutes — check-in opens 1 h before the start, so
+ *   its bookings can be checked in (attended / no-show).
+ * - Product demo call: appointment event, weekday mornings, booked on real
+ *   computed slots (GET /public/event/:id/slots).
+ * - Team offsite: unpublished, staff only.
+ * Bookings can't be made in the past (Go refuses), so history comes from the
+ * full volume.
+ */
+async function seedEvents(people: Person[], variantId: string | undefined, pictures: PictureTarget[]): Promise<SeedEntityResult[]> {
+  const results: SeedEntityResult[] = []
+  const eventsOutcome = await createMany<{ id: string; kind?: unknown }>('event', [
+    {
+      name: 'Pottery workshop', kind: 'sessions', location: 'Studio A', published: true, max_seats_per_booking: 4,
+      description: 'Shape, glaze and fire your own bowl. All materials included.', product_variant_id: variantId ?? null,
+    },
+    { name: 'Sunrise yoga', kind: 'sessions', location: 'Rooftop', published: true, description: 'A gentle flow to start the day.' },
+    {
+      name: 'Product demo call', kind: 'appointment', location: 'Online', published: true, slot_minutes: 30, slot_capacity: 1,
+      booking_horizon_days: 60, min_notice_hours: 2, description: 'A 30-minute walkthrough with our team.',
+    },
+    { name: 'Team offsite', kind: 'sessions', location: 'Lakeside lodge', published: false, description: 'Staff only.' },
+  ])
+  results.push(eventsOutcome.result)
+  const [pottery, yoga, demo, offsite] = eventsOutcome.records
+  pictures.push(...eventsOutcome.records.map((ev, i) => ({ table: 'event', id: ev.id, field: 'picture', png: () => photoPng(PALETTE[(i + 2) % PALETTE.length], 1) })))
+  if (!pottery || !yoga || !demo || !offsite) return results
+
+  const dropIn = new Date(Date.now() + 30 * 60_000)
+  dropIn.setSeconds(0, 0)
+  const sessionsOutcome = await createMany<{ id: string; event_id?: unknown }>('event_session', [
+    ...[7, 14, 21, 28].map((d) => session(pottery.id, inDays(d, 14), 3, 8)),
+    session(yoga.id, inDays(2, 6), 1, 3), // filled below, then a waiting list
+    session(yoga.id, inDays(5, 6), 1, 12),
+    session(yoga.id, dropIn.toISOString(), 1, 6), // drop-in: check-in is open
+    session(offsite.id, inDays(30, 8), 8, 20),
+  ])
+  results.push(sessionsOutcome.result)
+  const [p1, p2, , , yogaFull, yogaLater, yogaDropIn, offsiteDay] = sessionsOutcome.records
+
+  results.push((await createMany('event_availability', [1, 2, 3, 4, 5].map((weekday) => ({
+    event_id: demo.id, weekday, from_time: '09:00', to_time: '12:00',
+  })))).result)
+
+  let next = 0
+  const who = () => people[next++ % people.length]
+  const book = (eventId: string, target: Record<string, unknown>, seats = 1, extra: Record<string, unknown> = {}) => {
+    const p = who()
+    return { event_id: eventId, ...target, seats, name: p.name, email: p.email, ...extra }
+  }
+  const bodies: Record<string, unknown>[] = []
+  if (p1) bodies.push(book(pottery.id, { session_id: p1.id }, 2), book(pottery.id, { session_id: p1.id }), book(pottery.id, { session_id: p1.id }))
+  if (p2) bodies.push(book(pottery.id, { session_id: p2.id }, 2))
+  if (yogaFull) {
+    bodies.push(book(yoga.id, { session_id: yogaFull.id }, 2), book(yoga.id, { session_id: yogaFull.id }))
+    bodies.push(book(yoga.id, { session_id: yogaFull.id }, 1, { waitlist: true }), book(yoga.id, { session_id: yogaFull.id }, 2, { waitlist: true }))
+  }
+  if (yogaLater) bodies.push(book(yoga.id, { session_id: yogaLater.id }), book(yoga.id, { session_id: yogaLater.id }, 3))
+  if (yogaDropIn) bodies.push(...[1, 1, 2, 1].map((seats) => book(yoga.id, { session_id: yogaDropIn.id }, seats)))
+  if (offsiteDay) bodies.push(book(offsite.id, { session_id: offsiteDay.id }), book(offsite.id, { session_id: offsiteDay.id }))
+  try {
+    const slots = await apiRequest<{ data: { start: string }[] }>('GET', `/public/event/${encodeURIComponent(demo.id)}/slots`)
+    for (const slot of (slots?.data ?? []).filter((_, i) => i % 2 === 0).slice(0, 3)) bodies.push(book(demo.id, { slot_start: slot.start }))
+  } catch {
+    // no public site tenant (or the event isn't readable publicly): no appointment bookings
+  }
+  const bookingsOutcome = await createMany<{ id: string; session_id?: unknown }>('event_booking', bodies)
+  results.push(bookingsOutcome.result)
+
+  // Check-in on the drop-in session, and one cancellation (it cancels its invoice).
+  const client = createServerApiClient()
+  const changes: SeedEntityResult = { entity: 'event_booking (status changes)', created: 0, failed: 0, errors: [] }
+  const created = bookingsOutcome.records
+  const dropIns = created.filter((b) => yogaDropIn && b.session_id === yogaDropIn.id)
+  const updates: [string | undefined, string][] = [
+    [dropIns[0]?.id, 'attended'], [dropIns[1]?.id, 'attended'], [dropIns[2]?.id, 'no_show'],
+    [created.find((b) => p1 && b.session_id === p1.id)?.id, 'cancelled'],
+  ]
+  for (const [id, status] of updates) {
+    if (!id) continue
+    try {
+      await client.update('event_booking', id, { status })
+      changes.created += 1
+    } catch (e) {
+      changes.failed += 1
+      if (changes.errors.length < 5) changes.errors.push(e instanceof ApiError ? e.message : 'Unknown error')
+    }
+  }
+  results.push(changes)
+  return results
+}
+
+/**
+ * The demo website (dev-seed-website.ts): publishes what its blocks read, then
+ * creates its pages. Publishing only ADDS fields to a table's existing selection and
+ * keeps its forced filter when it has one, so a workspace's own choices survive; a
+ * page whose slug already exists is left alone (slugs are unique), so a second run
+ * creates nothing. The site's cached reads are expired at the end.
+ */
+async function seedWebsite(): Promise<SeedEntityResult[]> {
+  const publish: SeedEntityResult = { entity: 'website publishing', created: 0, failed: 0, errors: [] }
+  let current: { table: string; fields: string[]; filter: Record<string, string> }[] = []
+  try {
+    const res = await apiRequest<unknown>('GET', '/settings/website/public')
+    if (Array.isArray(res)) current = res
+  } catch {
+    // unreadable: publish ours as they are
+  }
+  for (const want of DEMO_SITE_PUBLISHED) {
+    const have = current.find((c) => c.table === want.table)
+    const fields = [...new Set([...(have?.fields ?? []), ...want.fields])]
+    const filter = have && Object.keys(have.filter ?? {}).length > 0 ? have.filter : want.filter
+    try {
+      await apiRequest('PUT', `/settings/website/public/${encodeURIComponent(want.table)}`, { fields, filter })
+      publish.created += 1
+    } catch (e) {
+      publish.failed += 1
+      if (publish.errors.length < 5) publish.errors.push(`${want.table}: ${e instanceof ApiError ? e.message : 'Unknown error'}`)
+    }
+  }
+
+  const fresh: Record<string, unknown>[] = []
+  for (const page of DEMO_SITE_PAGES) {
+    try {
+      const res = await apiRequest<{ data?: unknown[] }>('GET', `/website_page?filter[slug]=${encodeURIComponent(String(page.slug))}&page_size=1`)
+      if (res?.data?.length) continue
+    } catch {
+      // unreadable: try to create it, a duplicate slug is refused anyway
+    }
+    fresh.push(page)
+  }
+  const pages = await createMany('website_page', fresh)
+
+  for (const tag of ['website_page', ...DEMO_SITE_PUBLISHED.map((p) => p.table)]) revalidateTag(tag, { expire: 0 })
+  return [publish, pages.result]
+}
+
+const PROJECT_DEMOS: { name: string; visibility: 'everyone' | 'members' }[] = [
+  { name: 'Website relaunch', visibility: 'everyone' },
+  { name: 'Mobile app', visibility: 'everyone' },
+  { name: 'Board reporting (private)', visibility: 'members' },
+]
+
+/** Shared by every project; the first two color one task per project together (stripes). */
+const PROJECT_COLOR_DEMOS = [
+  { name: 'Customer-facing', color: '#e53935' },
+  { name: 'Internal', color: '#1e88e5' },
+  { name: 'Research', color: '#43a047' },
+  { name: 'Maintenance', color: '#fb8c00' },
+]
+
+/**
+ * The Project app's demo: 3 projects (the manager, the signed-in admin, is
+ * filled by Go; stages come from its insert trigger, so they are read back),
+ * each with 2 milestones, 8 tasks of 2 subtasks, a dependency and timesheets,
+ * plus 4 color groups some tasks are put in; then 2 large projects (buildProjectPlan, 220
+ * tasks and 175 dependencies each) for the WBS and PERT views.
+ * Aggregates (hours, counts, blocked) belong to Go's triggers: never sent.
+ * Each small project also keeps a 'Baseline v1' snapshot (the POST
+ * /project/:id/baseline route; the guard refuses the generic create), so the
+ * Gantt's Baseline select has a choice to ghost.
+ */
+// Creates buildProjectPlan's tasks level by level (in order, so Go numbers siblings as listed),
+// then its dependencies between the tasks that were created.
+async function seedProjectPlan(
+  projectId: string,
+  stages: { id: string }[],
+  track: (o: { result: SeedEntityResult }) => void,
+) {
+  const plan = buildProjectPlan()
+  // Done phases in the closed (last) stage, the next two in progress, the rest new.
+  const stageOf = (p: number) => {
+    const i = p < PLAN_DONE_PHASES ? stages.length - 1 : p < PLAN_DONE_PHASES + 2 ? Math.min(1, stages.length - 1) : 0
+    return stages[i] ? { stage_id: stages[i].id } : {}
+  }
+  const ids = new Map<string, string>()
+  for (const level of [plan.phases, plan.packages, plan.leaves]) {
+    const keyOf = new Map<Record<string, unknown>, string>()
+    const bodies = level.flatMap(({ key, p, parent: parentKey, ...fields }) => {
+      const parent = parentKey ? ids.get(parentKey) : undefined
+      if (parentKey && !parent) return [] // its parent failed: skipped
+      const body = { ...fields, project_id: projectId, ...(parent ? { parent_id: parent } : {}), ...stageOf(p) }
+      keyOf.set(body, key)
+      return [body]
+    })
+    const created = await createMany<{ id: string }>('project_task', bodies)
+    created.bodies.forEach((b, i) => ids.set(keyOf.get(b)!, created.records[i].id))
+    track(created)
+  }
+  track(
+    await createMany(
+      'project_task_dependency',
+      plan.links.filter(([a, b]) => ids.has(a) && ids.has(b)).map(([a, b]) => ({ depends_on_id: ids.get(a), task_id: ids.get(b) })),
+    ),
+  )
+  // Risks on the open (not done) leaves: a delay with 2 links, a cost with 1, a quality without.
+  const open = plan.leaves.filter((l) => l.p >= PLAN_DONE_PHASES && ids.has(l.key))
+  const phase = ids.get(`${PLAN_DONE_PHASES}`)
+  // Default categories (seeded by Go) give the Ishikawa its bones; unreadable ones just leave the risks uncategorised.
+  const categories = new Map<string, string>(
+    await createServerApiClient()
+      .list<{ id: string; name: string }>('project_risk_category')
+      .then((rows) => rows.map((c) => [c.name, c.id] as [string, string]))
+      .catch(() => []),
+  )
+  const risks = await createMany<{ id: string }>('project_risk', [
+    { name: 'Supplier delivery slips', impact_on: 'delay', likelihood: 2, detectability: 2, category: 'Internal' },
+    { name: 'Unplanned rework', impact_on: 'cost', likelihood: 2, detectability: 1, category: 'Financial' },
+    { name: 'Deliverable misses acceptance criteria', impact_on: 'quality', likelihood: 1, detectability: 3, severity: 2, category: 'Project management' },
+  ].map(({ category, ...r }) => ({
+    ...r,
+    project_id: projectId,
+    ...(phase ? { phase_task_id: phase } : {}),
+    ...(categories.has(category) ? { category_id: categories.get(category) } : {}),
+  })))
+  track(risks)
+  const [delay, cost] = risks.records
+  const at = (i: number) => (open[i] ? ids.get(open[i].key) : undefined)
+  const links = [
+    { risk_id: delay?.id, task_id: at(0), delay_days: 5 },
+    { risk_id: delay?.id, task_id: at(1), delay_days: 10 },
+    { risk_id: cost?.id, task_id: at(2), extra_hours: 8 },
+  ]
+  track(await createMany('project_risk_task', links.filter((l) => l.risk_id && l.task_id)))
+  return ids
+}
+
+/** The plan project's PBS: four deliverables, the even packages of each phase range (about
+ * half the leaves) linked to them by `pbs_item_id`; the PBS mode and WBS footer demo. */
+async function seedPbs(
+  projectId: string,
+  planIds: Map<string, string>,
+  track: (o: { result: SeedEntityResult }) => void,
+) {
+  const plan = buildProjectPlan()
+  const defs = [
+    { name: 'Scope & design', color: '#2a78d6', x: 0, y: 0, phases: [0, 1] },
+    { name: 'Build', color: '#43a047', x: 400, y: 0, phases: [2, 3, 4, 5] },
+    { name: 'Integration', color: '#ed6c02', x: 800, y: 0, phases: [6, 7] },
+    { name: 'Delivery', color: '#8e24aa', x: 1200, y: 0, phases: [8, 9] },
+  ]
+  const client = createServerApiClient()
+  for (const def of defs) {
+    const { phases, ...body } = def
+    const r = await createMany<{ id: string }>('project_pbs_item', [{ project_id: projectId, ...body }])
+    track(r)
+    const itemId = r.records[0]?.id
+    if (!itemId) continue
+    const links = plan.leaves
+      .filter((l) => phases.includes(l.p) && Number(l.key.split('.')[1]) % 2 === 0)
+      .map((l) => planIds.get(l.key))
+      .filter((id): id is string => !!id)
+    if (!links.length) continue
+    // One pbs_item_id write per linked task; the counts trigger keeps the item's columns.
+    await Promise.all(links.map((id) => client.update('project_task', id, { pbs_item_id: itemId }).catch(() => null)))
+  }
+}
+
+async function seedProjects(contacts: { records: { id: string }[]; bodies: Record<string, unknown>[] }): Promise<SeedEntityResult[]> {
+  const results: SeedEntityResult[] = []
+  const add = (r: SeedEntityResult) => results.push(r)
+  const day = 86_400_000
+  const companyAt = contacts.bodies.findIndex((b) => b.kind === 'company')
+  const company = companyAt >= 0 ? contacts.records[companyAt] : undefined
+  const people = contacts.records.filter((_, i) => i !== companyAt)
+  const projects = await createMany<{ id: string }>(
+    'project',
+    [...PROJECT_DEMOS, ...PROJECT_PLAN_DEMOS.map((name) => ({ name, visibility: 'everyone' as const }))].map((p, i) => ({
+      name: p.name,
+      visibility: p.visibility,
+      ...(i === 0 && company ? { company_id: company.id } : {}),
+    })),
+  )
+  add(projects.result)
+  const isPlan = (i: number) => PROJECT_PLAN_DEMOS.includes(String(projects.bodies[i].name))
+  const colors = await createMany<{ id: string }>('project_color', PROJECT_COLOR_DEMOS)
+  add(colors.result)
+  const outcomes: Record<string, SeedEntityResult> = {}
+  const track = (o: { result: SeedEntityResult }) => {
+    const k = o.result.entity
+    const cur = (outcomes[k] ??= { entity: k, created: 0, failed: 0, errors: [] })
+    cur.created += o.result.created
+    cur.failed += o.result.failed
+    cur.errors.push(...o.result.errors)
+  }
+  const client = createServerApiClient()
+  const me = (await getIdentity())?.userId
+  const stagesOf = async (projectId: string) => {
+    try {
+      return (await client.list<{ id: string; sequence: number }>('project_stage', { filter: { project_id: projectId } }))
+        .slice()
+        .sort((a, b) => a.sequence - b.sequence)
+    } catch {
+      return [] // unreadable stages: tasks fall back to the server's first-stage default
+    }
+  }
+  for (const [pi, project] of projects.records.entries()) {
+    const stages = await stagesOf(project.id)
+    if (isPlan(pi)) {
+      const planIds = await seedProjectPlan(project.id, stages, track)
+      await seedPbs(project.id, planIds, track)
+      continue
+    }
+    const milestones = await createMany<{ id: string }>(
+      'project_milestone',
+      [1, 2].map((n) => ({ project_id: project.id, name: `Milestone ${n}`, deadline: new Date(Date.now() + n * 30 * day).toISOString() })),
+    )
+    track(milestones)
+    const tasks = await createMany<{ id: string }>(
+      'project_task',
+      Array.from({ length: 8 }, (_, i) => ({
+        project_id: project.id,
+        name: `Task ${pi + 1}.${i + 1}`,
+        priority: i % 4 === 0,
+        planned_hours: 4 + i,
+        ...(stages.length > 0 ? { stage_id: stages[i % stages.length].id } : {}),
+        ...(milestones.records.length > 0 ? { milestone_id: milestones.records[i % 2].id } : {}),
+        // 2–5 days before the deadline, so the task Gantt has bars.
+        date_start: new Date(Date.now() + (i + 1) * 7 * day - (2 + (i % 4)) * day).toISOString(),
+        deadline: new Date(Date.now() + (i + 1) * 7 * day).toISOString(),
+      })),
+    )
+    track(tasks)
+    track(
+      await createMany(
+        'project_task',
+        tasks.records.flatMap((t, i) =>
+          [1, 2].map((n) => ({ project_id: project.id, parent_id: t.id, name: `Subtask ${pi + 1}.${i + 1}.${n}`, planned_hours: 2 })),
+        ),
+      ),
+    )
+    track(
+      await createMany(
+        'project_task_dependency',
+        tasks.records.length > 1 ? [{ task_id: tasks.records[1].id, depends_on_id: tasks.records[0].id }] : [],
+      ),
+    )
+    // Assigned to the signed-in admin so "My tasks" is not empty (also in the members-only project).
+    if (me) {
+      track(await createMany('project_task_user', tasks.records.slice(0, 2).map((t) => ({ task_id: t.id, user_id: me }))))
+    }
+    track(
+      await createMany(
+        'project_timesheet',
+        tasks.records.slice(0, pi === 0 ? 7 : 6).map((t, i) => ({
+          task_id: t.id,
+          date: new Date(Date.now() - i * day).toISOString(),
+          hours: 1 + (i % 4) * 0.5,
+          description: 'Demo work',
+        })),
+      ),
+    )
+    // Task 1: groups 1 + 2 (a striped bar), task 3: group 3, task 5: group 4.
+    const colorLinks: [number, number][] = [[0, 0], [0, 1], [2, 2], [4, 3]]
+    track(
+      await createMany(
+        'project_task_color',
+        colorLinks
+          .filter(([ti, ci]) => tasks.records[ti] && colors.records[ci])
+          .map(([ti, ci]) => ({ task_id: tasks.records[ti].id, color_id: colors.records[ci].id })),
+      ),
+    )
+    if (pi === 0 && company) await seedObs(project.id, company, people, me, track)
+    // A saved snapshot so the Gantt's Baseline select has a choice (POST
+    // route: the guard refuses the generic create of a baseline).
+    try {
+      await apiRequest('POST', `/api/v1/project/${project.id}/baseline`, { name: 'Baseline v1' })
+    } catch {
+      // Refused (e.g. not a manager, or the limit is reached): the demo just
+      // has no baseline to pick, like the stages fallback above.
+    }
+    // The RACI matrix (Matrices mode, ADR-041): the first project's first four
+    // tasks get one role each for the signed-in admin, so the tab is not empty.
+    if (pi === 0 && me) {
+      const roles = ['A', 'R', 'C', 'I']
+      track(
+        await createMany(
+          'project_task_raci',
+          tasks.records.slice(0, 4).map((task, i) => ({ task_id: task.id, user_id: me, role: roles[i] })),
+        ),
+      )
+    }
+  }
+  // Metrics window (WP2): the small demos get a 30-day past start and a 60-day
+  // future end; the plan projects span their plan (first phase to last).
+  const span: SeedEntityResult = { entity: 'project metrics span', created: 0, failed: 0, errors: [] }
+  const planPhases = buildProjectPlan().phases
+  for (const [pi, project] of projects.records.entries()) {
+    const body = isPlan(pi)
+      ? { date_start: planPhases[0]?.date_start, date_end: planPhases[planPhases.length - 1]?.deadline }
+      : { date_start: new Date(Date.now() - 30 * day).toISOString(), date_end: new Date(Date.now() + 60 * day).toISOString() }
+    try {
+      await client.update('project', project.id, body)
+      span.created += 1
+    } catch (e) {
+      span.failed += 1
+      if (span.errors.length < 5) span.errors.push(e instanceof ApiError ? e.message : 'Unknown error')
+    }
+  }
+  track({ result: span })
+  // A weekly capacity for the signed-in user: the Workload heatmap compares
+  // planned load against it (WP10); a live (user) row already exists → 409,
+  // re-running duplicates nothing, like the other seeded rows.
+  if (me) {
+    track(await createMany('project_capacity', [{ user_id: me, hours_per_week: 24 }]))
+  }
+  // Insights milestones (WP7): the small demos' two milestones become a
+  // reached one (deadline 30 days ago, reached stamped by the server) and a
+  // late unreached one (deadline 3 days ago) so the roadmap tab is alive.
+  const insightMilestones: SeedEntityResult = { entity: 'project insights milestones', created: 0, failed: 0, errors: [] }
+  for (const [pi, project] of projects.records.entries()) {
+    if (isPlan(pi)) continue
+    let existing: { id: string }[]
+    try {
+      existing = await client.list<{ id: string }>('project_milestone', { filter: { project_id: project.id }, order: 'created_at' })
+    } catch {
+      existing = [] // unreadable milestones: leave the defaults
+    }
+    const bodies = [
+      { deadline: new Date(Date.now() - 30 * day).toISOString(), reached: true },
+      { deadline: new Date(Date.now() - 3 * day).toISOString() },
+    ].slice(0, existing.length)
+    for (let i = 0; i < bodies.length; i++) {
+      try {
+        await client.update('project_milestone', existing[i].id, bodies[i])
+        insightMilestones.created += 1
+      } catch (e) {
+        insightMilestones.failed += 1
+        if (insightMilestones.errors.length < 5) insightMilestones.errors.push(e instanceof ApiError ? e.message : 'Unknown error')
+      }
+    }
+  }
+  track({ result: insightMilestones })
+  results.push(...Object.values(outcomes))
+  return results
+}
+
+/** A 5-box OBS: sponsor (contact) over the manager (user), who has two team members; a text note under the sponsor. */
+async function seedObs(
+  projectId: string,
+  company: { id: string },
+  people: { id: string }[],
+  me: string | undefined,
+  track: (o: { result: SeedEntityResult }) => void,
+) {
+  if (people.length < 3) return
+  // The Add contact picker lists a project company's linked people only.
+  track(await createMany('contact_company', people.slice(0, 3).map((p) => ({ contact_id: p.id, company_id: company.id }))))
+  const box = (b: Record<string, unknown>) => createMany<{ id: string }>('project_obs_box', [{ project_id: projectId, ...b }])
+  const sponsor = await box({ kind: 'contact', contact_id: people[0]?.id, title: 'Sponsor', color: '#1e88e5', x: 300, y: 0 })
+  track(sponsor)
+  const root = sponsor.records[0]?.id
+  const manager = me ? await box({ kind: 'user', user_id: me, title: 'Project manager', parent_id: root, color: '#43a047', x: 300, y: 160 }) : null
+  if (manager) track(manager)
+  const lead = manager?.records[0]?.id ?? root
+  const rest = [
+    { kind: 'contact', contact_id: people[1]?.id, title: 'Developer', parent_id: lead, x: 120, y: 320 },
+    { kind: 'contact', contact_id: people[2]?.id, title: 'Designer', parent_id: lead, x: 360, y: 320 },
+    { kind: 'text', text: 'Weekly steering committee on Mondays.', parent_id: root, x: 560, y: 160 },
+  ]
+  track(await createMany('project_obs_box', rest.map((b) => ({ project_id: projectId, ...b }))))
 }
 
 /**
  * Seed the workspace with fake contacts, CRM opportunities, tags, warehouse
- * products, sale invoices/quotes (with their line items), and default report
- * page formats — through the ordinary entity API, in dependency order
+ * products (described, with named variants and generated pictures), sale invoices/quotes (with their line items), default report
+ * page formats, the Event app's demo events (seedEvents) and a demo website
+ * (seedWebsite) — through the ordinary entity API, in dependency order
  * (parents before the rows that reference their ids).
  */
-export async function seedDemoData(): Promise<SeedResult> {
-  if (!seedingAllowed()) {
+export async function seedDemoData(volume: SeedVolume = 'light', groups: string[] = []): Promise<SeedResult> {
+  if (!(await seedingAllowed())) {
     return { ok: false, message: 'Demo data seeding is disabled outside development.' }
   }
+  if (volume === 'full') return seedFullVolume(groups)
 
   const results: SeedEntityResult[] = []
 
@@ -326,38 +1013,55 @@ export async function seedDemoData(): Promise<SeedResult> {
     results.push(linksOutcome.result)
   }
 
-  const productsOutcome = await createMany<{ id: string }>('product', buildProducts())
+  const productsOutcome = await createMany<{ id: string; name?: unknown }>('product', buildProducts())
   results.push(productsOutcome.result)
+  // A seed taxes its catalog the way the product form's Taxes field does.
+  results.push(...(await seedProductTaxes(productsOutcome.records)))
 
-  const variantsOutcome = await createMany<{ id: string }>(
+  const variantsOutcome = await createMany<{ id: string; product_id?: unknown }>(
     'product_variant',
     buildProductVariants(productsOutcome.records),
   )
   results.push(variantsOutcome.result)
+  // A generated picture on every picture field of the records seeded here,
+  // uploaded at the end (seedPictures).
+  const pictures: PictureTarget[] = [
+    ...productPictures(productsOutcome.records, variantsOutcome.records),
+    ...crmOutcome.records.flatMap((r, i) => [
+      { table: 'crm', id: r.id, field: 'picture', png: () => photoPng(PALETTE[i % PALETTE.length], i % 3) },
+      { table: 'crm', id: r.id, field: 'signature', png: () => signaturePng(i % 4) },
+    ]),
+  ]
 
   const invoicesOutcome = await createMany<{ id: string }>(
     'invoice',
-    buildDocuments(contactsOutcome.records, INVOICE_COUNT, 'INV', INVOICE_STATUSES),
+    buildDocuments(contactsOutcome.records, INVOICE_COUNT, INVOICE_STATUSES, true),
   )
   results.push(invoicesOutcome.result)
+  pictures.push(...invoicesOutcome.records.map((r, i) => ({ table: 'invoice', id: r.id, field: 'logo', png: () => logoPng(PALETTE[i % PALETTE.length]) })))
 
   const saleLinesOutcome = await createMany(
     'sale_line',
     buildDocumentLines('invoice_id', invoicesOutcome.records, variantsOutcome.records),
   )
   results.push(saleLinesOutcome.result)
+  results.push(await applyStatuses('invoice', invoicesOutcome))
 
   const quotesOutcome = await createMany<{ id: string }>(
     'quote',
-    buildDocuments(contactsOutcome.records, QUOTE_COUNT, 'QUO', QUOTE_STATUSES),
+    buildDocuments(contactsOutcome.records, QUOTE_COUNT, QUOTE_STATUSES, false),
   )
   results.push(quotesOutcome.result)
+  pictures.push(...quotesOutcome.records.map((r, i) => ({ table: 'quote', id: r.id, field: 'logo', png: () => logoPng(PALETTE[i % PALETTE.length]) })))
 
   const quoteLinesOutcome = await createMany(
     'quote_line',
     buildDocumentLines('quote_id', quotesOutcome.records, variantsOutcome.records),
   )
   results.push(quoteLinesOutcome.result)
+  results.push(await applyStatuses('quote', quotesOutcome))
+
+  results.push(...(await seedProjects(contactsOutcome)))
 
   const preferences = await getMyLocalePreferences()
   const pageFormatsOutcome = await createMany(
@@ -366,5 +1070,61 @@ export async function seedDemoData(): Promise<SeedResult> {
   )
   results.push(pageFormatsOutcome.result)
 
+  const people = (contactsOutcome.records as unknown as { name?: unknown; email?: unknown }[])
+    .filter((c) => typeof c.name === 'string' && typeof c.email === 'string')
+    .map((c) => ({ name: c.name as string, email: c.email as string }))
+  results.push(...(await seedEvents(people, variantsOutcome.records[0]?.id, pictures)))
+  // Last of the records: its pages list the events and products seeded above.
+  results.push(...(await seedWebsite()))
+
+  // The active company's logo, only if it has none (never replace a real one).
+  const companyId = preferences?.active_company?.id
+  if (companyId) {
+    try {
+      const company = await createServerApiClient().get<{ logo?: boolean | null }>('company', companyId)
+      if (!company.logo) pictures.push({ table: 'company', id: companyId, field: 'logo', png: () => logoPng(PALETTE[0]) })
+    } catch {
+      // unreadable company: no logo
+    }
+  }
+  // Pictures need the S3-backed picture service; without it every upload fails,
+  // reported like any other entity instead of aborting the seed.
+  results.push(await seedPictures(pictures))
+
   return { ok: true, results }
+}
+
+/** One group of the full volume (Go: internal/devseed AllGroups): a business
+ * area, the groups its rows point at, and whether this workspace seeded it. */
+export interface SeedGroup {
+  key: string
+  label: string
+  deps: string[]
+  seeded: boolean
+}
+
+/** The full volume's groups, and the notification id of a seed already
+ * running in this workspace (null if none); null when Go can't be reached. */
+export async function getSeedGroups(): Promise<{ groups: SeedGroup[]; running: string | null } | null> {
+  try {
+    const res = await apiRequest<{ data?: SeedGroup[]; running?: string | null }>('GET', '/dev_seed')
+    return { groups: res.data ?? [], running: res.running ?? null }
+  } catch {
+    return null
+  }
+}
+
+/** The full volume: one Go call starting the selected groups ([] = all; Go
+ * adds their dependencies and skips groups already seeded — it refuses outside
+ * development, while another seed runs, and when everything selected was
+ * seeded, all surfaced as the error message). Go seeds in the background and
+ * answers with the run's notification id; the Developer page follows it live
+ * and revalidates what Go wrote once it is done. */
+async function seedFullVolume(groups: string[]): Promise<SeedResult> {
+  try {
+    const res = await apiRequest<{ notification_id: string }>('POST', '/dev_seed', { groups })
+    return { ok: true, started: res.notification_id }
+  } catch (e) {
+    return { ok: false, message: e instanceof ApiError ? e.message : 'The full demo seed failed.' }
+  }
 }

@@ -2,11 +2,13 @@ import {
   createAttachmentClient,
   fetchReportPDF,
   FORM_NOTEBOOK_ID,
-  registerHeaderButtonAction,
+  registerMenuAction,
   useEntityRefreshStore,
   type FrontRoute,
-  type HeaderButtonDescriptor,
+  type GeoJSONGeometry,
+  type MenuNode,
   type Operation,
+  type RelationOps,
   type ViewDescriptor,
 } from '@eerp/core-front'
 
@@ -27,7 +29,11 @@ export interface PropertyManagement {
   address_city?: string
   address_state?: string
   address_country?: string
+  /** The building's position (GeoJSON Point) and its land (Polygon). */
+  geo_location?: GeoJSONGeometry | null
+  parcel?: GeoJSONGeometry | null
   floor_area?: number
+  uom_id?: string
   /** The mortgage/loan this property carries — a plain editable figure, not
    * derived from anything else. */
   loan_amount?: number
@@ -37,8 +43,10 @@ export interface PropertyManagement {
    * alongside whatever other lines the month's receipt needs. */
   rent_price?: number
   /** "2026-08"-shaped, null until the first Generate — set by the Generate
-   * Rent Receipt header button. */
+   * Rent Receipt menu action. */
   last_receipt_month?: string | null
+  /** generated_at of the latest parent rent receipt (copied on Generate) — the Graph view's X date. */
+  generated_at?: string | null
   /** Server-computed, non-stored (GetProperty override, handler.go) — never
    * a real column, never sent back on write. */
   receipt_generated_this_month?: boolean
@@ -69,6 +77,35 @@ function formatPropertyAddress(draft: Record<string, unknown>): string {
     .join(', ')
 }
 
+// resolveLineTaxLabel prints what a billing line's own `taxes` many2many
+// actually carries (property_management_billing_line_tax junction ->
+// sale_tax) as a single comma-joined label — "VAT (20%), Eco-tax (2)" — the
+// receipt-line snapshot's replacement for the old, now-unused TaxRate scalar
+// (property_management_billing_line_views.ts's own `tax_rate` field doc
+// comment: no longer editable through the form, real tax comes from `taxes`
+// exclusively). A dangling/unresolvable link is silently skipped, same
+// posture generateRentReceipt already takes for a deleted contact.
+async function resolveLineTaxLabel(ops: RelationOps, billingLineId: string): Promise<string> {
+  const links = await ops.list('property_management_billing_line_tax', {
+    filter: { property_management_billing_line_id: billingLineId },
+    pageSize: 50,
+  })
+  const taxes = await Promise.all(
+    links.map((link) =>
+      typeof link.sale_tax_id === 'string' ? ops.get('sale_tax', link.sale_tax_id).catch(() => null) : null,
+    ),
+  )
+  return taxes
+    .filter((t): t is NonNullable<typeof t> => t !== null)
+    .map((t) => {
+      const name = String(t.name ?? '')
+      return t.kind === 'fixed'
+        ? `${name} (${Number(t.amount ?? 0)})`
+        : `${name} (${(Number(t.rate ?? 0) * 100).toFixed(0)}%)`
+    })
+    .join(', ')
+}
+
 // Generate Rent Receipt: creates one PARENT row for this property+period
 // (the summary the property form's own rent_receipts field lists — see
 // module.go's doc comment on PropertyManagementRentReceipt) plus one
@@ -78,17 +115,26 @@ function formatPropertyAddress(draft: Record<string, unknown>): string {
 // later download — the user's own explicit requirement) — a tenant moving
 // out/in later never changes what an already-generated receipt shows.
 // Mirrors modules/sale/views/quote_views.ts's sale.acceptQuote shape (read
-// via relationOps, create, then setFieldAndCommit).
-registerHeaderButtonAction({
+// via relationOps, create, then setFieldAndCommit). Lives in the form's
+// options menu (propertyActions below), not a standalone header button —
+// registerMenuAction's own MenuActionContext carries the SAME
+// draft/setFieldAndCommit/relationOps a header button gets, so the workflow
+// logic below is completely unchanged from when this was a header button;
+// draft/setFieldAndCommit are only OPTIONAL on MenuActionContext because the
+// same type also backs the bulk actions menu (menu-actions.ts's own doc
+// comment) — this action is only ever wired onto a FORM descriptor's
+// `actions`, where FormActionsMenu always supplies both, so the guard below
+// never actually fires; TypeScript just needs it narrowed.
+registerMenuAction({
   entity: 'property_management',
   name: 'propertymanagement.generateRentReceipt',
   handler: async (ctx) => {
-    const ops = ctx.relationOps
-    if (!ops) return
+    const { relationOps: ops, draft, setFieldAndCommit } = ctx
+    if (!ops || !draft || !setFieldAndCommit) return
 
     const period = new Date().toISOString().slice(0, 7)
     const generatedAt = new Date().toISOString()
-    const addressLine = formatPropertyAddress(ctx.draft)
+    const addressLine = formatPropertyAddress(draft)
 
     // Snapshot the property's own billing lines (property_management_
     // billing_line_views.ts) the same way property_name/address/floor_area
@@ -110,8 +156,15 @@ registerHeaderButtonAction({
       filter: { property_management_id: ctx.recordId },
       pageSize: 100,
     })
-    const total = billingLines.reduce((sum, l) => sum + Number(l.total ?? 0), 0)
-    const subtotal = billingLines.reduce((sum, l) => sum + Number(l.subtotal ?? 0), 0)
+    // rent_price prints as the billing-lines table's OWN first row now (a
+    // synthetic "Rent" line, report-only — the property's own rent_price
+    // field is untouched, still a plain figure, not itself a real billing
+    // line), so it must also count toward the upfront estimate below —
+    // otherwise Subtotal/Total would under-count by leaving it out. No tax
+    // of its own: contributes equally to subtotal and total.
+    const rentPrice = Number(draft.rent_price ?? 0)
+    const total = rentPrice + billingLines.reduce((sum, l) => sum + Number(l.total ?? 0), 0)
+    const subtotal = rentPrice + billingLines.reduce((sum, l) => sum + Number(l.subtotal ?? 0), 0)
     const taxAmount = total - subtotal
 
     const links = await ops.list('property_management_tenant', {
@@ -127,15 +180,24 @@ registerHeaderButtonAction({
       .filter((c): c is NonNullable<typeof c> => c !== null)
       .map((c) => String(c.name ?? ''))
 
+    // The report prints the short SYMBOL ("m²", "ft²") next to floor_area,
+    // not product_uoms' own picker label ("Square meter (m²)") — the
+    // receipt's own `uom` column is this printable snapshot, same "capture
+    // at document time" discipline as every other field here.
+    const uomRecord =
+      typeof draft.uom_id === 'string' ? await ops.get('product_uoms', draft.uom_id).catch(() => null) : null
+    const uomLabel = uomRecord ? String(uomRecord.symbol ?? '') : ''
+
     const parent = await ops.create('property_management_rent_receipt', {
       property_management_id: ctx.recordId,
       is_parent: true,
       period,
       generated_at: generatedAt,
-      property_name: ctx.draft.name,
+      property_name: draft.name,
       property_address: addressLine,
-      floor_area: ctx.draft.floor_area,
-      rent_price: ctx.draft.rent_price,
+      floor_area: draft.floor_area,
+      uom: uomLabel,
+      rent_price: draft.rent_price,
       subtotal,
       tax_amount: taxAmount,
       total,
@@ -156,10 +218,11 @@ registerHeaderButtonAction({
         is_parent: false,
         period,
         generated_at: generatedAt,
-        property_name: ctx.draft.name,
+        property_name: draft.name,
         property_address: addressLine,
-        floor_area: ctx.draft.floor_area,
-        rent_price: ctx.draft.rent_price,
+        floor_area: draft.floor_area,
+        uom: uomLabel,
+        rent_price: draft.rent_price,
         subtotal,
         tax_amount: taxAmount,
         total,
@@ -167,15 +230,34 @@ registerHeaderButtonAction({
         receipt_file: false,
       })
 
+      // rent_price prints as the table's own FIRST row — created ahead of
+      // the copied billing lines below, report-only (the property's own
+      // rent_price field is untouched; this is a real
+      // property_management_rent_receipt_line row, but nothing on the
+      // property/billing_lines side ever reads it back). No taxes of its
+      // own: subtotal/total both equal the plain figure.
+      await ops.create('property_management_rent_receipt_line', {
+        rent_receipt_id: child.id,
+        name: 'Rent',
+        unit_price: rentPrice,
+        tax_label: '',
+        subtotal: rentPrice,
+        total: rentPrice,
+      })
+
       // Copy the same billing lines onto this child (report-table's own
       // source, rent_receipt_report.ts) — every tenant's receipt shows the
       // property's full billing-lines table, same as the parent summary.
+      // tax_label resolves the line's OWN `taxes` many2many (the plain
+      // tax_rate scalar is legacy, no longer settable through the form —
+      // see property_management_billing_line_views.ts's own doc comment).
       for (const line of billingLines) {
+        const taxLabel = await resolveLineTaxLabel(ops, String(line.id))
         await ops.create('property_management_rent_receipt_line', {
           rent_receipt_id: child.id,
           name: line.name,
           unit_price: line.unit_price,
-          tax_rate: line.tax_rate,
+          tax_label: taxLabel,
           subtotal: line.subtotal,
           total: line.total,
         })
@@ -204,28 +286,60 @@ registerHeaderButtonAction({
     // bump once so any mounted widget over this entity re-fetches.
     useEntityRefreshStore.getState().bump('property_management_rent_receipt')
 
-    await ctx.setFieldAndCommit({ last_receipt_month: period })
+    await setFieldAndCommit({ last_receipt_month: period, generated_at: generatedAt })
   },
 })
 
-const propertyHeaderButtons: HeaderButtonDescriptor[] = [
+// Moved out of the always-visible header-button row into the form's own
+// options menu (the three-dot FormActionsMenu) — the user's own explicit
+// choice: a monthly, occasional action doesn't need permanent header real
+// estate. states.readOnly is MenuActionNode's own parity with
+// HeaderButtonDescriptor's (form-actions-menu.tsx/descriptor.ts) — the item
+// stays VISIBLE but DISABLED once already run this month, never hidden, a
+// server-computed key (PropertyManagement.receipt_generated_this_month
+// above), never a stored column, so this Condition needs no dynamic "now"
+// operator.
+const propertyActions: MenuNode[] = [
   {
-    name: 'propertymanagement.generateRentReceipt',
+    kind: 'action',
     label: 'Generate Rent Receipt',
-    // Stays VISIBLE but DISABLED once already run this month — a server-
-    // computed key (see PropertyManagement.receipt_generated_this_month
-    // above), never a stored column, so this Condition needs no dynamic
-    // "now" operator.
+    action: 'propertymanagement.generateRentReceipt',
     states: { readOnly: { field: 'receipt_generated_this_month', op: 'eq', value: true } },
   },
 ]
 
 export const fields: ViewDescriptor['fields'] = [
   { name: 'name', label: 'Name', type: 'text', required: true },
-  { name: 'address', label: 'Address', type: 'address', widget: 'form' },
+  // hideLabel: AddressWidget's own inline caption is dropped in favor of
+  // the "Address" group's native title (propertyExtendOperations, below) —
+  // same rendering path "Pricing" uses, so the two headings actually match
+  // instead of one being AddressWidget's ad-hoc variant="caption" line.
+  { name: 'address', label: 'Address', type: 'address', widget: 'form', hideLabel: true },
+  // The building on a map, placed automatically from the address above
+  // (autoLocate, through the workspace's OSM connector) — the free place
+  // search is hidden (search: false): the address is the one input.
+  {
+    name: 'geo_location',
+    label: 'Location',
+    type: 'geo',
+    widget: 'point',
+    widgetOptions: { address: 'address', autoLocate: true, search: false },
+  },
+  // The land. Kept for the list's search bar (inside-zone / covers filters),
+  // but not on the form — formFields leaves it out.
+  { name: 'parcel', label: 'Parcel', type: 'geo', widget: 'shape' },
   { name: 'floor_area', label: 'Floor area', type: 'number', widget: 'float' },
   { name: 'loan_amount', label: 'Loan amount', type: 'number', widget: 'monetary' },
   { name: 'rent_price', label: 'Rent price', type: 'number', widget: 'monetary' },
+  // Read from the latest parent rent receipt; only ever set by Generate Rent
+  // Receipt. type: 'date', not 'text': the Go column is a nullable
+  // *time.Time (module.go's GeneratedAt) — a 'text' field's zero default is
+  // '""'` (descriptor.ts's fieldZeroDefault), which a brand-new property's
+  // Create payload was sending verbatim; Go's json unmarshal rejects an
+  // empty string into *time.Time ("Malformed request body."), so every
+  // property Create 400'd once every other required field was filled in.
+  // 'date' zero-defaults to null instead, which *time.Time accepts fine.
+  { name: 'generated_at', label: 'Generated at', type: 'date', readOnly: true },
 ]
 
 // Form-only: current_tenant (many2many, tags widget) stays in the default
@@ -239,11 +353,15 @@ export const fields: ViewDescriptor['fields'] = [
 // other field, and "did I save?" has one answer: the Save button's own
 // dirty state.
 const formFields: ViewDescriptor['fields'] = [
-  ...fields,
+  ...fields.filter((f) => f.name !== 'parcel'),
   {
     name: 'current_tenant',
     label: 'Current tenant(s)',
     type: 'relation',
+    // Blocks commit for a NEW property with no tenant picked yet — see
+    // requiredMissing's doc comment (descriptor.ts) for why this only
+    // enforces on create, not on editing an existing property down to zero.
+    required: true,
     relation: {
       entity: 'contact',
       kind: 'many2many',
@@ -252,6 +370,26 @@ const formFields: ViewDescriptor['fields'] = [
       labelField: 'name',
     },
     widgetOptions: { deferred: true },
+  },
+  {
+    name: 'uom_id',
+    label: 'Unit',
+    type: 'relation',
+    // filter: { type: 'surface' } scopes every search/wizard read to the
+    // surface UOMs only (m², ft², ...) — floor_area is always a surface
+    // measurement, so the piece/length/weight/volume/custom rows the shared
+    // product_uoms catalog also carries would just be wrong picks here.
+    // No client `default` here on purpose: picking one needs the workspace's
+    // units.system setting plus a DB lookup, both beyond what the
+    // synchronous field-function default system can do — handler.go's
+    // CreateProperty resolves it server-side instead (defaultFloorAreaUom),
+    // filling it in only when the create request left uom_id unset.
+    relation: {
+      entity: 'product_uoms',
+      kind: 'many2one',
+      labelField: 'name',
+      filter: { type: 'surface' },
+    },
   },
   {
     name: 'photos',
@@ -280,7 +418,18 @@ const formFields: ViewDescriptor['fields'] = [
     readOnly: true,
     // widgetOptions.reverse: the most recently generated receipt (the last
     // one created) shows first, instead of the oldest.
-    widgetOptions: { reverse: true },
+    // Explicit columns: the generic derivation also surfaced the row's
+    // parent_id, is_parent and floor_area, which mean nothing in this notebook.
+    widgetOptions: {
+      reverse: true,
+      columns: [
+        { key: 'generated_at', label: 'Generated at' },
+        { key: 'property_name', label: 'Property' },
+        { key: 'property_address', label: 'Address' },
+        { key: 'uom', label: 'Unit' },
+        { key: 'tenant_names', label: 'Tenants' },
+      ],
+    },
     relation: {
       entity: 'property_management_rent_receipt',
       kind: 'one2many',
@@ -294,11 +443,36 @@ const formFields: ViewDescriptor['fields'] = [
   // rows (property_management_billing_line), not a JSONB blob, creatable
   // straight from this embedded grid via the engine's usual one2many
   // "Create a new..." wizard (property_management_billing_line_views.ts's
-  // own descriptor is what the wizard renders).
+  // own descriptor is what the wizard renders). An EXPLICIT widgetOptions.
+  // columns (relation-widgets.tsx's own doc comment) replaces the generic
+  // row-key derivation, which would otherwise surface the legacy tax_rate
+  // scalar as a raw, unlabeled column — `taxes` here is resolved by
+  // widgetOptions.relatedRelationField from the line's own `taxes` many2many
+  // (billingLineFields' own tags field), and `quantity` is a plain literal
+  // 1 on every row: a billing line has no quantity concept of its own (same
+  // "treat absent as 1" rule TaxTotalsWidget already applies below), shown
+  // anyway for the same line-items look sale's own tables have.
+  // widgetOptions.previewRow prepends the property's own rent_price as a
+  // synthetic leading "Rent" line, named after the property itself (this
+  // record's own `name` field) — a preview of what the NEXT generated
+  // receipt's billing table will actually show (rent first, then these
+  // lines — rent_receipt_report.ts), before any receipt has been generated.
   {
     name: 'billing_lines',
     label: 'Billing lines',
     type: 'relation',
+    widgetOptions: {
+      deletable: true,
+      relatedRelationField: 'taxes',
+      columns: [
+        { key: 'quantity', label: 'Quantity', value: 1 },
+        { key: 'unit_price', label: 'Price' },
+        { key: 'subtotal', label: 'Subtotal' },
+        { key: 'taxes', label: 'Taxes' },
+        { key: 'total', label: 'Total' },
+      ],
+      previewRow: { nameField: 'name', amountField: 'rent_price', amountColumns: ['unit_price', 'subtotal', 'total'] },
+    },
     relation: {
       entity: 'property_management_billing_line',
       kind: 'one2many',
@@ -314,12 +488,16 @@ const formFields: ViewDescriptor['fields'] = [
   // column (a line is priced as a whole, not quantity × unit_price) —
   // TaxTotalsWidget treats an absent quantity as 1, the identity, rather
   // than zeroing every line out (see its own doc comment).
+  // widgetOptions.previewAmountField folds rent_price into subtotal/total
+  // too, staying consistent with billing_lines' own previewRow above (both
+  // show the SAME rent line, one as a grid row, one summed into the recap).
   {
     name: 'billing_totals',
     label: 'Totals',
     type: 'totals',
     hideLabel: true,
     store: false,
+    widgetOptions: { previewAmountField: 'rent_price' },
     relation: { entity: 'property_management_billing_line', kind: 'one2many', inverseField: 'property_management_id' },
   },
 ]
@@ -335,6 +513,9 @@ const listView: ViewDescriptor = {
   entity: 'property_management',
   viewType: 'tree',
   fields,
+  // Graph view: a dated variable is computed once per PARENT rent receipt
+  // (only parents carry property_management_id) of each property.
+  graphDatedRows: { entity: 'property_management_rent_receipt', link: 'property_management_id' },
   formPath: '/propertymanagement/:id',
   createPermission: 'property_management:property_management:write',
   permissions: ['property_management:property_management:read'],
@@ -345,13 +526,75 @@ const formView: ViewDescriptor = {
   viewType: 'form',
   fields: formFields,
   permissions: ['property_management:property_management:read'],
-  headerButtons: propertyHeaderButtons,
+  actions: propertyActions,
 }
 
 // Moves photos/equipment/rent_receipts off the default two-column body into
 // their own notebook pages — same self-extension shape
 // core/modules/sale/views/invoice_views.ts's orderLinesPageOperations uses.
 export const propertyExtendOperations: Operation[] = [
+  // Left column: wrap the bare address field into its own titled "Address"
+  // group with the map point it locates — the SAME plain-group-with-title
+  // shape "Pricing" (right, below) uses, so both headings render through
+  // layout-renderer.tsx's one native title branch instead of address's own
+  // hand-rolled AddressWidget caption (suppressed via the field's
+  // `hideLabel: true`, above). Targets floor_area (address's own next
+  // sibling in the base two-column layout) rather than 'address' itself,
+  // since addNode extracts every field it wraps BEFORE resolving `target` —
+  // 'address' wouldn't be found anymore.
+  {
+    op: 'addNode',
+    node: {
+      kind: 'group',
+      // Needs an id: the right column (below) targets it by id to land
+      // immediately after it as a SIBLING, not 'after' the nested 'address'
+      // field name, which would insert it INSIDE this group instead.
+      id: 'property-address-group',
+      title: 'Address',
+      children: [
+        { kind: 'field', name: 'address' },
+        { kind: 'field', name: 'geo_location' },
+      ],
+    },
+    target: 'floor_area',
+    position: 'before',
+  },
+  // Right column, beside the address + map: every other field, stacked —
+  // the titled "Pricing" group, current_tenant, then the floor_area|uom_id
+  // split. ONE grid item, so it occupies the second column of the address
+  // group's row however tall the map makes that row.
+  {
+    op: 'addNode',
+    node: {
+      kind: 'group',
+      id: 'property-details-group',
+      children: [
+        {
+          kind: 'group',
+          id: 'property-loan-rent-group',
+          title: 'Pricing',
+          children: [{ kind: 'field', name: 'loan_amount' }, { kind: 'field', name: 'rent_price' }],
+        },
+        { kind: 'field', name: 'current_tenant' },
+        // A REAL side-by-side floor_area|uom_id split. columnWidths: [1, 1]
+        // — equal halves since uom_id's relation field renders at the same
+        // height and weight as floor_area. minWidth: 280 overrides the
+        // 640px default container-query breakpoint (calibrated for a
+        // TOP-LEVEL form body): this pair sits inside __form_columns' OWN
+        // right column, already halved, so 640px would need a 1300px+ wide
+        // form before this nested split ever activated.
+        {
+          kind: 'group',
+          columns: 2,
+          columnWidths: [1, 1],
+          minWidth: 280,
+          children: [{ kind: 'field', name: 'floor_area' }, { kind: 'field', name: 'uom_id' }],
+        },
+      ],
+    },
+    target: 'property-address-group',
+    position: 'after',
+  },
   {
     op: 'addNode',
     node: { kind: 'page', title: 'Photos', children: [{ kind: 'field', name: 'photos' }] },

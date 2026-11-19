@@ -6,6 +6,7 @@ import "sync"
 func Reset() {
 	mu.Lock()
 	entries = map[string]TableMeta{}
+	extensions = map[string][]SchemaField{}
 	mu.Unlock()
 
 	apiCfgMu.Lock()

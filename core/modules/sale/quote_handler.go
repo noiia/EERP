@@ -12,7 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // QuoteHandler mirrors Handler exactly (sale_line's Create/Update/Delete
@@ -26,6 +26,10 @@ type QuoteHandler struct {
 	quotes   *orm.Repository[Quote]
 	variants *orm.Repository[warehouse.ProductVariant]
 	products *orm.Repository[warehouse.Product]
+	uoms     *orm.Repository[warehouse.ProductUoms]
+	// productTaxes/taxes resolve a product's taxes (product_tax.go).
+	productTaxes *orm.Repository[ProductTax]
+	taxes        *orm.Repository[SaleTax]
 }
 
 func NewQuoteHandler(
@@ -33,12 +37,18 @@ func NewQuoteHandler(
 	quotes *orm.Repository[Quote],
 	variants *orm.Repository[warehouse.ProductVariant],
 	products *orm.Repository[warehouse.Product],
+	productTaxes *orm.Repository[ProductTax],
+	taxes *orm.Repository[SaleTax],
+	uoms *orm.Repository[warehouse.ProductUoms],
 ) *QuoteHandler {
-	return &QuoteHandler{lines: lines, quotes: quotes, variants: variants, products: products}
+	return &QuoteHandler{
+		lines: lines, quotes: quotes, variants: variants, products: products,
+		productTaxes: productTaxes, taxes: taxes, uoms: uoms,
+	}
 }
 
 // Create handles POST /api/v1/quote_line.
-func (h *QuoteHandler) Create(c echo.Context) error {
+func (h *QuoteHandler) Create(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 	ctx := c.Request().Context()
 
@@ -47,8 +57,11 @@ func (h *QuoteHandler) Create(c echo.Context) error {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
 	}
 	body.TenantID = identity.TenantID
+	if _, err := findOwned(ctx, h.quotes, body.QuoteID, identity.TenantID); err != nil {
+		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "Quote not found.")
+	}
 
-	if err := h.snapshotFromVariant(ctx, &body); err != nil {
+	if err := h.snapshotFromVariant(ctx, identity.TenantID, &body); err != nil {
 		return errorJSON(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", err.Error())
 	}
 
@@ -56,7 +69,7 @@ func (h *QuoteHandler) Create(c echo.Context) error {
 	if err != nil {
 		return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not create the line.")
 	}
-	if err := h.recomputeTotals(ctx, created.QuoteID); err != nil {
+	if err := h.recomputeTotals(ctx, identity.TenantID, created.QuoteID); err != nil {
 		return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not update quote totals.")
 	}
 
@@ -64,16 +77,16 @@ func (h *QuoteHandler) Create(c echo.Context) error {
 }
 
 // Update handles PUT /api/v1/quote_line/:id.
-func (h *QuoteHandler) Update(c echo.Context) error {
+func (h *QuoteHandler) Update(c *echo.Context) error {
 	identity := auth.MustIdentity(c.Request().Context())
 	ctx := c.Request().Context()
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "invalid id format")
 	}
 
-	existing, err := h.lines.FindByID(ctx, id)
+	existing, err := findOwned(ctx, h.lines, id, identity.TenantID)
 	if err != nil {
 		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "Line not found.")
 	}
@@ -94,7 +107,7 @@ func (h *QuoteHandler) Update(c echo.Context) error {
 		merged.Quantity = body.Quantity
 	}
 
-	if err := h.snapshotFromVariant(ctx, &merged); err != nil {
+	if err := h.snapshotFromVariant(ctx, identity.TenantID, &merged); err != nil {
 		return errorJSON(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", err.Error())
 	}
 
@@ -102,7 +115,7 @@ func (h *QuoteHandler) Update(c echo.Context) error {
 	if err != nil {
 		return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not update the line.")
 	}
-	if err := h.recomputeTotals(ctx, updated.QuoteID); err != nil {
+	if err := h.recomputeTotals(ctx, identity.TenantID, updated.QuoteID); err != nil {
 		return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not update quote totals.")
 	}
 
@@ -110,15 +123,16 @@ func (h *QuoteHandler) Update(c echo.Context) error {
 }
 
 // Delete handles DELETE /api/v1/quote_line/:id.
-func (h *QuoteHandler) Delete(c echo.Context) error {
+func (h *QuoteHandler) Delete(c *echo.Context) error {
 	ctx := c.Request().Context()
+	identity := auth.MustIdentity(ctx)
 
-	id, err := uuid.Parse(c.Param("id"))
+	id, err := echo.PathParam[uuid.UUID](c, "id")
 	if err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "invalid id format")
 	}
 
-	existing, err := h.lines.FindByID(ctx, id)
+	existing, err := findOwned(ctx, h.lines, id, identity.TenantID)
 	if err != nil {
 		return errorJSON(c, http.StatusNotFound, "NOT_FOUND", "Line not found.")
 	}
@@ -126,7 +140,7 @@ func (h *QuoteHandler) Delete(c echo.Context) error {
 	if _, err := h.lines.Delete(ctx, id); err != nil {
 		return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not delete the line.")
 	}
-	if err := h.recomputeTotals(ctx, existing.QuoteID); err != nil {
+	if err := h.recomputeTotals(ctx, identity.TenantID, existing.QuoteID); err != nil {
 		return errorJSON(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not update quote totals.")
 	}
 
@@ -134,36 +148,45 @@ func (h *QuoteHandler) Delete(c echo.Context) error {
 }
 
 // snapshotFromVariant mirrors Handler.snapshotFromVariant for QuoteLine.
-func (h *QuoteHandler) snapshotFromVariant(ctx context.Context, line *QuoteLine) error {
-	variant, err := h.variants.FindByID(ctx, line.VariantID)
+func (h *QuoteHandler) snapshotFromVariant(ctx context.Context, tenant uuid.UUID, line *QuoteLine) error {
+	variant, err := findOwned(ctx, h.variants, line.VariantID, tenant)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("variant_id must reference an existing product variant")
 		}
 		return err
 	}
-	product, err := h.products.FindByID(ctx, variant.ProductID)
+	product, err := findOwned(ctx, h.products, variant.ProductID, tenant)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("the variant's product no longer exists")
 		}
 		return err
 	}
+	// A quote line has no tax links of its own: its tax_rate is the
+	// product's percentage taxes plus the variant's own rate (a fixed-amount
+	// tax can't be a rate, so it isn't carried onto quotes).
+	taxes, err := productTaxes(ctx, h.productTaxes, h.taxes, tenant, product.ID)
+	if err != nil {
+		return err
+	}
 	line.VariantName = variant.Name
-	line.Unit = product.Unit
-	line.TaxRate = resolveTaxRate(product, variant)
+	if line.UomID, line.Unit, err = resolveLineUnit(ctx, h.uoms, tenant, line.UomID, product.UomID); err != nil {
+		return err
+	}
+	line.TaxRate = percentageRate(taxes) + variantRate(variant)
 	line.UnitPrice = resolveUnitPrice(product, variant)
 	return nil
 }
 
 // recomputeTotals mirrors Handler.recomputeTotals for Quote/QuoteLine.
-func (h *QuoteHandler) recomputeTotals(ctx context.Context, quoteID uuid.UUID) error {
-	lines, err := h.lines.FindAll(ctx, orm.Cond("quote_id = $1", quoteID))
+func (h *QuoteHandler) recomputeTotals(ctx context.Context, tenant, quoteID uuid.UUID) error {
+	lines, err := h.lines.FindAll(ctx, orm.Cond("quote_id = $1 AND tenant_id = $2", quoteID, tenant))
 	if err != nil {
 		return err
 	}
 
-	quote, err := h.quotes.FindByID(ctx, quoteID)
+	quote, err := findOwned(ctx, h.quotes, quoteID, tenant)
 	if err != nil {
 		return err
 	}

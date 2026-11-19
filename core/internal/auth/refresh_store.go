@@ -38,7 +38,7 @@ func (s *RefreshStore) Save(ctx context.Context, userID uuid.UUID, rawToken stri
 	}
 
 	return orm.Transact(ctx, s.db, func(tx *orm.Tx) error {
-		if _, err := tx.Exec(ctx, revokeAllSQL, userID); err != nil {
+		if _, err := s.revokeAll(ctx, tx, userID); err != nil {
 			return fmt.Errorf("refresh: save: revoke old tokens: %w", err)
 		}
 		if _, err := s.tokens.WithTx(tx).Create(ctx, RefreshTokens{
@@ -107,17 +107,23 @@ func (s *RefreshStore) Validate(ctx context.Context, userID uuid.UUID, rawToken 
 	return fmt.Errorf("refresh: validate: token not found")
 }
 
-// revokeAllSQL revokes every live refresh token for a user. Shared by RevokeAll and
-// the transactional Save so both express the invariant identically.
-const revokeAllSQL = `
-	UPDATE refresh_tokens
-	SET revoked = TRUE, updated_at = now()
-	WHERE user_id = $1 AND revoked = FALSE AND deleted_at IS NULL
-`
+// revokeAll revokes every live refresh token for a user, against ex — the
+// original *orm.DB (RevokeAll) or a transaction (Save's own revoke-then-
+// insert) — so both express the invariant through the SAME UpdateQuery
+// builder call.
+func (s *RefreshStore) revokeAll(ctx context.Context, ex orm.Executor, userID uuid.UUID) (int64, error) {
+	return s.tokens.UpdateQuery().
+		Set("revoked", true).
+		Set("updated_at", time.Now()).
+		Where(orm.Cond("user_id = $1", userID)).
+		Where(orm.Cond("revoked = FALSE")).
+		Where(orm.Cond("deleted_at IS NULL")).
+		Exec(ctx, ex)
+}
 
 // RevokeAll soft-revokes all refresh tokens for userID.
 func (s *RefreshStore) RevokeAll(ctx context.Context, userID uuid.UUID) error {
-	if _, err := s.db.Exec(ctx, revokeAllSQL, userID); err != nil {
+	if _, err := s.revokeAll(ctx, s.db, userID); err != nil {
 		return fmt.Errorf("refresh: revoke all: %w", err)
 	}
 	return nil

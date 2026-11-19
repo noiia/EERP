@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
@@ -25,8 +26,12 @@ import {
   type FilterOperator,
   type ViewDescriptor,
 } from './descriptor'
+import { GeoCenterInput, ZoneRecordInput } from './geo-filter-inputs'
+import { RelationFilterInput } from './relation-filter-input'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
+import { useRelationLabels } from './use-relation-labels'
 import { useRelationOps } from './relation-ops'
+import { usePhone } from './use-phone'
 import { useSavedFilterOps, type SavedFilterRecord } from './saved-filter-ops'
 import { useSessionStore } from './session-store'
 import type { HasId } from './stores'
@@ -106,10 +111,15 @@ function defaultLiveFields<T>(descriptor: ViewDescriptor<T>): string[] {
  * server-side (core/orm/internal/crud.checkColumn). */
 function filterableFields<T>(descriptor: ViewDescriptor<T>, callerGroups: string[]): FieldDescriptor[] {
   const names = descriptor.search?.filterableFields
-  const candidates = names
-    ? descriptor.fields.filter((f) => names.includes(f.name))
-    : descriptor.fields
+  const all = allFields(descriptor)
+  const candidates = names ? all.filter((f) => names.includes(f.name)) : all
   return candidates.filter((f) => isFieldVisible(f, {}, callerGroups))
+}
+
+/** The view's fields plus its filter-only ones (search.filterOnlyFields). */
+function allFields<T>(descriptor: ViewDescriptor<T>): FieldDescriptor[] {
+  const extra = descriptor.search?.filterOnlyFields
+  return extra?.length ? [...descriptor.fields, ...extra] : descriptor.fields
 }
 
 /** Fields offered in the Group-by section: declared `search.groupableFields`
@@ -123,6 +133,25 @@ function groupableFields<T>(descriptor: ViewDescriptor<T>, callerGroups: string[
   return candidates.filter((f) => isFieldVisible(f, {}, callerGroups))
 }
 
+type Zone = { entity: string; field: string; label: string }
+
+/** The zone entities a point field declares via widgetOptions.zones. */
+function zonesOf(field: FieldDescriptor): Zone[] {
+  const z = field.widgetOptions?.zones
+  return Array.isArray(z) ? (z as unknown as Zone[]) : []
+}
+
+/** Chip text for a geo filter ("Near (≤ 10 km)"), or null for the other operators. */
+function geoChipLabel(f: FilterCondition, t: (s: string) => string): string | null {
+  if (f.op === 'near') {
+    const meters = Number((f.value ?? '').split(',')[2])
+    return meters > 0 ? `${t('Near')} (≤ ${meters / 1000} km)` : t('Near')
+  }
+  if (f.op === 'inside') return t('Inside zone')
+  if (f.op === 'covers') return t('Covers point')
+  return null
+}
+
 /** Operators offered for a field, by type — text gets contains (+ eq for an
  * exact match); number/date get eq plus the four range comparisons ("between"
  * is just a gte row and an lte row on the same field); selection/relation/
@@ -134,12 +163,19 @@ function operatorsFor(field: FieldDescriptor): FilterOperator[] {
     case 'number':
     case 'date':
       return ['eq', 'gt', 'gte', 'lt', 'lte']
-    case 'selection':
     case 'relation':
+      // A many2many filter is resolved by the entity's handler, one id at a time.
+      return field.relation?.kind === 'many2many' ? ['eq'] : ['eq', 'in']
+    case 'selection':
     case 'boolean':
       return ['eq', 'in']
+    case 'geo':
+      if (field.widget === 'shape') return ['covers']
+      // 'inside' needs zone entities to pick from; without them it can't be built.
+      return zonesOf(field).length ? ['near', 'inside'] : ['near']
     case 'totals':
     case 'address':
+    case 'distance':
       // Never filterable/groupable in practice through THIS field — a
       // computed recap or composite field only ever appears on a form, never
       // a tree view's fields, and address's real filterable data lives on
@@ -149,7 +185,27 @@ function operatorsFor(field: FieldDescriptor): FilterOperator[] {
   }
 }
 
-function toListOptions(filters: FilterCondition[], pageSize: number): EntityListOptions {
+/** What the UI shows for each operator: math symbols for the comparisons,
+ * translatable words for the two non-comparisons. The stored/serialized
+ * operator stays the short code (it's what saved filters and the list
+ * endpoint's gt[]/lte[]… params speak). */
+const OPERATOR_LABEL: Record<FilterOperator, string> = {
+  eq: '=',
+  gt: '>',
+  gte: '≥',
+  lt: '<',
+  lte: '≤',
+  contains: 'contains',
+  in: 'in',
+  near: 'near',
+  inside: 'inside zone of',
+  covers: 'covers',
+}
+
+const isLonLat = (p: string[]) =>
+  p.length >= 2 && p[0] !== '' && p[1] !== '' && Number.isFinite(Number(p[0])) && Number.isFinite(Number(p[1]))
+
+export function toListOptions(filters: FilterCondition[], pageSize: number): EntityListOptions {
   const options: EntityListOptions = { pageSize }
   for (const f of filters) {
     switch (f.op) {
@@ -174,6 +230,23 @@ function toListOptions(filters: FilterCondition[], pageSize: number): EntityList
       case 'lte':
         ;(options.lte ??= {})[f.field] = f.value ?? ''
         break
+      case 'near': {
+        const parts = (f.value ?? '').split(',')
+        if (!isLonLat(parts)) break
+        ;(options.near ??= {})[f.field] = `${parts[0]},${parts[1]}`
+        if (parts.length === 3 && Number.isFinite(Number(parts[2])) && parts[2] !== '' && Number(parts[2]) > 0)
+          (options.within ??= {})[f.field] = f.value as string
+        break
+      }
+      case 'inside':
+        if (f.value) (options.inside ??= {})[f.field] = f.value
+        break
+      case 'covers': {
+        const parts = (f.value ?? '').split(',')
+        if (!isLonLat(parts)) break
+        ;(options.covers ??= {})[f.field] = `${parts[0]},${parts[1]}`
+        break
+      }
     }
   }
   return options
@@ -222,9 +295,24 @@ export interface SearchBarProps<T extends HasId> {
   /** The records to fall back to when the query/filters are cleared —
    * TreeRenderer's own `initialData`. */
   fallback: T[]
+  /** Told the structured filters (as list options, no paging) every time they
+   * change — Graph mode aggregates server-side over the same rows (ADR-023).
+   * The free-text live search isn't included: it's autocomplete over a few
+   * fields, not a row filter. */
+  onFiltersChange?: (options: EntityListOptions | undefined) => void
+  /** The parent pages the filtered rows server-side itself (TreeRenderer with
+   * `RelationOps.listPage`): structured filters then only go through
+   * onFiltersChange, with no FETCH_LIMIT-capped fetch of their own. */
+  pagedByParent?: boolean
 }
 
-export function SearchBar<T extends HasId>({ descriptor, onResults, fallback }: SearchBarProps<T>) {
+export function SearchBar<T extends HasId>({
+  descriptor,
+  onResults,
+  fallback,
+  onFiltersChange,
+  pagedByParent = false,
+}: SearchBarProps<T>) {
   const t = useT()
   const relationOps = useRelationOps()
   const savedFilterOps = useSavedFilterOps()
@@ -262,8 +350,33 @@ export function SearchBar<T extends HasId>({ descriptor, onResults, fallback }: 
     [descriptor, callerGroups],
   )
 
+  // Relation filters and group-by values carry ids: show their records' labels.
+  const labelOf = useRelationLabels(allFields(descriptor), [
+    ...filters.flatMap((f): [string, unknown][] =>
+      (f.op === 'in' ? (f.values ?? []) : [f.value]).map((v) => [f.field, v]),
+    ),
+    ...(groupField ? (groupValues ?? []).map((v): [string, unknown] => [groupField, v.value]) : []),
+  ])
+
   const liveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => () => { if (liveTimer.current) clearTimeout(liveTimer.current) }, [])
+
+  // The URL's filter[<field>]=<value> on a filterable field starts the bar
+  // with that exact-match filter (e.g. a project form's link to its tasks).
+  const searchParams = useSearchParams()
+  // The query this bar last wrote itself (syncUrl): seeding from it again would drop
+  // the filters a URL can't carry (contains, ranges, in).
+  const written = useRef<string | null>(null)
+  useEffect(() => {
+    if (!searchParams) return
+    if (searchParams.toString() === written.current) return
+    const seeded: FilterCondition[] = filterFields.flatMap((f) => {
+      const value = searchParams.get(`filter[${f.name}]`)
+      return value ? [{ field: f.name, op: 'eq' as const, value }] : []
+    })
+    if (seeded.length > 0) void applyFilters(seeded)
+    // Seeds on navigation only (applyFilters is deliberately not a dependency).
+  }, [searchParams, filterFields])
 
   function onQueryChange(text: string) {
     setQuery(text)
@@ -300,9 +413,39 @@ export function SearchBar<T extends HasId>({ descriptor, onResults, fallback }: 
     }, LIVE_SEARCH_DEBOUNCE_MS)
   }
 
+  // Mirrors the bar's exact-match filters on filterable fields into the URL — the same
+  // filter[<field>]=<value> the seeding above reads — so leaving for a record and coming
+  // back (breadcrumb, browser Back) restores them, e.g. a task list pinned to a project.
+  // history.replaceState: Next syncs useSearchParams from it with no server round trip.
+  function syncUrl(next: FilterCondition[]) {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    for (const f of filterFields) params.delete(`filter[${f.name}]`)
+    const names = new Set(filterFields.map((f) => f.name))
+    for (const f of next) {
+      if (f.op === 'eq' && names.has(f.field) && f.value !== '' && f.value != null) params.set(`filter[${f.field}]`, String(f.value))
+    }
+    const query = params.toString()
+    written.current = query
+    if (query === window.location.search.replace(/^\?/, '')) return
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`)
+  }
+
   async function applyFilters(next: FilterCondition[]) {
     setFilters(next)
+    syncUrl(next)
     setAppliedSavedFilter(null)
+    if (onFiltersChange) {
+      const options = toListOptions(next, FETCH_LIMIT)
+      delete options.pageSize
+      onFiltersChange(next.length > 0 ? options : undefined)
+    }
+    if (pagedByParent) {
+      // Filters replace any live-typed quick-find result.
+      if (liveTimer.current) clearTimeout(liveTimer.current)
+      setQuery('')
+      return
+    }
     if (!relationOps) {
       if (next.length === 0) onResults(fallback)
       return
@@ -421,25 +564,31 @@ export function SearchBar<T extends HasId>({ descriptor, onResults, fallback }: 
     })
   }
 
+  const phone = usePhone()
   const menuOpen = Boolean(anchorEl)
   const stopKeyPropagation = (e: React.KeyboardEvent) => e.stopPropagation()
+  const draftRelation = filterFields.find((f) => f.name === draftField && f.type === 'relation' && f.relation)
 
   return (
-    <Box sx={{ mb: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+    <Box sx={{ mb: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, ...(phone && { flex: 1, minWidth: 0 }) }}>
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', ...(phone && { width: '100%' }) }}>
         <TextField
           size="small"
           placeholder={t('Search…')}
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
           onClick={(e) => void openMenu(e.currentTarget)}
-          sx={{
-            width: `${layout.searchBarMaxWidth}px`,
-            maxWidth: '100%',
-            [`@media (max-width: ${layout.searchBarNarrowBreakpoint}px)`]: {
-              width: layout.searchBarNarrowWidth,
-            },
-          }}
+          sx={
+            phone
+              ? { width: '100%' }
+              : {
+                  width: `${layout.searchBarMaxWidth}px`,
+                  maxWidth: '100%',
+                  [`@media (max-width: ${layout.searchBarNarrowBreakpoint}px)`]: {
+                    width: layout.searchBarNarrowWidth,
+                  },
+                }
+          }
           slotProps={{
             input: {
               startAdornment: (
@@ -468,7 +617,11 @@ export function SearchBar<T extends HasId>({ descriptor, onResults, fallback }: 
               <Chip
                 key={`${f.field}-${f.op}-${i}`}
                 size="small"
-                label={`${fieldLabelOf(descriptor, f.field)} ${f.op} ${f.op === 'in' ? (f.values ?? []).join(', ') : f.value}`}
+                label={
+                  geoChipLabel(f, t)
+                    ? `${fieldLabelOf(descriptor, f.field)}: ${geoChipLabel(f, t)}`
+                    : `${fieldLabelOf(descriptor, f.field)} ${t(OPERATOR_LABEL[f.op])} ${f.op === 'in' ? (f.values ?? []).map((v) => labelOf(f.field, v)).join(', ') : labelOf(f.field, f.value)}`
+                }
                 onDelete={() => removeFilter(i)}
               />
             ))
@@ -487,7 +640,10 @@ export function SearchBar<T extends HasId>({ descriptor, onResults, fallback }: 
             // (anchorOrigin/transformOrigin above) — the bar's own live
             // width, not a fixed guess, so it tracks the narrow-viewport
             // breakpoint automatically.
-            sx: { width: anchorEl ? anchorEl.offsetWidth - 20 : 360, maxWidth: '90vw' },
+            // On phone the bar is too narrow for the Filters row: full screen width, inside the Popover's 16px edge margin.
+            sx: phone
+              ? { width: 'calc(100vw - 32px)', maxWidth: 'none' }
+              : { width: anchorEl ? anchorEl.offsetWidth - 20 : 360, maxWidth: '90vw' },
           },
         }}
       >
@@ -502,6 +658,7 @@ export function SearchBar<T extends HasId>({ descriptor, onResults, fallback }: 
               onChange={(e) => {
                 setDraftField(e.target.value)
                 setDraftOp('')
+                setDraftValue('')
               }}
               sx={{ minWidth: 90 }}
             >
@@ -520,7 +677,10 @@ export function SearchBar<T extends HasId>({ descriptor, onResults, fallback }: 
               value={draftOp}
               disabled={!draftField}
               onKeyDown={stopKeyPropagation}
-              onChange={(e) => setDraftOp(e.target.value as FilterOperator)}
+              onChange={(e) => {
+                setDraftOp(e.target.value as FilterOperator)
+                setDraftValue('')
+              }}
               sx={{ minWidth: 80 }}
             >
               <MenuItem value="">
@@ -528,20 +688,38 @@ export function SearchBar<T extends HasId>({ descriptor, onResults, fallback }: 
               </MenuItem>
               {(draftField ? operatorsFor(filterFields.find((f) => f.name === draftField)!) : []).map((op) => (
                 <MenuItem key={op} value={op}>
-                  {op}
+                  {t(OPERATOR_LABEL[op])}
                 </MenuItem>
               ))}
             </Select>
-            <TextField
-              size="small"
-              placeholder={draftOp === 'in' ? t('a, b, c') : t('Value')}
-              value={draftValue}
-              onKeyDown={stopKeyPropagation}
-              onChange={(e) => setDraftValue(e.target.value)}
-            />
+            {draftOp === 'near' || draftOp === 'covers' ? (
+              <GeoCenterInput value={draftValue} onChange={setDraftValue} radius={draftOp === 'near'} />
+            ) : draftOp === 'inside' ? (
+              <ZoneRecordInput
+                zones={zonesOf(filterFields.find((f) => f.name === draftField)!)}
+                value={draftValue}
+                onChange={setDraftValue}
+              />
+            ) : draftRelation && (draftOp === 'eq' || draftOp === 'in') ? (
+              <RelationFilterInput
+                key={`${draftField}:${draftOp}`}
+                field={draftRelation}
+                multiple={draftOp === 'in'}
+                onChange={setDraftValue}
+              />
+            ) : (
+              <TextField
+                size="small"
+                placeholder={draftOp === 'in' ? t('a, b, c') : t('Value')}
+                value={draftValue}
+                onKeyDown={stopKeyPropagation}
+                onChange={(e) => setDraftValue(e.target.value)}
+              />
+            )}
             <IconButton
               size="small"
               aria-label={t('Add filter')}
+              sx={phone ? { minWidth: 40, minHeight: 40 } : undefined}
               disabled={!draftField || !draftOp}
               onClick={addFilter}
             >
@@ -567,7 +745,7 @@ export function SearchBar<T extends HasId>({ descriptor, onResults, fallback }: 
                   <Chip
                     key={v.value}
                     size="small"
-                    label={`${v.value || t('(none)')} (${v.total})`}
+                    label={`${(v.value && labelOf(groupField, v.value)) || t('(none)')} (${v.total})`}
                     onClick={() => applyGroupValue(groupField, v.value)}
                   />
                 ))}
@@ -633,6 +811,6 @@ export function SearchBar<T extends HasId>({ descriptor, onResults, fallback }: 
 }
 
 function fieldLabelOf<T>(descriptor: ViewDescriptor<T>, name: string): string {
-  const field = descriptor.fields.find((f) => f.name === name)
+  const field = allFields(descriptor).find((f) => f.name === name)
   return field ? fieldLabel(field) : name
 }

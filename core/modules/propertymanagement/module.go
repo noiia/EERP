@@ -33,8 +33,7 @@ func init() {
 // the generic list endpoint (docs/CLAUDE.md's FIELD_WIDGETS doc comment).
 type PropertyManagement struct {
 	model.BaseModel
-	TenantID uuid.UUID `db:"tenant_id" json:"tenant_id"`
-	Name     string    `db:"name" json:"name"`
+	Name string `db:"name" json:"name"`
 	// Address* — the type: 'address' composite field's 7 sibling columns,
 	// prefixed "address_" to match the frontend field name 'address'.
 	AddressNumber     *int   `db:"address_number" json:"address_number"`
@@ -44,9 +43,16 @@ type PropertyManagement struct {
 	AddressCity       string `db:"address_city" json:"address_city"`
 	AddressState      string `db:"address_state" json:"address_state"`
 	AddressCountry    string `db:"address_country" json:"address_country"`
+	// GeoLocation (the building) and Parcel (its land) — ADR-029.
+	GeoLocation *orm.GeoPoint `db:"geo_location,index=gist" json:"geo_location"`
+	Parcel      *orm.GeoShape `db:"parcel,index=gist" json:"parcel"`
 	// FloorArea is in the workspace's own unit (m²/sqft — free-form like
 	// warehouse.Product.Unit, this module has no opinion).
 	FloorArea float64 `db:"floor_area" json:"floor_area"`
+	// UomID: many2one -> warehouse.ProductUoms, the unit FloorArea is
+	// expressed in (m²/sqft/...). Optional — a property predating this field
+	// simply has no unit picked.
+	UomID *uuid.UUID `db:"uom_id" json:"uom_id"`
 	// LoanAmount/RentPrice are plain editable figures on the property's own
 	// form — the mortgage/loan this property carries, and the monthly rent
 	// its own "apartment" billing line (BillingLine, below) defaults to when
@@ -66,6 +72,12 @@ type PropertyManagement struct {
 	// demand it in every POST body, even though nothing before the first
 	// Generate click ever has a month to report.
 	LastReceiptMonth *string `db:"last_receipt_month" json:"last_receipt_month"`
+	// GeneratedAt is the generated_at of this property's latest PARENT rent
+	// receipt, copied here by the Generate Rent Receipt action so the
+	// property's Graph view (which aggregates property rows, and can't join)
+	// can bucket loan_amount/rent_price by receipt date. Pointer: nil until
+	// the first receipt (backfilled from existing receipts in Migrate).
+	GeneratedAt *time.Time `db:"generated_at" json:"generated_at"`
 }
 
 // PropertyManagementTenant is the many2many junction behind Property's
@@ -74,7 +86,6 @@ type PropertyManagement struct {
 // tenants per property, no outbound FK added to Contact).
 type PropertyManagementTenant struct {
 	model.BaseModel
-	TenantID             uuid.UUID `db:"tenant_id" json:"tenant_id"`
 	PropertyManagementID uuid.UUID `db:"property_management_id" json:"property_management_id"`
 	ContactID            uuid.UUID `db:"contact_id" json:"contact_id"`
 }
@@ -86,7 +97,6 @@ type PropertyManagementTenant struct {
 // backend work needed for that half, pictures is entity-agnostic already.
 type PropertyManagementPhoto struct {
 	model.BaseModel
-	TenantID             uuid.UUID `db:"tenant_id" json:"tenant_id"`
 	PropertyManagementID uuid.UUID `db:"property_management_id" json:"property_management_id"`
 	Position             int       `db:"position" json:"position"`
 }
@@ -96,7 +106,6 @@ type PropertyManagementPhoto struct {
 // real FK same shape as sale_line belonging to one invoice).
 type PropertyManagementEquipment struct {
 	model.BaseModel
-	TenantID             uuid.UUID `db:"tenant_id" json:"tenant_id"`
 	PropertyManagementID uuid.UUID `db:"property_management_id" json:"property_management_id"`
 	Name                 string    `db:"name" json:"name"`
 	Quantity             int       `db:"quantity" json:"quantity"`
@@ -120,7 +129,6 @@ type PropertyManagementEquipment struct {
 // selection-field shape as sale.Invoice.Status.
 type PropertyManagementEquipmentStatus struct {
 	model.BaseModel
-	TenantID                      uuid.UUID  `db:"tenant_id" json:"tenant_id"`
 	PropertyManagementEquipmentID uuid.UUID  `db:"property_management_equipment_id" json:"property_management_equipment_id"`
 	Date                          *time.Time `db:"date" json:"date"`
 	// State: "good", "damaged", "under_repair", "out_of_service".
@@ -131,7 +139,6 @@ type PropertyManagementEquipmentStatus struct {
 // scoped to equipment instead of the property itself.
 type PropertyManagementEquipmentPhoto struct {
 	model.BaseModel
-	TenantID                      uuid.UUID `db:"tenant_id" json:"tenant_id"`
 	PropertyManagementEquipmentID uuid.UUID `db:"property_management_equipment_id" json:"property_management_equipment_id"`
 	Position                      int       `db:"position" json:"position"`
 }
@@ -148,7 +155,6 @@ type PropertyManagementEquipmentPhoto struct {
 // beyond its own "no quantity column ⇒ treat as 1" fallback.
 type PropertyManagementBillingLine struct {
 	model.BaseModel
-	TenantID             uuid.UUID `db:"tenant_id" json:"tenant_id"`
 	PropertyManagementID uuid.UUID `db:"property_management_id" json:"property_management_id"`
 	Name                 string    `db:"name" json:"name"`
 	// UnitPrice is "free taxes" (excl. tax) — same field name as
@@ -188,18 +194,27 @@ type PropertyManagementBillingLine struct {
 // resolve/compute against the tax's Rate/Amount/Kind).
 type PropertyManagementBillingLineTax struct {
 	model.BaseModel
-	TenantID                        uuid.UUID `db:"tenant_id" json:"tenant_id"`
 	PropertyManagementBillingLineID uuid.UUID `db:"property_management_billing_line_id" json:"property_management_billing_line_id"`
 	SaleTaxID                       uuid.UUID `db:"sale_tax_id" json:"sale_tax_id"`
 }
 
-// PropertyManagementRentReceipt is one generated rent receipt — APPEND-ONLY
-// (handler.go hand-mounts Update/Delete to always reject, a real backend
-// guarantee mirroring internal/chatter's own append-only posture, not just a
-// hidden UI control). Snapshots what the PDF needs to show at generation
-// time — same "capture at document time, don't live-join" discipline
-// sale.SaleLine/Invoice already follow, since a receipt must keep reading
-// correctly even if the property/tenants are edited afterward.
+// PropertyManagementRentReceipt is one generated rent receipt — append-ONLY,
+// never DELETED (handler.go hand-mounts RejectReceiptDelete to always reject
+// DELETE, a real backend guarantee mirroring internal/chatter's own
+// append-only posture, not just a hidden UI control) but fully EDITABLE:
+// every field, including ReceiptFile, rides the generic CRUD PUT like any
+// other entity's, so a generated receipt can be corrected after the fact.
+// Fields still snapshot what the PDF needs to show at generation time — same
+// "capture at document time, don't live-join" discipline sale.SaleLine/
+// Invoice already follow, since a receipt must keep reading correctly even
+// if the property/tenants are edited afterward; editing a receipt's own
+// fields edits THIS snapshot, it never reaches back to re-read the property.
+// A CHILD row's own "Regenerate report" header button
+// (property_management_rent_receipt_views.ts's
+// propertymanagement.regenerateReceipt) is how a NEW version is produced
+// instead — a sibling row (same ParentID) with its own fresh snapshot/PDF,
+// so every regeneration is kept side by side in the parent's own "Tenant
+// receipts" notebook table (below) rather than overwriting one in place.
 //
 // One generation click produces a PARENT row (one per property+period,
 // PropertyManagementID set, ParentID nil, no PDF of its own — TenantNames
@@ -211,11 +226,11 @@ type PropertyManagementBillingLineTax struct {
 // The property form's own rent_receipts field (property_management_views.ts,
 // inverseField: property_management_id) therefore lists PARENTS only —
 // children never match that filter, since they carry no
-// property_management_id — and a parent's own read-only form embeds its
-// children through a SECOND relation field (inverseField: parent_id).
+// property_management_id — and a parent's own form embeds its children
+// (every generated version, original and regenerated alike) through a
+// SECOND relation field (inverseField: parent_id).
 type PropertyManagementRentReceipt struct {
 	model.BaseModel
-	TenantID uuid.UUID `db:"tenant_id" json:"tenant_id"`
 	// PropertyManagementID: set on a parent row, nil on a child (see the
 	// type doc comment above). A pointer for the same reason
 	// LastReceiptMonth is: a child's Create body omits it entirely.
@@ -240,8 +255,13 @@ type PropertyManagementRentReceipt struct {
 	// FloorArea snapshots PropertyManagement.FloorArea at generation time —
 	// the printed report's own "Property management form content" the user
 	// asked for, beyond the address.
-	FloorArea   float64 `db:"floor_area" json:"floor_area"`
-	TenantNames string  `db:"tenant_names" json:"tenant_names"`
+	FloorArea float64 `db:"floor_area" json:"floor_area"`
+	// Uom snapshots the property's UomID label (e.g. "m²") at generation
+	// time — same "capture at document time" reasoning as PropertyName/
+	// PropertyAddress/FloorArea, and why this is text, not a FK: a receipt
+	// must keep reading correctly even if product_uoms changes later.
+	Uom         string `db:"uom" json:"uom"`
+	TenantNames string `db:"tenant_names" json:"tenant_names"`
 	// RentPrice snapshots PropertyManagement.RentPrice at generation time —
 	// the report's own headline figure (printed above the billing-lines
 	// table), same "capture at document time" reasoning as PropertyName/
@@ -275,11 +295,21 @@ type PropertyManagementRentReceipt struct {
 // literal copy, not a re-resolve.
 type PropertyManagementRentReceiptLine struct {
 	model.BaseModel
-	TenantID      uuid.UUID `db:"tenant_id" json:"tenant_id"`
 	RentReceiptID uuid.UUID `db:"rent_receipt_id" json:"rent_receipt_id"`
 	Name          string    `db:"name" json:"name"`
 	UnitPrice     float64   `db:"unit_price" json:"unit_price"`
-	TaxRate       float64   `db:"tax_rate" json:"tax_rate"`
+	// TaxRate is legacy — kept only so an OLD receipt line (generated before
+	// TaxLabel existed) still reads back correctly; generateRentReceipt
+	// (property_management_views.ts) no longer writes it. TaxLabel is what
+	// every new line carries instead: the source billing line's own `taxes`
+	// many2many (property_management_billing_line_tax -> sale.SaleTax),
+	// resolved to a printable "name (rate%)"/"name (amount)" comma-joined
+	// string at generation time — a plain snapshot, not a live FK, same
+	// "capture at document time" discipline as every other field here (a
+	// tax's own name/rate changing later must never alter an already-
+	// generated receipt).
+	TaxRate  float64 `db:"tax_rate" json:"tax_rate"`
+	TaxLabel string  `db:"tax_label" json:"tax_label"`
 	// Total is copied VERBATIM from the source PropertyManagementBillingLine
 	// at generation time (property_management_views.ts's
 	// generateRentReceipt) — already fully computed server-side there
@@ -353,6 +383,18 @@ func (m *propertyManagementModule) Migrate(ctx context.Context, db *orm.DB) erro
 		ALTER TABLE property_management_rent_receipt ALTER COLUMN property_management_id DROP NOT NULL
 	`); err != nil {
 		return fmt.Errorf("propertymanagement: drop rent receipt property_management_id NOT NULL: %w", err)
+	}
+	// Backfill generated_at from each property's latest parent receipt (see
+	// PropertyManagement.GeneratedAt). Idempotent: only fills NULLs.
+	if _, err := db.Exec(ctx, `
+		UPDATE property_management p SET generated_at = r.generated_at
+		FROM (SELECT DISTINCT ON (property_management_id) property_management_id, generated_at
+		      FROM property_management_rent_receipt
+		      WHERE is_parent = true AND property_management_id IS NOT NULL AND generated_at IS NOT NULL
+		      ORDER BY property_management_id, generated_at DESC) r
+		WHERE r.property_management_id = p.id AND p.generated_at IS NULL
+	`); err != nil {
+		return fmt.Errorf("propertymanagement: backfill generated_at: %w", err)
 	}
 	return nil
 }

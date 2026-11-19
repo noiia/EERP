@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { DisplayMode } from '../api/view-fields'
-import { DEFAULT_PALETTE, type BrandColorKey, type ThemePalette } from './palette'
+import { DEFAULT_PALETTE, LEGACY_DEFAULT_PALETTE, type BrandColorKey, type ThemePalette } from './palette'
 import { layout } from './tokens'
 
 // Cross-cutting UI state, persisted to localStorage so preferences survive reloads.
@@ -12,8 +12,13 @@ import { layout } from './tokens'
 
 export type ThemeMode = 'light' | 'dark'
 
+/** ERP rendering style: 'pretty' adds animations and shadows, 'performance'
+ * strips every transition/animation/shadow. ERP-only — the public site ignores it. */
+export type UiStyle = 'pretty' | 'performance'
+
 export interface UiState {
   theme: ThemeMode
+  uiStyle: UiStyle
   /** Brand colors driving the MUI theme; user-editable in Settings → Appearance. */
   palette: ThemePalette
   sidebarOpen: boolean
@@ -22,10 +27,14 @@ export interface UiState {
    * default — docs/roadmaps/list-view-modes.md). Purely a UI preference, so it
    * lives here rather than as server state. */
   viewMode: Record<string, DisplayMode>
+  /** The Kanban swimlanes toggle's last choice, per entity (docs/roadmaps/
+   * list-view-modes.md) — a per-user UI preference, off by default. */
+  swimlanes: Record<string, boolean>
   /** The form chatter panel's drag-resized width (px), shared across every
    * entity — a per-user layout preference, not per-entity like viewMode. */
   chatterWidth: number
   setTheme: (theme: ThemeMode) => void
+  setUiStyle: (uiStyle: UiStyle) => void
   /** Override a single brand color (live theming). */
   setPaletteColor: (key: BrandColorKey, value: string) => void
   /** Replace the whole palette at once. */
@@ -36,6 +45,7 @@ export interface UiState {
   setSidebar: (open: boolean) => void
   setLastRoute: (route: string | null) => void
   setViewMode: (entity: string, mode: DisplayMode) => void
+  setSwimlanes: (entity: string, on: boolean) => void
   setChatterWidth: (width: number) => void
 }
 
@@ -43,12 +53,15 @@ export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
       theme: 'light',
+      uiStyle: 'pretty',
       palette: DEFAULT_PALETTE,
       sidebarOpen: true,
       lastRoute: null,
       viewMode: {},
+      swimlanes: {},
       chatterWidth: layout.chatterWidthDefault,
       setTheme: (theme) => set({ theme }),
+      setUiStyle: (uiStyle) => set({ uiStyle }),
       setPaletteColor: (key, value) =>
         set((state) => ({ palette: { ...state.palette, [key]: value } })),
       setPalette: (palette) => set({ palette }),
@@ -58,19 +71,28 @@ export const useUiStore = create<UiState>()(
       setLastRoute: (lastRoute) => set({ lastRoute }),
       setViewMode: (entity, mode) =>
         set((state) => ({ viewMode: { ...state.viewMode, [entity]: mode } })),
+      setSwimlanes: (entity, on) =>
+        set((state) => ({ swimlanes: { ...state.swimlanes, [entity]: on } })),
       setChatterWidth: (chatterWidth) => set({ chatterWidth }),
     }),
     {
       name: 'eerp-ui',
       version: 1,
       // Older persisted state (pre-palette) merges with no `palette` key; fall back to
-      // the default so the theme always has a complete palette.
+      // the default so the theme always has a complete palette. A browser still holding
+      // the previous default palette verbatim never picked it (it was only ever the
+      // default), so it moves to the current one; any customized palette is kept.
       merge: (persisted, current) => {
         const saved = (persisted ?? {}) as Partial<UiState>
+        const keepsLegacyDefault =
+          saved.palette != null &&
+          (Object.keys(LEGACY_DEFAULT_PALETTE) as BrandColorKey[]).every(
+            (k) => saved.palette?.[k]?.toUpperCase() === LEGACY_DEFAULT_PALETTE[k],
+          )
         return {
           ...current,
           ...saved,
-          palette: { ...DEFAULT_PALETTE, ...(saved.palette ?? {}) },
+          palette: keepsLegacyDefault ? DEFAULT_PALETTE : { ...DEFAULT_PALETTE, ...(saved.palette ?? {}) },
         }
       },
     },

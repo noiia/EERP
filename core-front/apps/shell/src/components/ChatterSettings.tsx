@@ -1,11 +1,10 @@
 'use client'
 import { useState } from 'react'
-import Alert from '@mui/material/Alert'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import Stack from '@mui/material/Stack'
 import Switch from '@mui/material/Switch'
 import Typography from '@mui/material/Typography'
-import { effectiveChatterVisible, useT, type ChatterVisibilityConfig } from '@eerp/core-front'
+import { type ChatterVisibilityConfig, effectiveChatterVisible, useT, ViewBanner } from '@eerp/core-front'
 import { setEntityChatterVisibility } from '@/lib/chatter-visibility'
 
 // Settings -> Apps -> :module: whether each of this app's forms renders the
@@ -85,7 +84,7 @@ export default function ChatterSettings({
           {t('Changing chatter visibility requires the settings:views:write permission.')}
         </Typography>
       )}
-      {error && <Alert severity="error">{error}</Alert>}
+      {error && <ViewBanner status="error">{error}</ViewBanner>}
     </Stack>
   )
 }

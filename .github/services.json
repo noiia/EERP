@@ -1,0 +1,20 @@
+[
+  {
+    "name": "core",
+    "image": "eerp-core",
+    "dockerfile": "core/Dockerfile",
+    "paths": ["core/**"]
+  },
+  {
+    "name": "core-front",
+    "image": "eerp-core-front",
+    "dockerfile": "core-front/Dockerfile",
+    "paths": ["core-front/**", "core/modules/**", "eerp-config.json"]
+  },
+  {
+    "name": "pdf-service",
+    "image": "eerp-pdf-service",
+    "dockerfile": "tools/pdf-service/Dockerfile",
+    "paths": ["tools/pdf-service/**"]
+  }
+]
