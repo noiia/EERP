@@ -144,7 +144,7 @@ export function Dsm({ tasks, config, onOpen }: DsmProps) {
           <tbody>
             {rows.map((row, r) => (
               <tr key={row.id}>
-                <th data-testid={`dsm-row-${r}`} scope="row" style={{ ...headerStyle('left'), textAlign: 'left', maxWidth: 240 }}>
+                <th data-testid={`dsm-row-${r}`} scope="row" style={{ ...headerStyle('left'), textAlign: 'left', maxWidth: 240, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
                   {row.name}
                 </th>
                 {rows.map((col, c) => {

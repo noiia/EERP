@@ -45,6 +45,8 @@ export interface RaciProps {
 
 /** The roles a cell holds, in R/A/C/I order. */
 const lettersOf = (r: Roles): RaciRole[] => RACI_ROLES.filter((role) => role in r)
+/** Header text capped at 40 characters (the full text stays in the title). */
+const clip = (s: string) => (s.length > 40 ? `${s.slice(0, 39)}…` : s)
 const wrap = { whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word' } as const
 
 /**
@@ -103,7 +105,7 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
       const ids = [...new Set([manager, ...members, ...rows.map((r) => String(r.user_id ?? ''))].filter(Boolean))]
       const users: RelationRecord[] = []
       for (let i = 0; i < ids.length; i += USER_CHUNK) users.push(...(await paged('users', { in: { id: ids.slice(i, i + USER_CHUNK) } })))
-      const labelOf = new Map(users.map((u) => [u.id, String(u[userLabelField] ?? u.id)]))
+      const labelOf = new Map(users.map((u) => [u.id, String(u[userLabelField] || String(u.email ?? '').split('@')[0] || u.id)]))
       const cols = ids.map((id) => ({ id, label: labelOf.get(id) ?? id }))
       const map: Record<string, Roles> = {}
       for (const r of rows) {
@@ -312,8 +314,8 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
               <tr>
                 <th style={{ ...headerStyle, textAlign: 'left' }} aria-label="corner" />
                 {people.map((p) => (
-                  <th key={p.id} data-testid={`raci-col-${p.id}`} style={{ ...headerStyle, minWidth: 96, maxWidth: 160 }}>
-                    {p.label}
+                  <th key={p.id} data-testid={`raci-col-${p.id}`} title={p.label} style={{ ...headerStyle, minWidth: 96, maxWidth: '40ch', whiteSpace: 'nowrap', verticalAlign: 'bottom' }}>
+                    {clip(p.label)}
                   </th>
                 ))}
               </tr>
@@ -324,8 +326,8 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
                   <th data-testid={`raci-row-${task.id}`} style={{ ...headerStyle, textAlign: 'left', minWidth: 160, maxWidth: 280, fontWeight: 'normal' }}>
                     <Stack direction="row" sx={{ alignItems: 'flex-start' }}>
                       {rowCheckbox(task.id, task.name)}
-                      <Box>
-                        {task.name}
+                      <Box title={task.name}>
+                        {clip(task.name)}
                         {!accountables(task.id) ? (
                           <Typography variant="caption" color="warning.main" sx={{ display: 'block' }}>
                             {t('No one accountable')}

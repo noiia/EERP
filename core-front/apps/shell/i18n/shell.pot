@@ -3119,3 +3119,12 @@ msgstr ""
 
 msgid "Records: {n}"
 msgstr ""
+
+msgid "Add task"
+msgstr ""
+
+msgid "Remove from diagram"
+msgstr ""
+
+msgid "No match"
+msgstr ""

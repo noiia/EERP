@@ -3251,3 +3251,12 @@ msgstr "Abandonner les modifications"
 
 msgid "Records: {n}"
 msgstr "Enregistrements : {n}"
+
+msgid "Add task"
+msgstr "Ajouter une tâche"
+
+msgid "Remove from diagram"
+msgstr "Retirer du diagramme"
+
+msgid "No match"
+msgstr "Aucun résultat"

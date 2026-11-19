@@ -5,6 +5,7 @@ import { ApiError } from '../../api/errors'
 import { RelationOpsProvider, type RelationOps } from '../relation-ops'
 import { setViewportWidth } from '../../test/viewport'
 import { MatrixRenderer, type MatrixTask } from './matrix-renderer'
+import { humanDeadline } from './eisenhower'
 
 const push = vi.hoisted(() => vi.fn())
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }))
@@ -34,7 +35,7 @@ function task(id: string, extra: Record<string, unknown> = {}): MatrixTask {
 const BASE_CONFIG: MatrixConfig = {
   projectField: 'project_id',
   raciEntity: 'project_task_raci',
-  userLabelField: 'email',
+  userLabelField: 'display_name',
   dependencies: { entity: 'project_task_dependency', fromField: 'depends_on_id', toField: 'task_id' },
   priorityField: 'priority',
   deadlineField: 'deadline',
@@ -45,7 +46,7 @@ const BASE_CONFIG: MatrixConfig = {
 }
 
 const USERS = [
-  { id: 'm1', email: 'manager@ex.com' },
+  { id: 'm1', email: 'manager@ex.com', display_name: 'boss' },
   { id: 'u2', email: 'member@ex.com' },
   { id: 'u3', email: 'other@ex.com' },
   { id: 'u9', email: 'holder@ex.com' },
@@ -394,10 +395,10 @@ describe('MatrixRenderer RACI tab', () => {
     const header = await screen.findByTestId('raci-header')
     // Manager first, then the members in created_at order, then the role holder.
     expect(within(header).getAllByTestId(/raci-col-/).map((el) => el.textContent)).toEqual([
-      'manager@ex.com',
-      'member@ex.com',
-      'other@ex.com',
-      'holder@ex.com',
+      'boss',
+      'member',
+      'other',
+      'holder',
     ])
     // Rows in wbs_number order despite the shuffled fetch order (the row
     // cells carry the task id; the first distinct ids in reading order are
@@ -468,7 +469,7 @@ describe('MatrixRenderer RACI tab', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'Task t1' }))
     fireEvent.click(screen.getByRole('checkbox', { name: 'Task t3' }))
     fireEvent.mouseDown(within(screen.getByTestId('raci-bulk-user').parentElement!).getByRole('combobox'))
-    fireEvent.click(within(screen.getByRole('listbox')).getByText('member@ex.com'))
+    fireEvent.click(within(screen.getByRole('listbox')).getByText('member'))
     fireEvent.mouseDown(within(screen.getByTestId('raci-bulk-roles').parentElement!).getByRole('combobox'))
     fireEvent.click(within(screen.getByRole('listbox')).getByText('I'))
     fireEvent.keyDown(screen.getByRole('listbox'), { key: 'Escape' })
@@ -501,7 +502,7 @@ describe('MatrixRenderer RACI tab', () => {
     fireEvent.click(await screen.findByRole('tab', { name: 'RACI' }))
     const card = await screen.findByTestId('raci-card-t2')
     expect(within(card).getByText('R: –')).toBeInTheDocument()
-    expect(within(card).getByText('A: holder@ex.com')).toBeInTheDocument()
+    expect(within(card).getByText('A: holder')).toBeInTheDocument()
     expect(within(card).getByText('C: –')).toBeInTheDocument()
     expect(within(card).getByText('I: –')).toBeInTheDocument()
 
@@ -510,5 +511,17 @@ describe('MatrixRenderer RACI tab', () => {
     expect(within(dialog).getAllByRole('combobox')).toHaveLength(4) // one roles select per person
     expect(within(dialog).getByRole('button', { name: 'Save' })).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
+  })
+})
+
+describe('humanDeadline', () => {
+  const now = new Date(2026, 5, 15, 10, 0)
+  it('says the day relative to today, then the date', () => {
+    expect(humanDeadline(new Date(2026, 5, 16).toISOString(), now, 'en')).toMatch(/^tomorrow · Jun 16, 2026$/)
+    expect(humanDeadline(new Date(2026, 5, 13).toISOString(), now, 'en')).toMatch(/^2 days ago · /)
+  })
+  it('adds the time when not midnight, keeps garbage as is', () => {
+    expect(humanDeadline(new Date(2026, 5, 18, 14, 30).toISOString(), now, 'en')).toMatch(/^in 3 days · Jun 18, 2026, 2:30\s?PM$/)
+    expect(humanDeadline('nope', now, 'en')).toBe('nope')
   })
 })

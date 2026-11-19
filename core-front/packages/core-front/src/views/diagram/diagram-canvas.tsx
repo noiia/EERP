@@ -521,7 +521,8 @@ function Canvas(props: DiagramCanvasProps) {
       deletable: false,
       selected,
       sourcePosition: vertical ? Position.Bottom : Position.Right,
-      targetPosition: vertical ? Position.Top : Position.Left,
+      // A renderer may pick the side a box is entered from (WBS stacked children: the left).
+      targetPosition: n.targetPosition ?? (vertical ? Position.Top : Position.Left),
       ...(sizes[n.id] ? { measured: sizes[n.id] } : {}),
     }
     built.current.set(n.id, { src: n, position, size: sizes[n.id], selected, node })
