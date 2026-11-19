@@ -40,5 +40,9 @@
     "smtp_tls": "starttls",
     "smtp_user": "",
     "smtp_password": "",
-    "smtp_from": ""
+    "smtp_from": "",
+    "euro_office_url": "https://erp.example.com/euro-office",
+    "euro_office_internal_url": "http://euro-office",
+    "euro_office_storage_url": "http://core-back:8080",
+    "euro_office_jwt_secret": ""
 }

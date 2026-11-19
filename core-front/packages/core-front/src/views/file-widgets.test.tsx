@@ -93,11 +93,17 @@ const billingField: FieldDescriptor = {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('boolean/file', () => {
-  it('opens an attached OpenCloud note in the reader', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Attached note"}]}]}')))
-    renderWidget(billingField, stubClient({ find: vi.fn(async () => ({ ...meta, filename: 'invoice.ocnote' })) }), { value: true })
-    fireEvent.click(await screen.findByRole('link', { name: 'invoice.ocnote' }))
-    expect(await screen.findByText('Attached note')).toBeInTheDocument()
+  it('opens an attached Office document in the reader', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 503 })))
+    renderWidget(
+      billingField,
+      stubClient({ find: vi.fn(async () => ({ ...meta, filename: 'invoice.docx' })) }),
+      { value: true },
+    )
+    fireEvent.click(await screen.findByRole('link', { name: 'invoice.docx' }))
+    expect(
+      await screen.findByText('The document could not be opened. Try again or download the file.'),
+    ).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Save' })).toBeNull()
   })
   it('shows the unsaved-record hint instead of an upload surface with no id yet', () => {
@@ -127,11 +133,13 @@ describe('boolean/file', () => {
     const file = new File(['pdf-bytes'], 'invoice.pdf', { type: 'application/pdf' })
     fireEvent.change(input, { target: { files: [file] } })
 
-    await waitFor(() => expect(client.upload).toHaveBeenCalledWith(
-      { table: 'property_management_equipment', recordId: 'r1', field: 'billing_of_buy' },
-      file,
-      'invoice.pdf',
-    ))
+    await waitFor(() =>
+      expect(client.upload).toHaveBeenCalledWith(
+        { table: 'property_management_equipment', recordId: 'r1', field: 'billing_of_buy' },
+        file,
+        'invoice.pdf',
+      ),
+    )
     await waitFor(() => expect(onChange).toHaveBeenCalledWith(true))
     const link = await screen.findByText('invoice.pdf')
     expect(link.closest('a')).toHaveAttribute('href', '/api/attachments/a1')

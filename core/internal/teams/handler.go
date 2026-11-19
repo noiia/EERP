@@ -134,8 +134,8 @@ func Mount(g *echo.Group, h *Handler, upload echo.MiddlewareFunc) {
 	}
 	g.GET("/:id/files", h.ListFiles)
 	g.POST("/:id/files", h.UploadFile, upload)
+	g.POST("/:id/documents", h.CreateOfficeDocument)
 	g.PUT("/:id/files/:file", h.UpdateFile, upload)
-	g.PUT("/:id/files/:file/note", h.UpdateNote, upload)
 	g.DELETE("/:id/files/:file", h.DeleteFile)
 	g.POST("/:id/folders", h.CreateFolder)
 	g.PUT("/:id/folders/:folder", h.UpdateFolder)

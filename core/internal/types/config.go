@@ -90,6 +90,12 @@ func DefaultConfig() *Config {
 
 // Config fields
 type Config struct {
+	// Euro-Office is optional. Public URL reaches the editor from the browser;
+	// internal URL is the same server from Go; storage URL reaches Go from Office.
+	EuroOfficeURL         string `json:"euro_office_url" needed:"false"`
+	EuroOfficeInternalURL string `json:"euro_office_internal_url" needed:"false"`
+	EuroOfficeStorageURL  string `json:"euro_office_storage_url" needed:"false"`
+	EuroOfficeJWTSecret   string `json:"euro_office_jwt_secret" needed:"false"`
 	// MCP is opt-in and uses ERP Bearer JWTs. Writes additionally require both
 	// MCPAllowWrites and the existing API permission. Origins are exact matches;
 	// an empty list allows only native clients that send no Origin header.

@@ -149,7 +149,7 @@ fi
 
 # ── Secrets ─────────────────────────────────────────────────────────────────
 hex() { od -An -tx1 -N"$1" /dev/urandom | tr -d ' \n'; }
-SECRETS='POSTGRES_PASSWORD|EERP_MASTER_KEY|EERP_S3_ACCESS_KEY|EERP_S3_SECRET_KEY|GARAGE_RPC_SECRET'
+SECRETS='POSTGRES_PASSWORD|EERP_MASTER_KEY|EERP_S3_ACCESS_KEY|EERP_S3_SECRET_KEY|GARAGE_RPC_SECRET|EERP_EURO_OFFICE_JWT_SECRET'
 if [ "${ROTATE:-0}" = 1 ]; then
   say "ROTATE=1: regenerating secrets"
   sed -i -E "/^($SECRETS)=/d" .env
@@ -162,6 +162,7 @@ ensure EERP_MASTER_KEY "$(hex 32)"
 ensure EERP_S3_ACCESS_KEY "GK$(hex 12)"
 ensure EERP_S3_SECRET_KEY "$(hex 32)"
 ensure GARAGE_RPC_SECRET "$(hex 32)"
+ensure EERP_EURO_OFFICE_JWT_SECRET "$(hex 32)"
 # Read .env back literally (KEY=value per line), never executing it: values may hold
 # spaces, quotes or $ (an SMTP password), which sourcing the file would mangle.
 while IFS= read -r line || [ -n "$line" ]; do
@@ -192,11 +193,18 @@ if [ ! -f "$CONFIG" ]; then
   say "creating $CONFIG from its template"
   cp eerp-config.prod.example.json "$CONFIG"
 fi
+for key in euro_office_url euro_office_internal_url euro_office_storage_url euro_office_jwt_secret; do
+  rg -q "\"$key\"" "$CONFIG" || sed -i "1a\\    \"$key\": \"\"," "$CONFIG"
+done
 say "writing secrets and settings into $CONFIG"
 set_json master_key "$EERP_MASTER_KEY"
 set_json db_password "$POSTGRES_PASSWORD"
 set_json s3_access_key "$EERP_S3_ACCESS_KEY"
 set_json s3_secret_key "$EERP_S3_SECRET_KEY"
+set_json euro_office_jwt_secret "$EERP_EURO_OFFICE_JWT_SECRET"
+set_json euro_office_url "https://${ERP_HOST}/euro-office"
+set_json euro_office_internal_url "http://euro-office"
+set_json euro_office_storage_url "http://core-back:8080"
 set_json site_url "https://${SITE_HOST:-$ERP_HOST}"
 if [ -n "${SMTP_HOST:-}" ]; then
   set_json smtp_host "$SMTP_HOST"
@@ -273,7 +281,7 @@ bash infra/garage/init.sh
 say "starting the app"
 # core-back reads its config at boot only: recreate it alone (never db/garage).
 "${COMPOSE[@]}" up -d --wait --force-recreate --no-deps core-back
-"${COMPOSE[@]}" up -d --wait core-front pdf-service
+"${COMPOSE[@]}" up -d --wait core-front pdf-service euro-office
 # The gateway bind-mounts nginx.conf, whose content compose never watches: recreate it.
 "${COMPOSE[@]}" rm -sf api-gateway >/dev/null
 "${COMPOSE[@]}" up -d --wait api-gateway

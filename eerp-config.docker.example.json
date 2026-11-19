@@ -42,5 +42,9 @@
     "smtp_tls": "none",
     "smtp_from": "EERP <no-reply@eerp.localhost>",
     "website_tenant_id": "",
-    "public_rate_limit_per_minute": 300
+    "public_rate_limit_per_minute": 300,
+    "euro_office_url": "https://localhost/euro-office",
+    "euro_office_internal_url": "http://euro-office",
+    "euro_office_storage_url": "http://core-back:8080",
+    "euro_office_jwt_secret": ""
 }

@@ -36,7 +36,7 @@ export * from './address-widget'
 // The rich-text editor ships in its own chunk (lazy-widgets.tsx).
 export { HtmlEditor } from './lazy-widgets'
 export type { HtmlEditorProps } from './html-editor'
-export { NoteFileLink, OcNoteDialog, isOcNote, type OcNoteDialogProps } from './ocnote-file'
+export { OfficeFileLink, OfficeDialog, isOfficeFile, type OfficeSource } from './office-file'
 export { lazyComponent, preloadLazyComponents, type LazyComponent } from './lazy-component'
 export * from './carousel-widget'
 export * from './relation-summary-widget'
