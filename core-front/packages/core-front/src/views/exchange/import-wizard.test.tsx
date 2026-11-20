@@ -295,6 +295,74 @@ describe('ImportWizard', () => {
     expect(screen.getByText('5 of 5 selected')).toBeInTheDocument()
   })
 
+  it('reads every value shape the diff sends', async () => {
+    fetchMock.mockResolvedValue(
+      previewOK(
+        [
+          row({ key: 'task:mv:parent', kind: 'move', task: 'Design review', wbs: '2.1', field: 'parent', after: { parent: 'p9', after: 't7' } }),
+          row({ key: 'assign:u4:dev@x.io', kind: 'assign', task: 'Design review', wbs: '2.1', field: undefined, after: { task: 't1', email: 'dev@x.io', name: 'Dev' } }),
+          row({ key: 'task:cl:closed', kind: 'update', task: 'Design review', wbs: '2.1', field: 'closed', before: false, after: true }),
+          row({ key: 'milestone:m1:create', kind: 'milestone_create', task: 'Gate', wbs: '2.2', field: undefined, after: { id: 'm1', name: 'Sign-off' } }),
+        ],
+        [],
+      ),
+    )
+    renderWizard()
+    pickFile()
+    await screen.findByText('2.1 Design review')
+    expect(within(rowEl('task:mv:parent')).getByText('under p9, after t7')).toBeInTheDocument()
+    expect(within(rowEl('assign:u4:dev@x.io')).getByText('Dev')).toBeInTheDocument()
+    expect(within(rowEl('task:cl:closed')).getByText('No')).toBeInTheDocument()
+    expect(within(rowEl('task:cl:closed')).getByText('Yes')).toBeInTheDocument()
+    expect(within(rowEl('milestone:m1:create')).getByText('Sign-off')).toBeInTheDocument()
+  })
+
+  it('a transport failure shows the error rather than an empty review', async () => {
+    fetchMock.mockRejectedValue(new TypeError('fetch failed'))
+    renderWizard()
+    pickFile()
+    expect(await screen.findByText('INTERNAL_ERROR')).toBeInTheDocument()
+    expect(screen.queryByText('2.1 Design review')).toBeNull()
+  })
+
+  it('Back returns to the file picker', async () => {
+    fetchMock.mockResolvedValue(previewOK())
+    renderWizard()
+    pickFile()
+    await screen.findByText('2.1 Design review')
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    expect(screen.queryByText('2.1 Design review')).toBeNull()
+    expect(screen.getByLabelText('Plan file')).toBeInTheDocument()
+  })
+
+  it('a failed apply keeps the review and reports the server error', async () => {
+    fetchMock
+      .mockResolvedValueOnce(previewOK())
+      .mockResolvedValue(json({ error: { code: 'INTERNAL_ERROR', message: 'the write failed' } }, 500))
+    const onApplied = renderWizard()
+    pickFile()
+    await screen.findByText('2.1 Design review')
+    fireEvent.click(screen.getByRole('button', { name: 'Apply 4 changes' }))
+    expect(await screen.findByText('INTERNAL_ERROR')).toBeInTheDocument()
+    expect(screen.getByText('2.1 Design review')).toBeInTheDocument()
+    expect(onApplied).not.toHaveBeenCalled()
+  })
+
+  it('Done closes the wizard, as the toolbar Close button does', async () => {
+    const onClose = vi.fn()
+    fetchMock.mockResolvedValue(json({ applied: 4 }))
+    fetchMock.mockResolvedValueOnce(previewOK())
+    render(
+      <ImportWizard open onClose={onClose} onApplied={vi.fn()} config={config} scopeId="p1" format={format} />,
+    )
+    pickFile()
+    await screen.findByText('2.1 Design review')
+    fireEvent.click(screen.getByRole('button', { name: 'Apply 4 changes' }))
+    expect(await screen.findByText('4 changes applied')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }))
+    expect(onClose).toHaveBeenCalled()
+  })
+
   it('is full screen on phone', async () => {
     const { setViewportWidth } = await import('../../test/viewport')
     setViewportWidth(390)
