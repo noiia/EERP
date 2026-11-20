@@ -29,6 +29,7 @@ describe('effectiveViewFields', () => {
         ganttSchedule: null,
         ganttBaseline: null,
         ganttMilestones: null,
+        ganttExchange: null,
         kanbanSwimlanes: null,
         insights: null,
         matrix: null,
@@ -59,6 +60,7 @@ describe('effectiveViewFields', () => {
         ganttSchedule: null,
         ganttBaseline: null,
         ganttMilestones: null,
+        ganttExchange: null,
         kanbanSwimlanes: null,
         insights: null,
         matrix: null,
@@ -94,6 +96,7 @@ describe('effectiveViewFields', () => {
         ganttSchedule: null,
         ganttBaseline: null,
         ganttMilestones: null,
+        ganttExchange: null,
         kanbanSwimlanes: null,
         insights: null,
         matrix: null,
@@ -126,6 +129,7 @@ describe('effectiveViewFields', () => {
         ganttSchedule: null,
         ganttBaseline: null,
         ganttMilestones: null,
+        ganttExchange: null,
         kanbanSwimlanes: null,
         insights: null,
         matrix: null,
@@ -181,6 +185,7 @@ describe('availableDisplayModes', () => {
         ganttSchedule: null,
         ganttBaseline: null,
         ganttMilestones: null,
+        ganttExchange: null,
         kanbanSwimlanes: null,
         insights: null,
         matrix: null,
@@ -210,6 +215,7 @@ describe('availableDisplayModes', () => {
         ganttSchedule: null,
         ganttBaseline: null,
         ganttMilestones: null,
+        ganttExchange: null,
         kanbanSwimlanes: null,
         insights: null,
         matrix: null,
@@ -352,5 +358,28 @@ describe('gantt schedule, baseline and kanban swimlanes configs', () => {
       insights: null,
       matrix: null,
     })
+  })
+})
+
+describe('ganttExchange config', () => {
+  const ganttExchange = {
+    scopeField: 'project_id',
+    scopeEntity: 'project',
+    formats: [{ key: 'gan', label: 'GanttProject (.gan)', accept: '.gan' }],
+    canImport: 'project.canEditStages',
+  }
+
+  it('is module-declared only, and the Gantt toolbar stays off without it', () => {
+    expect(effectiveViewFields(undefined, EMPTY_VIEW_FIELDS).ganttExchange).toBeNull()
+    expect(effectiveViewFields({}, EMPTY_VIEW_FIELDS).ganttExchange).toBeNull()
+  })
+
+  it('carries a module default into the effective config, canImport included', () => {
+    expect(effectiveViewFields({ ganttExchange }, EMPTY_VIEW_FIELDS).ganttExchange).toEqual(ganttExchange)
+  })
+
+  it('accepts a format set without an import guard (export-only for that format family)', () => {
+    const exportOnly = { scopeField: 'project_id', scopeEntity: 'project', formats: [{ key: 'gan', label: 'GanttProject (.gan)', accept: '.gan' }] }
+    expect(effectiveViewFields({ ganttExchange: exportOnly }, EMPTY_VIEW_FIELDS).ganttExchange).toEqual(exportOnly)
   })
 })
