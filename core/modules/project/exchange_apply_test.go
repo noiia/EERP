@@ -425,10 +425,17 @@ func TestApply_Subset(t *testing.T) {
 
 func exCountNamed(t *testing.T, f *fixture, name string) int {
 	t.Helper()
+	return exCountRows(t, f, "project_task", name)
+}
+
+// exCountRows counts the live rows of one table under one name, which is how a test asks
+// whether a batch it expects to be refused wrote anything at all.
+func exCountRows(t *testing.T, f *fixture, table, name string) int {
+	t.Helper()
 	var n int
-	if err := f.app.DB.QueryRow(context.Background(), `SELECT count(*) FROM project_task
+	if err := f.app.DB.QueryRow(context.Background(), `SELECT count(*) FROM `+table+`
 		WHERE tenant_id = $1 AND name = $2 AND deleted_at IS NULL`, f.tenant, name).Scan(&n); err != nil {
-		t.Fatalf("count %s: %v", name, err)
+		t.Fatalf("count %s named %s: %v", table, name, err)
 	}
 	return n
 }
@@ -888,32 +895,54 @@ func TestApply_UnknownKey422(t *testing.T) {
 
 // TestApply_DeletedTaskIsNoOp: the rows of one batch are the manager's ticks, and no
 // ordering of them is their fault. A task ticked off along with its own deliverable
-// clearing must not turn into a 404 about a row that is being deleted anyway.
+// clearing must not turn into a 404 about a row that is being deleted anyway, and the
+// batch must leave no trace of a write it dropped: the row keeps the deliverable EERP
+// still holds on it, and the count the wizard and the log line report is the one delete.
+//
+// The deliverable clearing is the only write a batch can ever aim at a doomed row (a row
+// the file lost has no field, position or completion row of its own: those need the file
+// to hold the row), so it is the row that pins the guard. The milestone itself is NOT
+// ticked for removal: with the milestone gone, removeMilestones clears the column on its
+// own and the write the guard dropped would be invisible either way.
 func TestApply_DeletedTaskIsNoOp(t *testing.T) {
 	e := exFixture(t)
 	f, pid := e.f, e.pid
-	// The partner deleted both Framing and the milestone it produced.
-	file := exWithout(e.basic, "Framing", "Structure approved")
+	// The partner deleted Framing but kept the milestone it produced.
+	file := exWithout(e.basic, "Framing")
 	steps := []string{
 		changeKey(ganFramingRef, fieldMilestoneID), // a write against the doomed task
 		changeKey(ganFramingRef, "delete"),
-		changeKey(ganStructureRef, "delete"),
 	}
 	_, changes, _ := exPreview(t, f, pid, file)
 	for _, k := range steps {
 		dfxRow(t, changes, k)
 	}
+	framing, gate := uuid.MustParse(ganFramingRef), uuid.MustParse(strings.TrimPrefix(ganStructureRef, milestoneRefPrefix))
+	if got := exColumn[*uuid.UUID](t, f, "project_task", framing, "milestone_id"); got == nil || *got != gate {
+		t.Fatalf("the fixture's doomed task does not produce the milestone, so this test would prove nothing")
+	}
+
 	// Every order of the same ticks must land in the same place. Each one runs on the
 	// project as the manager saw it: a second batch on an already emptied project
 	// would have nothing left to do, which answers a different question.
-	for _, order := range [][]string{steps, {steps[2], steps[1], steps[0]}, {steps[1], steps[0], steps[2]}} {
+	for _, order := range [][]string{steps, {steps[1], steps[0]}} {
 		exReinstall(t, f, pid, e.basic)
-		exApply(t, f, f.caller(e.mgr), pid, file, "gone.gan", order...)
-		if exLive(t, f, "project_task", uuid.MustParse(ganFramingRef)) {
+		n := exApply(t, f, f.caller(e.mgr), pid, file, "gone.gan", order...)
+		if exLive(t, f, "project_task", framing) {
 			t.Fatalf("Framing survived the ticks %s", strings.Join(order, " "))
 		}
-		if exLive(t, f, "project_milestone", uuid.MustParse(strings.TrimPrefix(ganStructureRef, milestoneRefPrefix))) {
-			t.Fatalf("the milestone survived the ticks %s", strings.Join(order, " "))
+		if !exLive(t, f, "project_milestone", gate) {
+			t.Fatalf("the milestone went with Framing though its removal was never ticked, ticks %s", strings.Join(order, " "))
+		}
+		// The dropped write left nothing behind: the row is deleted, but it is deleted
+		// holding the deliverable it had, and only the delete counted as a change.
+		if got := exColumn[*uuid.UUID](t, f, "project_task", framing, "milestone_id"); got == nil || *got != gate {
+			t.Errorf("the batch wrote the deliverable clearing to the doomed task: milestone_id = %v, want %s (ticks %s)",
+				got, gate, strings.Join(order, " "))
+		}
+		if n != 1 {
+			t.Errorf("applied %d rows, want the one delete (the write against a doomed row is dropped, not counted), ticks %s",
+				n, strings.Join(order, " "))
 		}
 	}
 }
@@ -951,3 +980,231 @@ func TestApply_PositionFollowsTheFile(t *testing.T) {
 }
 
 func ptrTo[T any](v T) *T { return &v }
+
+// ── A pair the file adds together ───────────────────────────────────────────
+
+// exAddsGate is a file that adds a deliverable AND the task that produces it, both with
+// the file's own ids and no eerp_id: the pair a partner draws when they plan a handover.
+// It is the one selection the phase order cannot carry out in one pass, because the task
+// create (phase 1) names a milestone this batch writes in phase 2, and the diff knows it
+// (the create carries the deliverable inside itself and Requires the milestone's create).
+//
+// The task also waits on a task of the project, so the same batch resolves a new task and
+// a new milestone through the two keys the diff builds by concatenation.
+func exAddsGate(p Plan) Plan {
+	out := Plan{Name: p.Name, Weekend: p.Weekend, HasHolidays: p.HasHolidays,
+		Assignments: slices.Clone(p.Assignments)}
+	var tasks, gates []PlanTask
+	for _, task := range p.Tasks {
+		if task.Milestone {
+			gates = append(gates, task)
+			continue
+		}
+		tasks = append(tasks, task)
+	}
+	// A plan's own order: the tasks in document order, the milestones last.
+	tasks = append(tasks, dfxNew("8", "", "Punch list", "2026-02-09", 2))
+	gates = append(gates, dfxNewMilestone("9", "Site handover", "2026-02-16"))
+	out.Tasks = append(tasks, gates...)
+	out.Deps = append(slices.Clone(p.Deps),
+		PlanDep{Pred: ganFramingRef, Succ: "new:8", Type: DepFS},
+		PlanDep{Pred: "new:8", Succ: "new-milestone:9", Type: DepFS})
+	return out
+}
+
+// TestApply_NewTaskNamingANewMilestone (Review Focus 2): a file that adds a deliverable
+// and the task naming it is the ordinary case, not an error. The task goes in first (the
+// brief's order), the milestone next, and the link between them lands with the pair; what
+// EERP wrote then comes back as nothing to do.
+func TestApply_NewTaskNamingANewMilestone(t *testing.T) {
+	e := exFixture(t)
+	f, pid := e.f, e.pid
+	file := exAddsGate(e.basic)
+	_, changes, warns := exPreview(t, f, pid, file)
+	if len(warns) != 0 {
+		t.Fatalf("the pair previews with warnings %+v, want a file EERP can read", warns)
+	}
+	exWantGatePair(t, changes)
+
+	dep := exDepKey(ganFramingRef, "new:8", false)
+	if !dfxRow(t, changes, dep).DefaultSelected {
+		t.Error("the dependency the file adds arrives unticked, want the wizard to tick a create")
+	}
+	n := exApply(t, f, f.caller(e.mgr), pid, file, "handover.gan", "new:8", "new-milestone:9", dep)
+	if n != 3 {
+		t.Errorf("applied %d rows, want the task, the deliverable and the dependency", n)
+	}
+
+	written := exRowByName(t, f, "project_milestone", "Site handover")
+	created := exRowByName(t, f, "project_task", "Punch list")
+	exWantGateWritten(t, f, created, written)
+	exWantWrittenFileIsClean(t, f, pid)
+	exWantOnlyUnnameableRows(t, f, pid, file, created, written)
+}
+
+// exWantGatePair is what the wizard must offer for a file that adds a deliverable and
+// the task naming it: the two creates, ticked, the task's create asking for the
+// milestone's, and nothing else of the sort.
+func exWantGatePair(t *testing.T, changes []Change) {
+	t.Helper()
+	task := dfxRow(t, changes, "new:8")
+	gate := dfxRow(t, changes, "new-milestone:9")
+	if task.Kind != kindCreate || gate.Kind != kindMilestoneCreate {
+		t.Fatalf("the pair arrived as %s and %s, want a task create and a milestone create", task.Kind, gate.Kind)
+	}
+	if !task.DefaultSelected || !gate.DefaultSelected {
+		t.Error("the pair arrives unticked, want the wizard to tick both creates")
+	}
+	if !slices.Contains(task.Requires, "new-milestone:9") {
+		t.Fatalf("the task create requires %v, want the deliverable it names", task.Requires)
+	}
+	if got := dfxCount(changes, kindMilestoneCreate); got != 1 {
+		t.Fatalf("%d milestone creates, want 1: %s", got, strings.Join(dfxKeys(changes), " "))
+	}
+}
+
+// exWantGateWritten is the pair as the database must hold it: both rows live, the
+// deliverable on the file's own day, and the task producing it.
+func exWantGateWritten(t *testing.T, f *fixture, created, written uuid.UUID) {
+	t.Helper()
+	if !exLive(t, f, "project_milestone", written) {
+		t.Fatal("the deliverable the file added is not live")
+	}
+	if got := exColumn[time.Time](t, f, "project_milestone", written, "deadline"); !got.Equal(dfxDay("2026-02-16")) {
+		t.Errorf("the deliverable is due %v, want 2026-02-16 (the file's own day)", got)
+	}
+	if got := exColumn[*uuid.UUID](t, f, "project_task", created, "milestone_id"); got == nil || *got != written {
+		t.Errorf("Punch list produces %v, want the milestone this batch created (%s)", got, written)
+	}
+	if !exDepLive(t, f, created, uuid.MustParse(ganFramingRef)) {
+		t.Error("the dependency Framing → Punch list was not written, though its create was ticked")
+	}
+}
+
+// exWantWrittenFileIsClean is the chain a manager repeats: the file EERP writes out of
+// what it just holds comes back as nothing to do. It is the exported file that can name
+// the pair, the partner's having no eerp_id for either row.
+func exWantWrittenFileIsClean(t *testing.T, f *fixture, pid uuid.UUID) {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := (ganFormat{}).Encode(&buf, exExport(t, f, pid)); err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	writtenPlan, warns, err := ganFormat{}.Decode(&buf)
+	if err != nil {
+		t.Fatalf("Decode(what we wrote): %v", err)
+	}
+	if len(warns) != 0 {
+		t.Errorf("our own file decodes with warnings %+v", warns)
+	}
+	_, again, warns := exPreview(t, f, pid, writtenPlan)
+	dfxWantEmpty(t, again, warns)
+}
+
+// exWantOnlyUnnameableRows: re-previewing the partner's own file still has nothing to
+// say about any row EERP holds. What survives is only about the two rows the file cannot
+// name (it gave them no eerp_id), exactly as TestApply_ThenPreviewIsEmpty documents for
+// one new row.
+func exWantOnlyUnnameableRows(t *testing.T, f *fixture, pid uuid.UUID, file Plan, created, written uuid.UUID) {
+	t.Helper()
+	_, same, _ := exPreview(t, f, pid, file)
+	for _, c := range same {
+		about := strings.Contains(c.Key, created.String()) || strings.Contains(c.Key, written.String()) ||
+			strings.Contains(c.Key, "new:8") || strings.Contains(c.Key, "new-milestone:9")
+		if !about {
+			t.Errorf("row %s is left to do though it is about no row the file cannot name: %s",
+				c.Key, strings.Join(dfxKeys(same), " "))
+		}
+	}
+}
+
+// TestApply_NewTaskWithoutItsMilestone422: the same pair, but the manager unticks the
+// deliverable. The task names a row this batch will never write, and the batch is
+// refused before a single write: a 422 whose fields name both rows, nothing created, the
+// project untouched. The diff put the milestone's create in the task create's Requires
+// for exactly this, and the half the selection cannot see (a deliverable key that names
+// no row at all by the time the link is written) is pinned in TestApply_BadRowValueIsRejection.
+func TestApply_NewTaskWithoutItsMilestone422(t *testing.T) {
+	e := exFixture(t)
+	f, pid := e.f, e.pid
+	file := exAddsGate(e.basic)
+	_, changes, _ := exPreview(t, f, pid, file)
+	task := dfxRow(t, changes, "new:8")
+	if !slices.Contains(task.Requires, "new-milestone:9") {
+		t.Fatalf("the create requires %v, want the deliverable it names", task.Requires)
+	}
+
+	_, err := exTryApply(f, f.caller(e.mgr), pid, file, "handover.gan", []string{"new:8"})
+	rej := exRejection(t, err)
+	if rej.status != http.StatusUnprocessableEntity {
+		t.Fatalf("a task without the deliverable it names: %d %s, want 422", rej.status, rej.code)
+	}
+	for _, want := range []string{"new:8", "new-milestone:9"} {
+		if !slices.Contains(rej.fields, want) {
+			t.Errorf("fields = %v, want %s named", rej.fields, want)
+		}
+	}
+	if n := exCountNamed(t, f, "Punch list"); n != 0 {
+		t.Errorf("the refused apply created the task %d times", n)
+	}
+	if n := exCountRows(t, f, "project_milestone", "Site handover"); n != 0 {
+		t.Errorf("the refused apply created the deliverable %d times", n)
+	}
+	_, same, warns := exPreview(t, f, pid, e.basic)
+	dfxWantEmpty(t, same, warns)
+}
+
+// TestApply_BadRowValueIsRejection: applyPlan's errors are the 409 or a 422 naming the
+// ticked rows, and nothing else. The rows here are shapes the diff would never build (it
+// makes every After and Before itself), so they stand for a hand built request: each must
+// still come back as the row the manager has to untick, never as a plain error the route
+// answers 500 with no row named.
+func TestApply_BadRowValueIsRejection(t *testing.T) {
+	const key = "task:11111111-1111-4111-8111-111111111111:dates"
+	a := &applier{}
+	cases := []struct {
+		name string
+		call func() error
+	}{
+		{"hours", func() error { _, err := a.fieldBody(Change{Key: key, Field: fieldHours, After: "8"}); return err }},
+		{"name", func() error { _, err := a.nameOf(Change{Key: key, Field: fieldName, After: 8.0}); return err }},
+		{"dates", func() error {
+			_, err := a.datesOf(Change{Key: key, Field: fieldDates, After: "2026-02-09"})
+			return err
+		}},
+		{"deadline", func() error { _, err := a.deadlineOf(Change{Key: key, Field: fieldDates, After: 0}); return err }},
+		{"completion", func() error { _, err := a.stageOf(Change{Key: key, Field: fieldClosed, After: 100}); return err }},
+		{"dependency", func() error { return a.addDependency(Change{Key: key, After: "new:8"}) }},
+		{"assignment", func() error { return a.addAssignee(Change{Key: key, After: "ann@x.com"}) }},
+		{"removed dependency", func() error {
+			b := &applier{rows: []Change{{Key: key, Kind: kindDependencyDelete, Before: "new:8"}},
+				want: map[string]bool{key: true}}
+			return b.removeDependencies()
+		}},
+		{"removed assignment", func() error {
+			b := &applier{rows: []Change{{Key: key, Kind: kindAssignDelete, Before: "ann@x.com"}},
+				want: map[string]bool{key: true}}
+			return b.removeAssignees()
+		}},
+		{"parent", func() error {
+			b := &applier{newTask: map[string]uuid.UUID{}}
+			_, _, err := b.createParent(Change{Key: key}, createValue{Parent: ptrTo("new:99")})
+			return err
+		}},
+		{"deliverable", func() error {
+			b := &applier{newMile: map[string]uuid.UUID{},
+				pendingGates: []pendingGate{{task: uuid.New(), key: key, gate: "new-milestone:9"}}}
+			return b.linkPendingGates()
+		}},
+	}
+	for _, tc := range cases {
+		err := tc.call()
+		rej := exRejection(t, err)
+		if rej.status != http.StatusUnprocessableEntity {
+			t.Errorf("%s: %d %s, want 422", tc.name, rej.status, rej.code)
+		}
+		if !slices.Equal(rej.fields, []string{key}) {
+			t.Errorf("%s: fields = %v, want the ticked key named", tc.name, rej.fields)
+		}
+	}
+}

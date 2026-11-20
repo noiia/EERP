@@ -131,8 +131,21 @@ type applier struct {
 	// gone is every task this batch deletes. It is worked out before the first write
 	// so that a write aimed at a doomed row can be dropped however the ticks came.
 	gone map[uuid.UUID]bool
+	// pendingGates are the tasks this batch created whose deliverable is a milestone
+	// the same batch has not written yet: the phase order puts the task creates
+	// before the milestone creates, so those links wait for linkPendingGates.
+	pendingGates []pendingGate
 
 	applied int
+}
+
+// pendingGate is one created task waiting for the milestone its create named: the row
+// to write, the create the manager ticked (which is what a refusal has to name), and
+// the milestone's key as the diff built it.
+type pendingGate struct {
+	task uuid.UUID
+	key  string
+	gate string
 }
 
 // fieldKeys are the keys a row about a task or a milestone can arrive under: the fields
@@ -235,10 +248,13 @@ func (a *applier) indexRows(cur Plan) {
 }
 
 // run carries out the ticked rows in the database's own order and says how many landed.
+// The order is the brief's, and the one step that is not a phase of its own
+// (linkPendingGates) only finishes a write an earlier phase had to leave half done.
 func (a *applier) run() (int, error) {
 	for _, phase := range []func() error{
 		a.createTasks,
 		a.createMilestones,
+		a.linkPendingGates,
 		a.placeTasks,
 		a.updateTasks,
 		a.updateMilestones,
@@ -291,6 +307,11 @@ func (a *applier) createTasks() error {
 // createTask writes one task the file added. Its dates are the file's own: Start, and
 // the duration counted out on the file's calendar (the same endAfter the diff counted
 // with, which is why an import of an untouched file would have written nothing).
+//
+// A deliverable this same batch adds (the file's milestone and the task naming it came
+// in together) cannot be resolved here: the milestone creates run in the next phase, so
+// the task goes in without the column and linkPendingGates writes it once the row
+// exists. Anything else the row names has to resolve now, or the ticked row is refused.
 func (a *applier) createTask(c Change, t PlanTask) (uuid.UUID, error) {
 	value, _ := c.After.(createValue)
 	body := map[string]any{
@@ -300,23 +321,14 @@ func (a *applier) createTask(c Change, t PlanTask) (uuid.UUID, error) {
 		"date_start":    day(t.Start),
 		"deadline":      day(endAfter(t.Start, t.Duration, a.d.file.Weekend)),
 	}
-	if value.Parent != nil && *value.Parent != "" {
-		id, ok := a.task(*value.Parent)
-		if !ok {
-			return uuid.Nil, fmt.Errorf("project: %s names parent %s, which apply cannot resolve", c.Key, *value.Parent)
-		}
-		if a.gone[id] {
-			return uuid.Nil, nil
-		}
-		body["parent_id"] = id.String()
+	parent, skip, err := a.createParent(c, value)
+	if err != nil || skip {
+		return uuid.Nil, err
 	}
-	if value.MilestoneID != nil {
-		id, ok := a.milestone(value.MilestoneID.ID)
-		if !ok {
-			return uuid.Nil, fmt.Errorf("project: %s names deliverable %s, which apply cannot resolve", c.Key, value.MilestoneID.ID)
-		}
-		body["milestone_id"] = id.String()
+	if parent != uuid.Nil {
+		body["parent_id"] = parent.String()
 	}
+	waiting := a.createGate(c, value, body)
 	out, err := a.check("project_task", opCreate, uuid.Nil, body, c.Key)
 	if err != nil {
 		return uuid.Nil, err
@@ -334,7 +346,44 @@ func (a *applier) createTask(c Change, t PlanTask) (uuid.UUID, error) {
 	if err != nil {
 		return uuid.Nil, err
 	}
+	if waiting != "" {
+		a.pendingGates = append(a.pendingGates, pendingGate{task: created.ID, key: c.Key, gate: waiting})
+	}
 	return created.ID, nil
+}
+
+// createParent is the parent column of a create: the row to hang the new task under.
+// skip says the parent is itself going away in this batch, which makes the create a
+// write against a doomed row: nothing is written and nothing is refused. A parent
+// nothing resolves to is not a row of this project, so the ticked row is refused by its
+// own key (Requires is what normally keeps a create's parent ticked too).
+func (a *applier) createParent(c Change, value createValue) (uuid.UUID, bool, error) {
+	if value.Parent == nil || *value.Parent == "" {
+		return uuid.Nil, false, nil
+	}
+	id, ok := a.task(*value.Parent)
+	if !ok {
+		return uuid.Nil, false, invalid(c.Key,
+			fmt.Sprintf("%s names parent %s, which is no task of this project", c.Key, *value.Parent))
+	}
+	if a.gone[id] {
+		return uuid.Nil, true, nil
+	}
+	return id, false, nil
+}
+
+// createGate is the deliverable column of a create, and says which milestone key the
+// link has to wait for: empty when the column went into the body, the key when it names
+// a row this batch has not written yet.
+func (a *applier) createGate(c Change, value createValue, body map[string]any) string {
+	if value.MilestoneID == nil {
+		return ""
+	}
+	if id, ok := a.milestone(value.MilestoneID.ID); ok {
+		body["milestone_id"] = id.String()
+		return ""
+	}
+	return value.MilestoneID.ID
 }
 
 func (a *applier) createMilestones() error {
@@ -363,6 +412,33 @@ func (a *applier) createMilestones() error {
 		a.applied++
 		return nil
 	}, kindMilestoneCreate)
+}
+
+// linkPendingGates writes the deliverable links the task creates had to leave out, now
+// that the milestones they name exist: the rules run on the write as on any other, and
+// the row is one this batch invented seconds ago, so it counts as the create that asked
+// for it rather than as a change of its own.
+//
+// A key that still names nothing is a ticked row pointing at a deliverable neither the
+// project nor the file holds, which the manager has a row to untick: 422 naming it, not
+// a raw error the route would answer 500.
+func (a *applier) linkPendingGates() error {
+	for _, p := range a.pendingGates {
+		id, ok := a.milestone(p.gate)
+		if !ok {
+			return invalid(p.key,
+				fmt.Sprintf("%s names deliverable %s, which is no row of this project or of the file", p.key, p.gate))
+		}
+		body, err := a.check("project_task", opUpdate, p.task, map[string]any{"milestone_id": id.String()}, p.key)
+		if err != nil {
+			return err
+		}
+		if err := a.setTask(p.task, body); err != nil {
+			return err
+		}
+	}
+	a.pendingGates = nil
+	return nil
 }
 
 // placeTasks is the position pass: a parent's children end up in the file's order.
@@ -506,7 +582,7 @@ func (a *applier) fieldBody(c Change) (map[string]any, error) {
 	case fieldHours:
 		hours, ok := c.After.(float64)
 		if !ok {
-			return nil, fmt.Errorf("project: %s holds hours of type %T", c.Key, c.After)
+			return nil, badValue(c.Key, "hours", c.After)
 		}
 		return map[string]any{"planned_hours": hours}, nil
 	case fieldClosed:
@@ -518,12 +594,20 @@ func (a *applier) fieldBody(c Change) (map[string]any, error) {
 	}
 }
 
+// badValue is the refusal of a row whose value is not the shape its field asks for: the
+// diff builds every one of these, so a row like this is not a plan, and the manager
+// still has to be told which row to untick. A raw error here would reach the route as a
+// 500 naming no row at all.
+func badValue(key, what string, v any) error {
+	return invalid(key, fmt.Sprintf("%s holds %s of type %T", key, what, v))
+}
+
 // stageOf is the closing of a task, which EERP stores as the column it sits in: a task
 // is closed by its stage, not by a flag of its own.
 func (a *applier) stageOf(c Change) (map[string]any, error) {
 	now, ok := c.After.(bool)
 	if !ok {
-		return nil, fmt.Errorf("project: %s holds a completion of type %T", c.Key, c.After)
+		return nil, badValue(c.Key, "a completion", c.After)
 	}
 	stage, err := a.stage(c.Key, now)
 	if err != nil {
@@ -551,7 +635,7 @@ func (a *applier) milestoneOf(c Change) (map[string]any, error) {
 func (a *applier) nameOf(c Change) (string, error) {
 	name, ok := c.After.(string)
 	if !ok {
-		return "", fmt.Errorf("project: %s holds a name of type %T", c.Key, c.After)
+		return "", badValue(c.Key, "a name", c.After)
 	}
 	return name, nil
 }
@@ -560,7 +644,7 @@ func (a *applier) nameOf(c Change) (string, error) {
 func (a *applier) datesOf(c Change) (map[string]any, error) {
 	value, ok := c.After.(datesValue)
 	if !ok {
-		return nil, fmt.Errorf("project: %s holds dates of type %T", c.Key, c.After)
+		return nil, badValue(c.Key, "dates", c.After)
 	}
 	start, err := time.Parse(exchangeDayLayout, value.Start)
 	if err != nil {
@@ -577,7 +661,7 @@ func (a *applier) datesOf(c Change) (map[string]any, error) {
 func (a *applier) deadlineOf(c Change) (map[string]any, error) {
 	value, ok := c.After.(datesValue)
 	if !ok {
-		return nil, fmt.Errorf("project: %s holds dates of type %T", c.Key, c.After)
+		return nil, badValue(c.Key, "dates", c.After)
 	}
 	deadline, err := time.Parse(exchangeDayLayout, value.Start)
 	if err != nil {
@@ -646,7 +730,7 @@ func (a *applier) linkTasks() error {
 func (a *applier) addDependency(c Change) error {
 	value, ok := c.After.(depValue)
 	if !ok {
-		return fmt.Errorf("project: %s holds a dependency of type %T", c.Key, c.After)
+		return badValue(c.Key, "a dependency", c.After)
 	}
 	pred, ok := a.task(value.Pred)
 	if !ok {
@@ -680,7 +764,7 @@ func (a *applier) addDependency(c Change) error {
 func (a *applier) addAssignee(c Change) error {
 	value, ok := c.After.(assignValue)
 	if !ok {
-		return fmt.Errorf("project: %s holds an assignment of type %T", c.Key, c.After)
+		return badValue(c.Key, "an assignment", c.After)
 	}
 	task, ok := a.task(value.Task)
 	if !ok || a.gone[task] {
@@ -733,7 +817,7 @@ func (a *applier) removeDependencies() error {
 	return a.each(func(c Change) error {
 		value, ok := c.Before.(depValue)
 		if !ok {
-			return fmt.Errorf("project: %s holds a dependency of type %T", c.Key, c.Before)
+			return badValue(c.Key, "a dependency", c.Before)
 		}
 		pred, ok := a.task(value.Pred)
 		if !ok {
@@ -762,7 +846,7 @@ func (a *applier) removeAssignees() error {
 	return a.each(func(c Change) error {
 		value, ok := c.Before.(assignValue)
 		if !ok {
-			return fmt.Errorf("project: %s holds an assignment of type %T", c.Key, c.Before)
+			return badValue(c.Key, "an assignment", c.Before)
 		}
 		task, ok := a.task(value.Task)
 		if !ok {
