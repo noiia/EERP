@@ -237,6 +237,9 @@ export interface MatrixConfig {
   taskEntity: string
   /** The task form route the matrices open (e.g. '/project/tasks/:id'). */
   taskFormPath: string
+  /** The task's parent many2one (e.g. 'parent_id'): RACI then shows the task tree — a parent
+   * filter, collapsible rows, and parent cells computed from their subtasks unless set by hand. */
+  parentField?: string
 }
 
 /** Rows of `entity` link record `fromField` (the blocker: the arrow leaves

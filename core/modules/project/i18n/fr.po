@@ -413,6 +413,21 @@ msgstr "Plusieurs personnes sont responsables"
 msgid "Bulk edit"
 msgstr "Modification groupée"
 
+msgid "All tasks"
+msgstr "Toutes les tâches"
+
+msgid "Expand all"
+msgstr "Tout déplier"
+
+msgid "Collapse all"
+msgstr "Tout replier"
+
+msgid "Computed from subtasks"
+msgstr "Calculé depuis les sous-tâches"
+
+msgid "Use computed values"
+msgstr "Utiliser les valeurs calculées"
+
 msgid "Select all"
 msgstr "Tout sélectionner"
 

@@ -65,7 +65,7 @@ describe('project views', () => {
       matrix: {
         projectField: 'project_id',
         raciEntity: 'project_task_raci',
-        userLabelField: 'email',
+        userLabelField: 'display_name',
         dependencies: { entity: 'project_task_dependency', fromField: 'depends_on_id', toField: 'task_id' },
         priorityField: 'priority',
         deadlineField: 'deadline',
@@ -73,6 +73,7 @@ describe('project views', () => {
         urgentDays: 7,
         taskEntity: 'project_task',
         taskFormPath: '/project/tasks/:id',
+        parentField: 'parent_id',
       },
       pbs: { entity: 'project_pbs_item', projectField: 'project_id', projectEntity: 'project', taskField: 'pbs_item_id', canEdit: 'project.canEditStages' },
     }

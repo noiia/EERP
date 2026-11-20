@@ -514,6 +514,123 @@ describe('MatrixRenderer RACI tab', () => {
   })
 })
 
+describe('MatrixRenderer RACI task tree', () => {
+  // P (1) > A (1.1), B (1.2) > B1 (1.2.1); Q (2) stands alone.
+  const TREE = [
+    task('P', { wbs_number: '1' }),
+    task('A', { wbs_number: '1.1', parent_id: 'P' }),
+    task('B', { wbs_number: '1.2', parent_id: 'P' }),
+    task('B1', { wbs_number: '1.2.1', parent_id: 'B' }),
+    task('Q', { wbs_number: '2' }),
+  ]
+  const ROWS = [
+    { id: 'r1', task_id: 'A', user_id: 'u2', role: 'R' },
+    { id: 'r2', task_id: 'B1', user_id: 'u2', role: 'A' },
+    { id: 'r3', task_id: 'A', user_id: 'u3', role: 'A' },
+  ]
+  const CONFIG = { ...BASE_CONFIG, parentField: 'parent_id' }
+  const rowIds = () => [
+    ...new Set(
+      within(screen.getByTestId('raci-grid'))
+        .getAllByTestId(/^raci-cell-/)
+        .map((el) => (el.getAttribute('data-testid') ?? '').replace('raci-cell-', '').split('-')[0]),
+    ),
+  ]
+  const open = async (raci = ROWS) => {
+    const fx = opsFixture({ tasks: TREE, members: [{ id: 'pm2', user_id: 'u2' }, { id: 'pm3', user_id: 'u3' }], raci })
+    renderRenderer(fx.ops, CONFIG)
+    fireEvent.click(await screen.findByRole('tab', { name: 'RACI' }))
+    await screen.findByTestId('raci-cell-P-u2')
+    return fx
+  }
+
+  beforeEach(() => {
+    setViewportWidth(1280)
+    canWriteRaci.value = true
+  })
+  afterEach(() => cleanup())
+
+  it('computes a parent cell from its subtasks, muted, without warning about the summed accountables', async () => {
+    await open()
+    expect(screen.getByTestId('raci-cell-B-u2').textContent).toBe('A')
+    expect(screen.getByTestId('raci-cell-P-u2').textContent).toBe('R/A')
+    expect(screen.getByTestId('raci-cell-P-u2')).toHaveAttribute('data-computed', 'true')
+    expect(screen.getByTestId('raci-cell-A-u2')).not.toHaveAttribute('data-computed')
+    // u2 and u3 are both A under P, computed: no "several accountable" warning.
+    expect(screen.getByTestId('raci-cell-P-u3').textContent).toBe('A')
+    expect(screen.queryByTestId('raci-multi-accountable')).toBeNull()
+    expect(screen.getByTestId('raci-row-P')).not.toHaveTextContent('No one accountable')
+  })
+
+  it('a hand-set parent cell wins; ticking a computed one writes its roles, and "Use computed values" goes back', async () => {
+    const { create, remove } = await open()
+    fireEvent.click(screen.getByTestId('raci-cell-P-u2'))
+    expect(within(screen.getByRole('menu')).queryByText('Use computed values')).toBeNull()
+    fireEvent.click(within(screen.getByRole('menu')).getByText('C'))
+    await act(async () => {})
+    expect(create.mock.calls.map((c) => c[1])).toEqual([
+      { task_id: 'P', user_id: 'u2', role: 'R' },
+      { task_id: 'P', user_id: 'u2', role: 'A' },
+      { task_id: 'P', user_id: 'u2', role: 'C' },
+    ])
+    expect(screen.getByTestId('raci-cell-P-u2').textContent).toBe('R/A/C')
+    expect(screen.getByTestId('raci-cell-P-u2')).not.toHaveAttribute('data-computed')
+    fireEvent.click(within(screen.getByRole('menu')).getByText('Use computed values'))
+    await act(async () => {})
+    expect(remove).toHaveBeenCalledTimes(3)
+    expect(screen.getByTestId('raci-cell-P-u2').textContent).toBe('R/A')
+    expect(screen.getByTestId('raci-cell-P-u2')).toHaveAttribute('data-computed', 'true')
+  })
+
+  it('stored parent rows show as they are', async () => {
+    await open([...ROWS, { id: 'r9', task_id: 'P', user_id: 'u2', role: 'I' }])
+    expect(screen.getByTestId('raci-cell-P-u2').textContent).toBe('I')
+  })
+
+  it('collapses a branch with its chevron and filters on a parent task', async () => {
+    await open()
+    expect(rowIds()).toEqual(['P', 'A', 'B', 'B1', 'Q'])
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse Task B' }))
+    expect(rowIds()).toEqual(['P', 'A', 'B', 'Q'])
+    expect(screen.getByRole('button', { name: 'Expand Task B' })).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse Task P' }))
+    expect(rowIds()).toEqual(['P', 'Q'])
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }))
+    expect(rowIds()).toEqual(['P', 'A', 'B', 'B1', 'Q'])
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse all' }))
+    expect(rowIds()).toEqual(['P', 'Q'])
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }))
+
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Parent task' }))
+    fireEvent.click(within(screen.getByRole('listbox')).getByText('1.2 Task B'))
+    expect(rowIds()).toEqual(['B', 'B1'])
+    // The picked parent stays shown even when a branch above it is collapsed.
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse Task B' }))
+    expect(rowIds()).toEqual(['B'])
+  })
+
+  it('without parentField there is no tree', async () => {
+    const fx = opsFixture({ tasks: TREE, raci: ROWS })
+    renderRenderer(fx.ops)
+    fireEvent.click(await screen.findByRole('tab', { name: 'RACI' }))
+    await screen.findByTestId('raci-cell-P-u2')
+    expect(screen.queryByRole('combobox', { name: 'Parent task' })).toBeNull()
+    expect(screen.getByTestId('raci-cell-P-u2').textContent).toBe('')
+  })
+
+  it('on phone a card marks computed people and collapses too', async () => {
+    setViewportWidth(390)
+    const fx = opsFixture({ tasks: TREE, members: [{ id: 'pm2', user_id: 'u2' }], raci: ROWS })
+    renderRenderer(fx.ops, CONFIG)
+    fireEvent.click(await screen.findByRole('tab', { name: 'RACI' }))
+    const card = await screen.findByTestId('raci-card-P')
+    expect(card).toHaveTextContent('A: member*')
+    expect(card).toHaveTextContent('* Computed from subtasks')
+    fireEvent.click(within(card).getByRole('button', { name: 'Collapse Task P' }))
+    expect(screen.queryByTestId('raci-card-A')).toBeNull()
+  })
+})
+
 describe('humanDeadline', () => {
   const now = new Date(2026, 5, 15, 10, 0)
   it('says the day relative to today, then the date', () => {

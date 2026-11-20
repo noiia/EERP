@@ -5,6 +5,7 @@ import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
 import Dialog from '@mui/material/Dialog'
+import IconButton from '@mui/material/IconButton'
 import ListItemText from '@mui/material/ListItemText'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
@@ -18,6 +19,7 @@ import type { EntityListOptions } from '../../api/list-options'
 import type { MatrixConfig } from '../../api/view-fields'
 import { useT } from '../../i18n/translate'
 import { ErrorAlert } from '../error-alert'
+import { byPrefixAndName, FontAwesomeIcon } from '../icons'
 import { DiagramLoading } from '../diagram/diagram-canvas'
 import { usePhone } from '../use-phone'
 import { useRelationOps, type RelationRecord } from '../relation-ops'
@@ -49,6 +51,56 @@ const lettersOf = (r: Roles): RaciRole[] => RACI_ROLES.filter((role) => role in 
 const clip = (s: string) => (s.length > 40 ? `${s.slice(0, 39)}…` : s)
 const wrap = { whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word' } as const
 
+/** The task tree read from `parentField` (a parent outside the loaded tasks makes a root). */
+export function raciTree(tasks: MatrixTask[], parentField?: string) {
+  const ids = new Set(tasks.map((task) => task.id))
+  const parentOf = new Map<string, string>()
+  const kidsOf = new Map<string, string[]>()
+  for (const task of tasks) {
+    const parent = parentField ? task[parentField] : null
+    if (typeof parent !== 'string' || !ids.has(parent) || parent === task.id) continue
+    parentOf.set(task.id, parent)
+    kidsOf.set(parent, [...(kidsOf.get(parent) ?? []), task.id])
+  }
+  // Ancestors nearest first, cycle-safe.
+  const ancestors = (id: string) => {
+    const out: string[] = []
+    for (let p = parentOf.get(id); p && !out.includes(p) && p !== id; p = parentOf.get(p)) out.push(p)
+    return out
+  }
+  return { parentOf, kidsOf, ancestors }
+}
+
+/** A cell as shown: its own roles when it has any, else (a parent task) the union of its
+ * subtasks' shown roles for that person — `computed` then. Leaves never compute. */
+export interface Effective {
+  roles: RaciRole[]
+  computed: boolean
+}
+export function effectiveRoles(
+  taskId: string,
+  userId: string,
+  stored: (taskId: string, userId: string) => RaciRole[],
+  kidsOf: Map<string, string[]>,
+  cache = new Map<string, Effective>(),
+  seen = new Set<string>(),
+): Effective {
+  const key = `${taskId}:${userId}`
+  const hit = cache.get(key)
+  if (hit) return hit
+  const own = stored(taskId, userId)
+  let out: Effective = { roles: own, computed: false }
+  const kids = kidsOf.get(taskId) ?? []
+  if (!own.length && kids.length && !seen.has(taskId)) {
+    seen.add(taskId)
+    const union = new Set(kids.flatMap((k) => effectiveRoles(k, userId, stored, kidsOf, cache, seen).roles))
+    seen.delete(taskId)
+    out = { roles: RACI_ROLES.filter((r) => union.has(r)), computed: union.size > 0 }
+  }
+  cache.set(key, out)
+  return out
+}
+
 /**
  * The RACI accountability matrix (ADR-041): rows are the tasks in WBS order,
  * columns are the project's manager plus its members (the `project_member`
@@ -78,6 +130,8 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
   const [picked, setPicked] = useState<string[]>([])
   const [bulkUser, setBulkUser] = useState('')
   const [bulkRoles, setBulkRoles] = useState<RaciRole[]>([])
+  const [root, setRoot] = useState('')
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
 
   const listPage = ops?.listPage
   const get = ops?.get
@@ -132,9 +186,29 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
     }
   }, [listPage, get, raciEntity, projectField, userLabelField, projectId])
 
-  const rows = useMemo(() => dsmOrder(tasks), [tasks])
+  const ordered = useMemo(() => dsmOrder(tasks), [tasks])
+  const tree = useMemo(() => raciTree(tasks, config.parentField), [tasks, config.parentField])
+  const parents = ordered.filter((task) => tree.kidsOf.has(task.id))
+  // The rows shown: the picked parent's subtree (all without one), minus collapsed branches.
+  const rows = ordered.filter((task) => {
+    const up = tree.ancestors(task.id)
+    if (!root) return !up.some((a) => collapsed.has(a))
+    if (task.id === root) return true
+    const k = up.indexOf(root)
+    return k >= 0 && !up.slice(0, k + 1).some((a) => collapsed.has(a))
+  })
+  const depthOf = (id: string) => {
+    const up = tree.ancestors(id)
+    return root ? Math.max(0, up.indexOf(root) + 1) : up.length
+  }
   const rolesOf = (taskId: string, userId: string): Roles => cells[`${taskId}:${userId}`] ?? {}
-  const accountables = (taskId: string) => people?.filter((p) => 'A' in rolesOf(taskId, p.id)).length ?? 0
+  const cache = new Map<string, Effective>()
+  const shown = (taskId: string, userId: string) => effectiveRoles(taskId, userId, (tid, uid) => lettersOf(rolesOf(tid, uid)), tree.kidsOf, cache)
+  const accountables = (taskId: string, manualOnly = false) =>
+    people?.filter((p) => {
+      const e = shown(taskId, p.id)
+      return e.roles.includes('A') && !(manualOnly && e.computed)
+    }).length ?? 0
   const put = (key: string, value: Roles) => setCells((cs) => ({ ...cs, [key]: value }))
 
   // Make one cell hold exactly `next`: delete the dropped roles' rows, create
@@ -165,8 +239,9 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
     }
   }
 
+  // Ticking a computed cell writes its roles by hand from then on; "Use computed values" goes back.
   function toggle(taskId: string, userId: string, role: RaciRole) {
-    const have = lettersOf(rolesOf(taskId, userId))
+    const have = shown(taskId, userId).roles
     void setRoles(taskId, userId, have.includes(role) ? have.filter((r) => r !== role) : [...have, role])
   }
 
@@ -176,14 +251,14 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
   }
 
   function openDialog(taskId: string) {
-    setDraft(Object.fromEntries((people ?? []).map((p) => [p.id, lettersOf(rolesOf(taskId, p.id))])))
+    setDraft(Object.fromEntries((people ?? []).map((p) => [p.id, shown(taskId, p.id).roles])))
     setEditing(taskId)
   }
 
   async function commitDialog(taskId: string) {
     for (const p of people ?? []) {
       const next = draft[p.id] ?? []
-      if (next.join() === lettersOf(rolesOf(taskId, p.id)).join()) continue
+      if (next.join() === shown(taskId, p.id).roles.join()) continue
       if (!(await setRoles(taskId, p.id, next))) return
     }
     setEditing(null)
@@ -222,9 +297,32 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
 
   if (!people) return <DiagramLoading />
   const editingTask = editing ? rows.find((task) => task.id === editing) : null
-  const multiA = rows.filter((task) => accountables(task.id) > 1)
+  // A computed parent may sum several children's accountables: only hand-set ones warn.
+  const multiA = rows.filter((task) => accountables(task.id, true) > 1)
   const headerStyle = { border: `1px solid ${th.palette.divider}`, padding: th.spacing(0.5, 1), ...wrap } as const
-  const menuRoles = menu ? lettersOf(rolesOf(menu.taskId, menu.userId)) : []
+  const menuRoles = menu ? shown(menu.taskId, menu.userId).roles : []
+  const menuManualParent = !!menu && tree.kidsOf.has(menu.taskId) && lettersOf(rolesOf(menu.taskId, menu.userId)).length > 0
+  const chevron = (task: MatrixTask) =>
+    tree.kidsOf.has(task.id) ? (
+      <IconButton
+        size="small"
+        aria-label={`${collapsed.has(task.id) ? t('Expand') : t('Collapse')} ${task.name}`}
+        aria-expanded={!collapsed.has(task.id)}
+        onClick={() =>
+          setCollapsed((c) => {
+            const next = new Set(c)
+            if (!next.delete(task.id)) next.add(task.id)
+            return next
+          })
+        }
+        sx={{ p: 0.25, mr: 0.5, width: phone ? 40 : 24, height: phone ? 40 : 24 }}
+      >
+        <FontAwesomeIcon icon={byPrefixAndName.fas[collapsed.has(task.id) ? 'chevron-right' : 'chevron-down']} style={{ fontSize: 12 }} />
+      </IconButton>
+    ) : (
+      <Box component="span" sx={{ display: 'inline-block', width: phone ? 40 : 24, mr: 0.5, flexShrink: 0 }} />
+    )
+  const indent = (task: MatrixTask) => ({ pl: depthOf(task.id) * 2 })
 
   return (
     <Box sx={{ pt: 0.5 }}>
@@ -233,6 +331,34 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
         <Alert severity="warning" data-testid="raci-multi-accountable" sx={{ mb: 1 }}>
           {`${t('Several people accountable')}: ${multiA.map((task) => task.name).join(', ')}`}
         </Alert>
+      ) : null}
+      {parents.length ? (
+        <Stack direction="row" spacing={1} useFlexGap sx={{ mb: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+          <Select
+            displayEmpty
+            size="small"
+            value={parents.some((task) => task.id === root) ? root : ''}
+            onChange={(e) => {
+              setRoot(e.target.value)
+              setPicked([])
+            }}
+            inputProps={{ 'aria-label': t('Parent task'), 'data-testid': 'raci-parent' }}
+            sx={{ minWidth: 200, maxWidth: phone ? '100%' : 360, minHeight: phone ? 48 : 40 }}
+          >
+            <MenuItem value="">{t('All tasks')}</MenuItem>
+            {parents.map((task) => (
+              <MenuItem key={task.id} value={task.id} sx={{ pl: 2 + tree.ancestors(task.id).length * 2 }}>
+                {clip([task.wbs_number, task.name].filter(Boolean).join(' '))}
+              </MenuItem>
+            ))}
+          </Select>
+          <Button size="small" onClick={() => setCollapsed(new Set())} disabled={!collapsed.size} sx={{ minHeight: phone ? 40 : undefined }}>
+            {t('Expand all')}
+          </Button>
+          <Button size="small" onClick={() => setCollapsed(new Set(parents.map((task) => task.id)))} sx={{ minHeight: phone ? 40 : undefined }}>
+            {t('Collapse all')}
+          </Button>
+        </Stack>
       ) : null}
       {canWrite ? (
         <Stack direction="row" spacing={1} useFlexGap sx={{ mb: 1, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -283,7 +409,8 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
         <Box data-testid="raci-cards">
           {rows.map((task) => (
             <Box key={task.id} data-testid={`raci-card-${task.id}`} sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 1, mb: 1, bgcolor: 'background.paper' }}>
-              <Stack direction="row" sx={{ alignItems: 'flex-start' }}>
+              <Stack direction="row" sx={{ alignItems: 'center', ...indent(task) }}>
+                {chevron(task)}
                 {rowCheckbox(task.id, task.name)}
                 <Typography variant="body2" sx={wrap}>
                   {task.name}
@@ -296,9 +423,14 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
               ) : null}
               {RACI_ROLES.map((role) => (
                 <Typography key={role} variant="body2" sx={wrap}>
-                  {`${role}: ${people.filter((p) => role in rolesOf(task.id, p.id)).map((p) => p.label).join(', ') || '–'}`}
+                  {`${role}: ${people.filter((p) => shown(task.id, p.id).roles.includes(role)).map((p) => p.label + (shown(task.id, p.id).computed ? '*' : '')).join(', ') || '–'}`}
                 </Typography>
               ))}
+              {people.some((p) => shown(task.id, p.id).computed) ? (
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                  {`* ${t('Computed from subtasks')}`}
+                </Typography>
+              ) : null}
               {canWrite ? (
                 <Button size="small" variant="outlined" onClick={() => openDialog(task.id)} sx={{ mt: 0.5, minHeight: 40 }}>
                   {t('Edit')}
@@ -324,7 +456,8 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
               {rows.map((task) => (
                 <tr key={task.id}>
                   <th data-testid={`raci-row-${task.id}`} style={{ ...headerStyle, textAlign: 'left', minWidth: 160, maxWidth: 280, fontWeight: 'normal' }}>
-                    <Stack direction="row" sx={{ alignItems: 'flex-start' }}>
+                    <Stack direction="row" sx={{ alignItems: 'flex-start', ...indent(task) }}>
+                      {chevron(task)}
                       {rowCheckbox(task.id, task.name)}
                       <Box title={task.name}>
                         {clip(task.name)}
@@ -337,22 +470,31 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
                     </Stack>
                   </th>
                   {people.map((p) => {
-                    const letters = lettersOf(rolesOf(task.id, p.id)).join('/')
+                    const cell = shown(task.id, p.id)
+                    const letters = cell.roles.join('/')
+                    // A computed parent cell reads muted and italic, so a hand-set one stands out.
+                    const computedStyle = cell.computed ? { fontStyle: 'italic', color: th.palette.text.secondary } : undefined
+                    const title = cell.computed ? t('Computed from subtasks') : undefined
                     return (
                       <td key={p.id} style={{ width: 44, height: 44, border: `1px solid ${th.palette.divider}` }}>
                         {canWrite ? (
                           <Button
                             data-testid={`raci-cell-${task.id}-${p.id}`}
+                            data-computed={cell.computed || undefined}
                             size="small"
                             aria-haspopup="menu"
-                            aria-label={`${task.name} – ${p.label}`}
+                            aria-label={`${task.name} – ${p.label}${title ? ` (${title})` : ''}`}
+                            title={title}
                             onClick={(e) => setMenu({ anchor: e.currentTarget, taskId: task.id, userId: p.id })}
                             sx={{ width: '100%', height: '100%', minWidth: 32, minHeight: 32, p: 0, fontWeight: 'medium' }}
+                            style={computedStyle}
                           >
                             {letters}
                           </Button>
                         ) : (
-                          <span data-testid={`raci-cell-${task.id}-${p.id}`}>{letters}</span>
+                          <span data-testid={`raci-cell-${task.id}-${p.id}`} data-computed={cell.computed || undefined} title={title} style={computedStyle}>
+                            {letters}
+                          </span>
                         )}
                       </td>
                     )
@@ -370,6 +512,16 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
             <ListItemText primary={role} />
           </MenuItem>
         ))}
+        {menuManualParent ? (
+          <MenuItem
+            onClick={() => {
+              if (menu) void setRoles(menu.taskId, menu.userId, [])
+              setMenu(null)
+            }}
+          >
+            <ListItemText primary={t('Use computed values')} />
+          </MenuItem>
+        ) : null}
       </Menu>
       {editingTask ? (
         <Dialog open onClose={() => setEditing(null)} fullWidth maxWidth="xs">

@@ -412,6 +412,21 @@ msgstr ""
 msgid "Bulk edit"
 msgstr ""
 
+msgid "All tasks"
+msgstr ""
+
+msgid "Expand all"
+msgstr ""
+
+msgid "Collapse all"
+msgstr ""
+
+msgid "Computed from subtasks"
+msgstr ""
+
+msgid "Use computed values"
+msgstr ""
+
 msgid "Select all"
 msgstr ""
 

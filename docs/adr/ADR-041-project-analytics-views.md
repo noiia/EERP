@@ -208,6 +208,20 @@ its own extras on top of the shared task set:
   Read-only users see the letters only. On phone the grid becomes a per-task
   card listing `R / A / C / I` and an `Edit` dialog with one select per
   person.
+  - *Task tree* (the matrix config's `parentField`, `parent_id` for Project):
+    rows are indented under their parent with a chevron to collapse a branch
+    (*Expand all* / *Collapse all*), and a *Parent task* select narrows the
+    grid to one parent and its subtree. A parent's cell is **computed** by
+    default: the union of its subtasks' shown roles for that person, drawn
+    muted and italic ("Computed from subtasks"; `*` on phone) and never
+    stored. Ticking roles on a computed cell stores that cell's roles as a
+    hand-set override (ordinary `project_task_raci` rows); *Use computed
+    values* deletes them. Why computed, not stored: a parent's RACI is a
+    summary of who works on its children, so storing it would go stale with
+    every child edit. Pitfalls: an override can't be *empty* (no rows means
+    computed); the "several accountable" warning counts hand-set cells only,
+    since a computed parent naturally sums several children's accountables;
+    a parent outside the 1000 loaded tasks makes its children roots.
 - **Dependency structure matrix** (`dsm.tsx`): rows and columns are the
   tasks in `wbs_number` order (the WBS diagram's `compareOrder`, dotted
   numbers compared segment by segment), and a dependency "A depends on B"

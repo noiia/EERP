@@ -224,6 +224,7 @@ const taskViewModeDefaults: ViewDescriptor['viewModeDefaults'] = {
     urgentDays: 7,
     taskEntity: 'project_task',
     taskFormPath: '/project/tasks/:id',
+    parentField: 'parent_id',
   },
   // PBS diagram mode over the pinned project: its deliverables (ADR-039).
   pbs: { entity: 'project_pbs_item', projectField: 'project_id', projectEntity: 'project', taskField: 'pbs_item_id', canEdit: 'project.canEditStages' },
