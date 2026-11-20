@@ -381,7 +381,7 @@ func TestGanDecode_RealGanttProjectFile(t *testing.T) {
 	}
 
 	// A CDATA note and an & in a name: the note is ignored, the name survives.
-	if got := ganTask(t, p, "new:5").Name; got != "3.2 Land evaluations & negotiations" {
+	if got := ganTask(t, p, "new:5").Name; got != "Tâche 06 & suite" {
 		t.Errorf("task 5 name = %q, want the escaped name decoded", got)
 	}
 
@@ -391,15 +391,15 @@ func TestGanDecode_RealGanttProjectFile(t *testing.T) {
 	// A milestone as predecessor: EERP cannot hold it, the diff warns and skips.
 	for _, succ := range []string{"new:1", "new:4", "new:7"} {
 		if !hasGanDep(p, PlanDep{Pred: "new-milestone:22", Succ: succ, Type: DepFS}) {
-			t.Errorf("no dependency PMP ready -> %s, want the milestone-as-predecessor dep decoded", succ)
+			t.Errorf("no dependency Jalon 01 (new-milestone:22) -> %s, want the milestone-as-predecessor dep decoded", succ)
 		}
 	}
 	// A real lag: 50 days, and 5, both from a milestone.
 	if !hasGanDep(p, PlanDep{Pred: "new-milestone:25", Succ: "new:18", Type: DepFS, Lag: 50}) {
-		t.Error(`no difference="50" dependency Contracts signed! -> Layout work`)
+		t.Error(`no difference="50" dependency Jalon 03 (new-milestone:25) -> Tâche 19 (new:18)`)
 	}
 	if !hasGanDep(p, PlanDep{Pred: "new-milestone:25", Succ: "new:14", Type: DepFS, Lag: 5}) {
-		t.Error(`no difference="5" dependency Contracts signed! -> Construction work follow-up`)
+		t.Error(`no difference="5" dependency Jalon 03 (new-milestone:25) -> Tâche 17 (new:14)`)
 	}
 	for _, dep := range p.Deps {
 		if dep.Pred == dep.Succ {
@@ -660,7 +660,7 @@ func TestGanDecode_Shape(t *testing.T) {
 		  <calendars><day-types><day-type id="0"/><default-week sun="1" mon="0" tue="0" wed="0" thu="0" fri="0" sat="1"/>
 		    <only-show-weekends value="false"/><overriden-day-types/><days/></day-types></calendars>
 		  <tasks empty-milestones="true"><task id="1" name="x" uid="aa8601af38994a3681696685d3948c84" meeting="false" start="2026-01-05" duration="2" complete="0" expand="true">
-		    <notes><![CDATA[On a tout ce qu'il faut <b>vraiment</b>]]></notes><view/><description/>
+		    <notes><![CDATA[Note exemple <b>vraiment</b>]]></notes><view/><description/>
 		  </task></tasks><vacations/><previous/><roles roleset-name="Default"/></project>`
 		p, warnings, err := ganDecodeString(t, doc)
 		if err != nil {

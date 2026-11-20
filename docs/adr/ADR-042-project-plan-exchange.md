@@ -101,7 +101,7 @@ the file's value converted back to EERP form. That is what makes a round trip si
   `date_start`, else the task's `created_at` day, duration 1) and the same placeholder
   recomputed at import is no change; when the partner does move it, the row is marked
   `was_unscheduled` so it reads as what it is;
-- hours compare at 0.01, and completion compares as exported — the side being compared is
+- hours compare at 0.01, and completion compares as exported; the side being compared is
   the current task as `loadPlan` loaded it, **in the file's terms**: a whole 0 or 100 off
   EERP's `closed` column, never a `progress` percentage, so only 100 <-> closed maps.
 
@@ -122,7 +122,7 @@ below it, and the absolute position is computed at apply time from the rows actu
 That list is the plan's, and it is kept whole. The one deviation the code sanctions is
 `uniqueNewKey`: when a file gives two of its own rows the same file id (a decoded `.gan`
 numbers its rows 1..n, so only a hand-written one does this), the second row's key gains a
-`#<n>` suffix — `new:<file id>#<n>` — because two rows sharing a key would let one tick
+`#<n>` suffix (`new:<file id>#<n>`) because two rows sharing a key would let one tick
 answer for both, and a `DUPLICATE_ID` warning says so in the review list. It is a suffix on
 an existing key, not a new key shape, and it is the only one.
 
@@ -190,6 +190,24 @@ offers *Preview again*, 422 returns to the review with the refused rows highligh
 - **C. Browser parse, server apply**: the changeset is built in TypeScript and applied in
   Go. The diff then lives in TS and the rules in Go, so the two must be kept right in two
   places, and a preview that Go would refuse is possible. Rejected.
+
+## Testing
+
+The automated suite pins what Go can check on its own: decode of a genuine GanttProject
+3.3.3316 save (`TestGanDecode_RealGanttProjectFile`; the fixture is anonymised, generic task
+names over GanttProject's own attributes, dates, dependencies and ten default task
+properties), the shape `Encode` writes (`TestGanEncode_Shape`), the apply path, and the EERP
+round trips (`TestGanRoundTrip`, `TestApply_ThenPreviewIsEmpty`).
+
+Not covered automatically: what GanttProject itself rewrites when a user opens an
+EERP-exported `.gan` and saves it unchanged, and the re-import of that re-saved file. The
+suite never runs GanttProject, so **GanttProject 3.3 open/save/re-import is a pending manual
+check owned by the project owner**: export a real project from EERP, open the `.gan` in
+GanttProject 3.3, verify the hierarchy, the WBS, the links and the milestones, save the file
+unchanged from GanttProject, re-import it into EERP, and check that the preview is empty.
+`TestGanDecode_OpenedSaved` is parked as the automated version of that check, waiting on a
+committed `opened_saved.gan` from that manual run. Until it lands, only the manual pass
+catches an encoder change GanttProject would rewrite on save.
 
 ## Pitfalls
 
