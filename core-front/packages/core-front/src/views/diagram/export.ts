@@ -7,12 +7,18 @@ export interface LegendEntry { color: string; label: string }
 
 const PAD = 40
 // Browsers refuse canvases past about 16384 px a side, or a total area past roughly 2^28
-// pixels (less on some): a bigger diagram exports at a lower ratio, down to 1×.
+// pixels (less on some): a bigger image exports at whatever lower ratio still fits.
 const MAX_CANVAS_SIDE = 16000
 const MAX_CANVAS_AREA = 150_000_000
-/** The sharpest whole ratio (3×, 2×, else 1×) an image of w × h CSS pixels fits the canvas limits at. */
-export const pixelRatioFor = (w: number, h: number) =>
-  [3, 2].find((r) => Math.max(w, h) * r <= MAX_CANVAS_SIDE && w * h * r * r <= MAX_CANVAS_AREA) ?? 1
+/** Export resolution: a PNG holds 150 pixels per inch of the diagram at its natural size (a CSS
+ * pixel is 1/96 in), a PDF 150 pixels per inch of the printed page, whatever the diagram's size. */
+export const EXPORT_DPI = 150
+const CSS_DPI = 96
+const MM_PER_INCH = 25.4
+/** The pixel ratio for an image of w × h CSS pixels: the wanted one (150 dpi by default),
+ * lowered as far as needed to fit the canvas limits. */
+export const pixelRatioFor = (w: number, h: number, wanted = EXPORT_DPI / CSS_DPI) =>
+  Math.min(wanted, MAX_CANVAS_SIDE / Math.max(w, h), Math.sqrt(MAX_CANVAS_AREA / (w * h)))
 const WHITE = '#ffffff'
 const size = (b: DiagramBounds) => ({ w: Math.ceil(b.width) + PAD * 2, h: Math.ceil(b.height) + PAD * 2 })
 
@@ -125,8 +131,8 @@ export function prepareEdgesForCapture(node: HTMLElement, bounds: DiagramBounds)
 }
 
 /** PNG data URL of the whole diagram (not just the visible part), via the xyflow export recipe;
- * at the sharpest ratio the browsers' canvas limits allow (pixelRatioFor). */
-export async function diagramToPng(viewport: HTMLElement, bounds: DiagramBounds, background = WHITE): Promise<string> {
+ * at `ratio` image pixels per CSS pixel (default 150 dpi), capped by the canvas limits (pixelRatioFor). */
+export async function diagramToPng(viewport: HTMLElement, bounds: DiagramBounds, background = WHITE, ratio?: number): Promise<string> {
   const { w, h } = size(bounds)
   const v = getViewportForBounds(bounds, w, h, 0.1, 4, 0.05)
   const restore = prepareEdgesForCapture(viewport, bounds)
@@ -135,7 +141,7 @@ export async function diagramToPng(viewport: HTMLElement, bounds: DiagramBounds,
       backgroundColor: background,
       width: w,
       height: h,
-      pixelRatio: pixelRatioFor(w, h),
+      pixelRatio: pixelRatioFor(w, h, ratio),
       style: { width: `${w}px`, height: `${h}px`, transform: `translate(${v.x}px, ${v.y}px) scale(${v.zoom})` },
     })
   } finally {
@@ -166,11 +172,13 @@ export async function exportPdf(
   filename: string,
 ): Promise<void> {
   const { w, h } = size(bounds)
-  await writePdf(await diagramToPng(viewport, bounds, meta.background), w, h, meta, filename)
+  await writePdf((ratio) => diagramToPng(viewport, bounds, meta.background, ratio), w, h, meta, filename)
 }
 
+/** Lays the page out first, so the image is rendered at EXPORT_DPI of the size it is printed at:
+ * a small diagram stays sharp when enlarged onto the page, a huge one never needs an oversized canvas. */
 async function writePdf(
-  image: string,
+  render: (ratio: number) => Promise<string>,
   w: number,
   h: number,
   meta: { title: string; date: Date; legend: LegendEntry[] },
@@ -187,6 +195,8 @@ async function writePdf(
   const maxW = pageW - margin * 2
   const maxH = pageH - margin * 2 - headerH - legendH
   const scale = Math.min(maxW / w, maxH / h)
+  // scale is mm per CSS pixel: image pixels per CSS pixel = printed inches per CSS pixel × dpi.
+  const image = await render((scale / MM_PER_INCH) * EXPORT_DPI)
   doc.addImage(image, 'PNG', margin, margin + headerH, w * scale, h * scale)
   let x = margin
   const y = pageH - margin
@@ -202,12 +212,12 @@ async function writePdf(
 /** PNG data URL of a plain element at its natural size (no viewport transform: for HTML/SVG content that is
  * not an xyflow canvas); same pixel-ratio rule as diagramToPng. The edge preparation applies too — a no-op
  * for the mind-map and Ishikawa elements, whose lines are plain SVG with explicit attributes. */
-export async function elementToPng(el: HTMLElement, background = WHITE): Promise<string> {
+export async function elementToPng(el: HTMLElement, background = WHITE, ratio?: number): Promise<string> {
   const width = Math.ceil(el.scrollWidth)
   const height = Math.ceil(el.scrollHeight)
   const restore = prepareEdgesForCapture(el, { x: 0, y: 0, width: el.scrollWidth, height: el.scrollHeight })
   try {
-    return await toPng(el, { backgroundColor: background, width, height, pixelRatio: pixelRatioFor(width, height) })
+    return await toPng(el, { backgroundColor: background, width, height, pixelRatio: pixelRatioFor(width, height, ratio) })
   } finally {
     restore()
   }
@@ -225,5 +235,5 @@ export async function exportElementPdf(
   meta: { title: string; date: Date; legend: LegendEntry[]; background?: string },
   filename: string,
 ): Promise<void> {
-  await writePdf(await elementToPng(el, meta.background), Math.ceil(el.scrollWidth), Math.ceil(el.scrollHeight), meta, filename)
+  await writePdf((ratio) => elementToPng(el, meta.background, ratio), Math.ceil(el.scrollWidth), Math.ceil(el.scrollHeight), meta, filename)
 }

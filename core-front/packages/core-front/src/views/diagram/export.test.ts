@@ -24,23 +24,23 @@ describe('pdfFormat', () => {
 })
 
 describe('diagramToPng', () => {
-  it('renders the viewport at pixelRatio 3', async () => {
+  it('renders the viewport at 150 dpi (150/96 image pixels per CSS pixel)', async () => {
     const el = document.createElement('div')
     expect(await diagramToPng(el, bounds)).toBe('data:image/png;base64,AAA')
-    expect(vi.mocked(toPng).mock.calls[0][1]).toMatchObject({ pixelRatio: 3 })
+    expect(vi.mocked(toPng).mock.calls[0][1]).toMatchObject({ pixelRatio: 150 / 96 })
   })
 
-  it('steps down to 2 when 3 would pass the side or area limit', () => {
-    expect(pixelRatioFor(6000, 400)).toBe(2)
-    expect(pixelRatioFor(5000, 5000)).toBe(2)
-    expect(pixelRatioFor(7000, 7000)).toBe(1)
+  it('lowers the ratio just enough to fit the side or area limit', () => {
+    expect(pixelRatioFor(32000, 400)).toBe(0.5)
+    expect(pixelRatioFor(15000, 15000)).toBeCloseTo(Math.sqrt(150_000_000) / 15000)
+    expect(pixelRatioFor(300, 200, 4)).toBe(4)
   })
 
-  it('drops to pixelRatio 1 past the canvas size limit', async () => {
+  it('keeps every huge diagram inside the canvas limits', async () => {
     const el = document.createElement('div')
-    await diagramToPng(el, { x: 0, y: 0, width: 9000, height: 400 })
-    await diagramToPng(el, { x: 0, y: 0, width: 400, height: 9000 })
-    expect(vi.mocked(toPng).mock.calls.map((c) => c[1]?.pixelRatio)).toEqual([1, 1])
+    await diagramToPng(el, { x: 0, y: 0, width: 40000, height: 400 })
+    const { width, pixelRatio } = vi.mocked(toPng).mock.calls[0][1]!
+    expect(width! * pixelRatio!).toBeLessThanOrEqual(16000)
   })
 })
 
@@ -51,7 +51,7 @@ describe('elementToPng', () => {
     Object.defineProperty(el, 'scrollHeight', { value: 120 })
     await elementToPng(el, '#000')
     const o = vi.mocked(toPng).mock.calls[0][1]!
-    expect(o).toMatchObject({ width: 300, height: 120, pixelRatio: 3, backgroundColor: '#000' })
+    expect(o).toMatchObject({ width: 300, height: 120, pixelRatio: 150 / 96, backgroundColor: '#000' })
     expect(o.style).toBeUndefined()
   })
 })
@@ -95,6 +95,18 @@ describe('exportPdf', () => {
     )
     expect(pdf.setFillColor.mock.calls.map((c) => c[0])).toEqual(['#ff0000', '#bdbdbd'])
     expect(pdf.save).toHaveBeenCalledWith('plan.pdf')
+  })
+
+  it('renders the image at 150 dpi of its printed size, small or huge', async () => {
+    for (const width of [200, 20000]) {
+      vi.mocked(toPng).mockClear()
+      pdf.addImage.mockClear()
+      const b = { x: 0, y: 0, width, height: 100 }
+      await exportPdf(document.createElement('div'), b, { title: 'T', date: new Date(), legend: [] }, 'p')
+      const { width: w, pixelRatio } = vi.mocked(toPng).mock.calls[0][1]!
+      const printedMm = pdf.addImage.mock.calls[0][4] as number
+      expect(w! * pixelRatio!).toBeCloseTo((printedMm / 25.4) * 150)
+    }
   })
 })
 
