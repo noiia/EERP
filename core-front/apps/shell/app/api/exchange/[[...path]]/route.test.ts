@@ -34,13 +34,24 @@ describe('/api/exchange/[[...path]]', () => {
   })
 
   it('relays Go refusal untouched (a stale base is a 409 PROJECT_CHANGED)', async () => {
+    // A stale base is only ever answered on an apply: an export can't be stale, so this
+    // posts what the wizard posts and relays what Go answers, untouched.
+    proxyExchange.mockClear()
     proxyExchange.mockResolvedValue(
       new Response('{"error":{"code":"PROJECT_CHANGED","message":"the project changed since the preview"}}', {
         status: 409,
         headers: { 'content-type': 'application/json' },
       }),
     )
-    const res = await GET(new Request('http://x/api/exchange/project/p1/gan/export'), ctx(...VALID))
+    const form = new FormData()
+    form.append('file', new Blob(['<project/>'], { type: 'application/xml' }), 'plan.gan')
+    form.append('base', 'stale-hash')
+    form.append('keys', 'task:1:dates')
+    const res = await POST(
+      new Request('http://x/api/exchange/project/p1/gan/apply', { method: 'POST', body: form }),
+      ctx('project', 'p1', 'gan', 'apply'),
+    )
+    expect(proxyExchange).toHaveBeenCalledWith('POST', '/project/p1/exchange/gan/apply', expect.any(FormData))
     expect(res.status).toBe(409)
     expect(res.headers.get('Content-Type')).toBe('application/json')
     await expect(res.json()).resolves.toEqual({

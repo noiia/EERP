@@ -36,7 +36,8 @@ flowchart LR
     Cur --> Diff
     Diff -->|preview| Wizard["Import wizard<br/>(tick the rows to keep)"]
     Wizard -->|"file + base + ticked keys"| Apply["apply: reload, re-check base,<br/>re-diff, apply in 1 tx"]
-    Cur -->|"Encode (gan.go)"| Out["export .gan"]
+    DB -->|"exportPlan: EERP's own weekend,<br/>+ the project's label"| Export["exchange.Plan (exported)"]
+    Export -->|"Encode (gan.go)"| Out["export .gan"]
 ```
 
 ### A neutral `Plan`, one `Format` registry (`core/modules/project/exchange.go`)
@@ -100,7 +101,9 @@ the file's value converted back to EERP form. That is what makes a round trip si
   `date_start`, else the task's `created_at` day, duration 1) and the same placeholder
   recomputed at import is no change; when the partner does move it, the row is marked
   `was_unscheduled` so it reads as what it is;
-- hours compare at 0.01, and completion compares as exported (only 100 <-> closed maps).
+- hours compare at 0.01, and completion compares as exported — the side being compared is
+  the current task as `loadPlan` loaded it, **in the file's terms**: a whole 0 or 100 off
+  EERP's `closed` column, never a `progress` percentage, so only 100 <-> closed maps.
 
 A task that has children **in the file** has its dates and completion ignored: GanttProject
 derives them, and EERP parents keep their own.
@@ -115,6 +118,13 @@ the same file and the same project state (`task:<uuid>:<field>`, `task:<uuid>:mo
 order among the matched siblings, changed: the minimal set is the siblings outside the
 longest run kept in order, so inserting one task near the top creates no rows for the tasks
 below it, and the absolute position is computed at apply time from the rows actually ticked.
+
+That list is the plan's, and it is kept whole. The one deviation the code sanctions is
+`uniqueNewKey`: when a file gives two of its own rows the same file id (a decoded `.gan`
+numbers its rows 1..n, so only a hand-written one does this), the second row's key gains a
+`#<n>` suffix — `new:<file id>#<n>` — because two rows sharing a key would let one tick
+answer for both, and a `DUPLICATE_ID` warning says so in the review list. It is a suffix on
+an existing key, not a new key shape, and it is the only one.
 
 **Nothing destructive arrives ticked.** Every removal (`…:delete`, and a `milestone_id`
 change to null) has `default_selected: false`, "Select all" leaves removals alone, and a

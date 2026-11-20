@@ -531,8 +531,15 @@ func (a *applier) matched(i int) (uuid.UUID, bool) {
 }
 
 func (a *applier) moveTask(key string, id uuid.UUID, parentID any, sequence int) error {
+	// A task this batch created has no move row of its own on the review list: the
+	// manager ticked its create, so the create is the key a refused placement names
+	// (changeKey on a new: key would answer a key the preview never offered).
+	report := changeKey(key, "move")
+	if _, created := a.newTask[key]; created {
+		report = key
+	}
 	body := map[string]any{"parent_id": parentID, "sequence": sequence}
-	out, err := a.check("project_task", opUpdate, id, body, changeKey(key, "move"))
+	out, err := a.check("project_task", opUpdate, id, body, report)
 	if err != nil {
 		return err
 	}
@@ -890,20 +897,23 @@ func (a *applier) removeMilestones() error {
 // removeTasks deletes the tasks deepest first, so a parent is never left as the live
 // parent of a row that was deleted before it.
 func (a *applier) removeTasks() error {
-	var doomed []Change
+	depths := a.depths()
+	type doomedTask struct {
+		c     Change
+		depth int
+	}
+	var doomed []doomedTask
 	for _, c := range a.rows {
 		if c.Kind == kindDelete && a.want[c.Key] {
-			if _, ok := a.taskRows[c.Key]; ok {
-				doomed = append(doomed, c)
+			if id, ok := a.taskRows[c.Key]; ok {
+				doomed = append(doomed, doomedTask{c: c, depth: depths[id.String()]})
 			}
 		}
 	}
-	slices.SortStableFunc(doomed, func(x, y Change) int {
-		return a.depth(y.Key) - a.depth(x.Key)
-	})
-	for _, c := range doomed {
-		id := a.taskRows[c.Key]
-		if err := a.softDelete("project_task", id, c.Key); err != nil {
+	slices.SortStableFunc(doomed, func(x, y doomedTask) int { return y.depth - x.depth })
+	for _, d := range doomed {
+		id := a.taskRows[d.c.Key]
+		if err := a.softDelete("project_task", id, d.c.Key); err != nil {
 			return err
 		}
 	}
@@ -1063,22 +1073,46 @@ func (a *applier) goneMilestone(id uuid.UUID) bool {
 	return false
 }
 
-// depth is how far a task sits under the top of its tree, so removals can go deepest
-// first. It is counted on the current plan, which is the tree the rows live in now.
-func (a *applier) depth(key string) int {
+// depths is how far each task of the current plan sits under the top of its tree, which
+// is what the removal order sorts on. Counted once over the plan and read per comparison:
+// counting it inside the comparator rebuilt the parent map twice per comparison, some
+// 6·10^8 times for a batch at the 5000-task ceiling, inside the transaction that holds
+// the project row FOR UPDATE. A key the plan does not hold (a hand built plan's oddity)
+// is simply absent, and reads as 0, last among the doomed.
+func (a *applier) depths() map[string]int {
 	parents := make(map[string]string, len(a.d.cur.Tasks))
 	for _, t := range a.d.cur.Tasks {
 		parents[t.Key()] = t.Parent
 	}
-	n := 0
-	for seen := map[string]bool{}; ; n++ {
-		parent, ok := parents[key]
-		if !ok || parent == "" || seen[parent] {
-			return n
+	depth := make(map[string]int, len(parents))
+	for key := range parents {
+		if _, done := depth[key]; done {
+			continue
 		}
-		seen[key] = true
-		key = parent
+		// Walk up to the first ancestor whose depth is already known (or to the top),
+		// then fill the chain back in from there; seen guards a hand built cycle.
+		var chain []string
+		seen := map[string]bool{}
+		d := 0
+		for k := key; ; {
+			if v, ok := depth[k]; ok {
+				d = v
+				break
+			}
+			parent, ok := parents[k]
+			if !ok || parent == "" || seen[k] {
+				break
+			}
+			seen[k] = true
+			chain = append(chain, k)
+			k = parent
+		}
+		for n := len(chain) - 1; n >= 0; n-- {
+			d++
+			depth[chain[n]] = d
+		}
 	}
+	return depth
 }
 
 // ── The log line ─────────────────────────────────────────────────────────────

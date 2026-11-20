@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -310,6 +311,120 @@ func TestApp_ProjectChatterHidden(t *testing.T) {
 	for task, want := range map[string]int{hidden: http.StatusNotFound, public: http.StatusOK} {
 		if code, body := staff.do(http.MethodGet, "/api/v1/chatter_messages?table=project_task&record="+task, nil); code != want {
 			t.Errorf("chatter of %s: %d, want %d: %s", task, code, want, body)
+		}
+	}
+}
+
+// TestApp_ExchangeImportsNeedWritePermission: the two import POSTs are mounted behind the
+// REAL permission middleware (app.go's MountExchange gets jwtMw, permMw and the active
+// gate), so a caller whose roles grant project:project:read but not project:project:write
+// is refused before the handler ever runs — on preview as on apply. Each caller is the
+// project's manager on purpose: the module's own mustManage gate is satisfied, so the
+// only thing left that can answer 403 is the middleware. The control half is the same
+// request from a role that also holds the write, and it reaches the handler, which
+// refuses the file on its own terms (422 INVALID_FILE): drop permMw from that mount and
+// the two 403s become 422s, which is what makes this test the wiring check the route
+// table cannot be. The two roles are granted before any request because
+// PermissionRepository.Has caches a role for five minutes.
+func TestApp_ExchangeImportsNeedWritePermission(t *testing.T) {
+	f := newFlow(t)
+	ctx := context.Background()
+	db := f.a.db.DB
+
+	grant := func(roleID uuid.UUID, code string) {
+		t.Helper()
+		var permID uuid.UUID
+		if err := db.QueryRow(ctx, `SELECT id FROM permissions WHERE code = $1 AND deleted_at IS NULL LIMIT 1`, code).Scan(&permID); err != nil {
+			if err := db.QueryRow(ctx, `INSERT INTO permissions (code) VALUES ($1) RETURNING id`, code).Scan(&permID); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if _, err := db.Exec(ctx, `INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2)
+			ON CONFLICT DO NOTHING`, roleID, permID); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// caller is a manager of their own project holding one role, and the POST the wizard
+	// makes: the file, the keys ticked, the base. The content is deliberately not a plan:
+	// the handler's own 422 is the signal that the middleware let the request through.
+	type caller struct {
+		project string
+		token   string
+	}
+	staff := func(codes ...string) caller {
+		t.Helper()
+		user := auth.Users{TenantID: auth.DevTenantID}
+		user.ID = uuid.New()
+		var project string
+		if err := db.QueryRow(ctx, `INSERT INTO project (tenant_id, name, manager_id, visibility)
+			VALUES ($1, 'App test exchange', $2, 'everyone') RETURNING id`, auth.DevTenantID, user.ID).Scan(&project); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			for _, table := range []string{"project_task", "project_task_dependency", "project_task_user",
+				"project_milestone", "project_member", "project_stage"} {
+				_, _ = db.Exec(ctx, `DELETE FROM `+table+` WHERE project_id = $1`, project)
+			}
+			_, _ = db.Exec(ctx, `DELETE FROM project WHERE id = $1`, project)
+		})
+		role := "app-test-exchange-" + uuid.NewString()
+		var roleID uuid.UUID
+		if err := db.QueryRow(ctx, `INSERT INTO roles (tenant_id, name) VALUES ($1, $2) RETURNING id`, auth.DevTenantID, role).Scan(&roleID); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			_, _ = db.Exec(ctx, `DELETE FROM role_permissions WHERE role_id = $1`, roleID)
+			_, _ = db.Exec(ctx, `DELETE FROM roles WHERE id = $1`, roleID)
+		})
+		for _, code := range codes {
+			grant(roleID, code)
+		}
+		token, err := auth.NewTokenService(testdb.Config(t)).IssueAccess(user, []string{role}, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return caller{project: project, token: token}
+	}
+
+	postImport := func(who caller, action string) (int, []byte) {
+		t.Helper()
+		var buf bytes.Buffer
+		mw := multipart.NewWriter(&buf)
+		part, err := mw.CreateFormFile("file", "plan.gan")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := part.Write([]byte("not a plan")); err != nil {
+			t.Fatal(err)
+		}
+		if err := mw.WriteField("keys", "task:any:progress"); err != nil {
+			t.Fatal(err)
+		}
+		if err := mw.WriteField("base", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"); err != nil {
+			t.Fatal(err)
+		}
+		if err := mw.Close(); err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/project/"+who.project+"/exchange/gan/"+action, &buf)
+		req.Header.Set("Content-Type", mw.FormDataContentType())
+		req.Header.Set("Authorization", "Bearer "+who.token)
+		rec := httptest.NewRecorder()
+		f.h.ServeHTTP(rec, req)
+		return rec.Code, rec.Body.Bytes()
+	}
+
+	viewer := staff("project:project:read")
+	writer := staff("project:project:read", "project:project:write")
+	for _, action := range []string{"preview", "apply"} {
+		if code, body := postImport(viewer, action); code != http.StatusForbidden || !bytes.Contains(body, []byte("FORBIDDEN")) {
+			t.Errorf("POST %s as a read-only manager: %d %s, want the middleware's 403", action, code, body)
+		}
+		// The control: the same POST from a role holding the write gets through the
+		// middleware, so the 403 above was the middleware and not the handler.
+		if code, body := postImport(writer, action); code != http.StatusUnprocessableEntity || !bytes.Contains(body, []byte("INVALID_FILE")) {
+			t.Errorf("POST %s as a manager with project:project:write: %d %s, want the handler's 422 INVALID_FILE", action, code, body)
 		}
 	}
 }

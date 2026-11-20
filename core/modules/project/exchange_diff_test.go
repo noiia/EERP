@@ -426,7 +426,7 @@ func TestDiff_ForeignIdsAreCreates(t *testing.T) {
 	// The foreign file's rows are still a tree: Draft hangs under the Design the
 	// file added, and needs that create.
 	draft := dfxRow(t, changes, "new:2")
-	if got, want := dfxJSON(t, draft.After), `{"name":"Draft","parent":"new:1","start":"2026-03-02","end":"2026-03-02","planned_hours":0}`; got != want {
+	if got, want := dfxJSON(t, draft.After), `{"name":"Draft","parent":"new:1","parent_name":"Design","start":"2026-03-02","end":"2026-03-02","planned_hours":0}`; got != want {
 		t.Errorf("after = %s, want %s", got, want)
 	}
 	if got := draft.Requires; len(got) != 1 || got[0] != "new:1" {
@@ -506,7 +506,7 @@ func TestDiff_SwapTwoIsOneMove(t *testing.T) {
 	// or Build first with nothing before it.
 	switch row.Key {
 	case wantKey:
-		if got, want := dfxJSON(t, row.After), `{"parent":null,"after":"`+kB+`"}`; got != want {
+		if got, want := dfxJSON(t, row.After), `{"parent":null,"after":"`+kB+`","after_name":"Build"}`; got != want {
 			t.Errorf("after = %s, want %s", got, want)
 		}
 		if got, want := dfxJSON(t, row.Before), `{"parent":null,"after":null}`; got != want {
@@ -583,7 +583,7 @@ func TestDiff_MoveUnderANewParent(t *testing.T) {
 	// Design moves under the new Phase 1, below the new Phase 2 that the file
 	// lists before it: it needs both creates.
 	design := dfxRow(t, changes, "task:"+kA+":move")
-	if got, want := dfxJSON(t, design.After), `{"parent":"new:1","after":"new:2"}`; got != want {
+	if got, want := dfxJSON(t, design.After), `{"parent":"new:1","parent_name":"Phase 1","after":"new:2","after_name":"Phase 2"}`; got != want {
 		t.Errorf("after = %s, want %s", got, want)
 	}
 	if got, want := dfxJSON(t, design.Before), `{"parent":null,"after":null}`; got != want {
@@ -594,7 +594,7 @@ func TestDiff_MoveUnderANewParent(t *testing.T) {
 	}
 	// Build moves under the new Phase 2, first under it: only that create.
 	build := dfxRow(t, changes, "task:"+kB+":move")
-	if got, want := dfxJSON(t, build.After), `{"parent":"new:2","after":null}`; got != want {
+	if got, want := dfxJSON(t, build.After), `{"parent":"new:2","parent_name":"Phase 2","after":null}`; got != want {
 		t.Errorf("after = %s, want %s", got, want)
 	}
 	if got, want := dfxJSON(t, build.Requires), `["new:2"]`; got != want {
@@ -626,14 +626,52 @@ func TestDiff_MoveAfterANewSibling(t *testing.T) {
 		t.Errorf("warnings = %+v, want none", warnings)
 	}
 	moved := dfxRow(t, changes, "task:"+kC+":move")
-	if got, want := dfxJSON(t, moved.After), `{"parent":null,"after":"new:9"}`; got != want {
+	if got, want := dfxJSON(t, moved.After), `{"parent":null,"after":"new:9","after_name":"New"}`; got != want {
 		t.Errorf("after = %s, want %s", got, want)
 	}
-	if got, want := dfxJSON(t, moved.Before), `{"parent":null,"after":"`+kB+`"}`; got != want {
+	if got, want := dfxJSON(t, moved.Before), `{"parent":null,"after":"`+kB+`","after_name":"Build"}`; got != want {
 		t.Errorf("before = %s, want %s", got, want)
 	}
 	if got, want := dfxJSON(t, moved.Requires), `["new:9"]`; got != want {
 		t.Errorf("requires = %s, want %s", got, want)
+	}
+}
+
+// TestDiff_MoveRowCarriesNames: a move row has to read "under X, after Y" to a
+// manager who decides with their eyes, not "under <uuid>, after <uuid>". Each side
+// therefore carries the name of both ends beside their keys, named the way the
+// dependency rows name their two ends (nameOf: EERP's name, the file's for a row
+// EERP does not hold yet).
+func TestDiff_MoveRowCarriesNames(t *testing.T) {
+	kA, kB, kC := dfxKey(dfxA), dfxKey(dfxB), dfxKey(dfxC)
+	cur := dfxPlan([]PlanTask{
+		dfxTask(kA, "", "Design", dfxMon, 1),
+		dfxTask(kB, "", "Build", dfxTue, 1),
+		dfxTask(kC, "", "Review", dfxWed, 1),
+	}, nil)
+	// The file hangs both siblings under Design, Build first: two moves, and the
+	// top level they leave is what their before sides name.
+	file := dfxPlan([]PlanTask{
+		dfxTask(kA, "", "Design", dfxMon, 1),
+		dfxTask(kB, kA, "Build", dfxTue, 1),
+		dfxTask(kC, kA, "Review", dfxWed, 1),
+	}, nil)
+	changes, warnings := diffPlans(cur, file, nil)
+	dfxWantKeys(t, changes, "task:"+kB+":move", "task:"+kC+":move")
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %+v, want none", warnings)
+	}
+	if got, want := dfxJSON(t, dfxRow(t, changes, "task:"+kB+":move").After),
+		`{"parent":"`+kA+`","parent_name":"Design","after":null}`; got != want {
+		t.Errorf("after = %s, want %s", got, want)
+	}
+	if got, want := dfxJSON(t, dfxRow(t, changes, "task:"+kC+":move").After),
+		`{"parent":"`+kA+`","parent_name":"Design","after":"`+kB+`","after_name":"Build"}`; got != want {
+		t.Errorf("after = %s, want %s", got, want)
+	}
+	if got, want := dfxJSON(t, dfxRow(t, changes, "task:"+kC+":move").Before),
+		`{"parent":null,"after":"`+kB+`","after_name":"Build"}`; got != want {
+		t.Errorf("before = %s, want %s", got, want)
 	}
 }
 

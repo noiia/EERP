@@ -87,8 +87,23 @@ func TestCheck_SeesRowsOfItsTransaction(t *testing.T) {
 	}
 }
 
-// TestCheck_ManagerOnly: check answers the same 404 as the HTTP path when the
-// caller may not see the row an update or delete writes against.
+// TestCheck_ManagerOnly: check runs the module's gates for a caller outside the HTTP
+// path, and they are two different gates that must not be confused.
+//
+// The visibility gate is check's own (visibleRowOn → orm.CanSeeRecord): a caller who may
+// not see the row an update or delete writes against gets the same 404 the HTTP path
+// answers. The premise is pinned from both sides — the very same write by the very same
+// caller is accepted once they are a member of that project — so the 404 cannot be an
+// accident of the rules. It matters that it is not: a delete carries no body, and
+// dependencyRules reads depends_on_id off the stored row check loads, so dropping that
+// load would answer 422 on depends_on_id here and still leave the assertions below true
+// if they only asked for "not accepted".
+//
+// The MANAGER gate is not check's: no rule in rulesByTable asks for the manager (each
+// names the column it refuses, 422), which the member's accepted delete below says out
+// loud. What the project's manager alone may do is the route's own gate (mustManage),
+// pinned by TestExchange_PreviewPermissions and, behind the real permission
+// middleware, by TestApp_ExchangeImportsNeedWritePermission.
 func TestCheck_ManagerOnly(t *testing.T) {
 	f := newFixture(t)
 	h := f.handler()
@@ -97,11 +112,20 @@ func TestCheck_ManagerOnly(t *testing.T) {
 	a, b := f.task(p, nil, nil), f.task(p, nil, nil)
 	dep := f.dependency(p, a, b)
 
+	// The manager, who owns the row: accepted, rules and all.
 	if _, err := h.check(ctxFor(f.caller(m)), f.app.DB, "project_task_dependency", opDelete, dep, nil); err != nil {
 		t.Errorf("manager deletes a dependency: %v, want accepted", err)
 	}
-	stranger := f.caller(uuid.New()) // neither the manager nor an assignee
-	if _, err := h.check(ctxFor(stranger), f.app.DB, "project_task_dependency", opDelete, dep, nil); !errors.Is(err, errNotFound) {
+	// Someone who may not see the project at all: the same 404 the HTTP path answers.
+	if _, err := h.check(ctxFor(f.caller(uuid.New())), f.app.DB, "project_task_dependency", opDelete, dep, nil); !errors.Is(err, errNotFound) {
 		t.Errorf("stranger deletes a dependency of a members-only project: %v, want %v", err, errNotFound)
+	}
+	// And it was the row scope that answered, not a rule: made a member, the same
+	// caller has the same delete accepted. Delete this and the assertion above proves
+	// nothing (see the note on the stored load).
+	outsider := uuid.New()
+	f.member(p, outsider)
+	if _, err := h.check(ctxFor(f.caller(outsider)), f.app.DB, "project_task_dependency", opDelete, dep, nil); err != nil {
+		t.Errorf("member deletes a dependency of their own project: %v, want accepted (the 404 above is the row scope, not a rule)", err)
 	}
 }

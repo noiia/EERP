@@ -149,6 +149,9 @@ describe('ImportWizard', () => {
     expect(within(rowEl(createRow.key)).getByText('Create')).toBeInTheDocument()
     expect(within(rowEl(createRow.key)).getByText(/Supplier audit/)).toBeInTheDocument()
     expect(within(rowEl(createRow.key)).getByText(/8 h/)).toBeInTheDocument()
+    // A create also says whose child it becomes: the wireframe's "Create under 2 · Design"
+    // is the half of a new task a manager actually decides, and it used to be dropped.
+    expect(within(rowEl(createRow.key)).getByText(/under Design/)).toBeInTheDocument()
     expect(within(rowEl(depRow.key)).getByText('Depends on')).toBeInTheDocument()
     expect(within(rowEl(depRow.key)).getByText('Design review → Supplier audit')).toBeInTheDocument()
     // A removal names what goes with it, and leaves the zero count out.
@@ -341,10 +344,30 @@ describe('ImportWizard', () => {
   })
 
   it('reads every value shape the diff sends', async () => {
+    // The keys are the UUIDs the server really sends (a move's parent/after are task ids)
+    // and the names are the display-only half it sends beside them: what the manager must
+    // see is the name, never the id. Readable fixture keys here used to pin the broken
+    // render, which printed the key as if it were a name.
+    const parent = '3f2a1b6c-0000-4000-8000-000000000001'
+    const after = '9b1c2d3e-0000-4000-8000-000000000002'
     fetchMock.mockResolvedValue(
       previewOK(
         [
-          row({ key: 'task:mv:parent', kind: 'move', task: 'Design review', wbs: '2.1', field: 'parent', after: { parent: 'p9', after: 't7' } }),
+          row({
+            key: 'task:mv:parent',
+            kind: 'move',
+            task: 'Design review',
+            wbs: '2.1',
+            field: 'parent',
+            after: { parent, parent_name: 'Design phase', after, after_name: 'Build' },
+          }),
+          row({
+            key: 'new:c1',
+            kind: 'create',
+            task: 'Supplier audit',
+            wbs: '2.3',
+            after: { name: 'Supplier audit', parent, parent_name: 'Design phase', start: '2026-03-05', end: '2026-03-07', planned_hours: 8 },
+          }),
           row({ key: 'assign:u4:dev@x.io', kind: 'assign', task: 'Design review', wbs: '2.1', field: undefined, after: { task: 't1', email: 'dev@x.io', name: 'Dev' } }),
           row({ key: 'task:cl:closed', kind: 'update', task: 'Design review', wbs: '2.1', field: 'closed', before: false, after: true }),
           row({ key: 'milestone:m1:create', kind: 'milestone_create', task: 'Gate', wbs: '2.2', field: undefined, after: { id: 'm1', name: 'Sign-off' } }),
@@ -355,7 +378,11 @@ describe('ImportWizard', () => {
     renderWizard()
     pickFile()
     await screen.findByText('2.1 Design review')
-    expect(within(rowEl('task:mv:parent')).getByText('under p9, after t7')).toBeInTheDocument()
+    expect(within(rowEl('task:mv:parent')).getByText('under Design phase, after Build')).toBeInTheDocument()
+    expect(within(rowEl('new:c1')).getByText(/under Design phase/)).toBeInTheDocument()
+    // Not one identifier of the two rows reaches the manager's eyes.
+    expect(screen.queryByText(/3f2a1b6c/)).toBeNull()
+    expect(screen.queryByText(/9b1c2d3e/)).toBeNull()
     expect(within(rowEl('assign:u4:dev@x.io')).getByText('Dev')).toBeInTheDocument()
     expect(within(rowEl('task:cl:closed')).getByText('No')).toBeInTheDocument()
     expect(within(rowEl('task:cl:closed')).getByText('Yes')).toBeInTheDocument()

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"core/internal/auth"
+	"core/orm"
 
 	"github.com/google/uuid"
 )
@@ -1206,5 +1207,130 @@ func TestApply_BadRowValueIsRejection(t *testing.T) {
 		if !slices.Equal(rej.fields, []string{key}) {
 			t.Errorf("%s: fields = %v, want the ticked key named", tc.name, rej.fields)
 		}
+	}
+}
+
+// TestApply_RefusedPlacementNamesTheCreate: the position pass writes a ticked move AND
+// the position of a task the file added, but only the latter was ever on the review
+// list: a create row has no move row of its own, so a placement refused on a created
+// row must name `new:<file id>` (what the manager ticked) and never `new:<file id>:move`
+// (a key the preview never offered, which the wizard would highlight nothing for).
+//
+// A decoded file cannot reach a refused placement on its own row: the create writes the
+// file's parent, so the position pass writes the same one and the rules see no change.
+// The two new rows are therefore hung under each other after the creates ran — a loop no
+// file can ask for (its create is refused before a single write), which is what a hand
+// built request looks like. The refusal is the shared rule's own.
+func TestApply_RefusedPlacementNamesTheCreate(t *testing.T) {
+	e := exFixture(t)
+	f, pid := e.f, e.pid
+	file := e.basic
+	file.Tasks = append(slices.Clone(e.basic.Tasks),
+		dfxNew("7", "", "Safety inspection", dfxMon, 1),
+		dfxNew("8", "new:7", "Punch list", dfxMon, 1))
+
+	var placeErr error
+	rollback := errors.New("roll the batch back")
+	ctx := ctxFor(f.caller(e.mgr))
+	txErr := orm.Transact(ctx, f.app.DB, func(tx *orm.Tx) error {
+		cur, err := loadPlan(ctx, tx, f.tenant, pid, file.Weekend)
+		if err != nil {
+			return err
+		}
+		a, err := newApplier(f.handler(), ctx, tx, f.tenant, pid, cur, file, exUsers(t, f), []string{"new:7", "new:8"})
+		if err != nil {
+			return err
+		}
+		if err := a.createTasks(); err != nil {
+			return err
+		}
+		for i := range a.d.file.Tasks {
+			if a.d.file.Tasks[i].Name == "Safety inspection" {
+				a.d.file.Tasks[i].Parent = "new:8" // under the row that hangs under it
+			}
+		}
+		placeErr = a.placeTasks()
+		return rollback
+	})
+	if !errors.Is(txErr, rollback) {
+		t.Fatalf("transaction: %v, want it rolled back", txErr)
+	}
+	rej := exRejection(t, placeErr)
+	if rej.status != http.StatusUnprocessableEntity {
+		t.Fatalf("a create placed under its own child: %d %s, want 422", rej.status, rej.code)
+	}
+	if !slices.Equal(rej.fields, []string{"new:7"}) {
+		t.Errorf("fields = %v, want [new:7] (the create the manager ticked, not a move row the preview never offered)", rej.fields)
+	}
+	if !strings.Contains(rej.msg, "parent") {
+		t.Errorf("message %q, want the task rule's own words about a parent", rej.msg)
+	}
+}
+
+// TestApply_RemovalDepths: the removal pass sorts the doomed tasks deepest first, on a
+// depth counted ONCE over the plan. Counted per comparison instead, one batch at the
+// 5000-task ceiling rebuilt the parent map some 6·10^8 times inside the transaction that
+// holds the project row FOR UPDATE.
+func TestApply_RemovalDepths(t *testing.T) {
+	kA, kB, kC := dfxKey(dfxA), dfxKey(dfxB), dfxKey(dfxC)
+	a := &applier{d: &diff{cur: dfxPlan([]PlanTask{
+		dfxTask(kA, "", "Design", dfxMon, 1),
+		dfxTask(kB, kA, "Build", dfxTue, 1),
+		dfxTask(kC, kB, "Review", dfxWed, 1),
+		dfxTask(dfxKey(dfxDrop), kC, "Handover", dfxThu, 1),
+	}, nil)}}
+	got := a.depths()
+	if got[kA] != 0 || got[kB] != 1 || got[kC] != 2 || got[dfxKey(dfxDrop)] != 3 {
+		t.Errorf("depths = %v, want %s 0, %s 1, %s 2, %s 3", got, kA, kB, kC, dfxKey(dfxDrop))
+	}
+	if got["nope"] != 0 {
+		t.Errorf("depth of a key the plan does not hold = %d, want 0 (the sort still orders it, last)", got["nope"])
+	}
+}
+
+// exChains is a plan of chains trees, each depth rows deep, every row a fresh EERP
+// identity: the shape the removal pass is written for, where a doomed parent always
+// comes with its whole subtree.
+func exChains(chains, depth int) Plan {
+	p := Plan{Weekend: DefaultWeekend}
+	for c := 0; c < chains; c++ {
+		var parent string
+		for d := 0; d < depth; d++ {
+			ref := uuid.NewString()
+			p.Tasks = append(p.Tasks, PlanTask{Ref: ref, Parent: parent, Name: "Bulk row",
+				Start: day(dfxDay(dfxMon)), Duration: 1})
+			parent = ref
+		}
+	}
+	return p
+}
+
+// TestApply_BulkRemovalOfADeepTree: a partner clearing a whole branch is the ordinary
+// case the removal order exists for, at a size no hand written test row reaches. Three
+// hundred tasks in ten trees thirty deep go in one batch, and the pass that sorts them
+// deepest first runs for real (at the 5000-task ceiling that sort is the difference
+// between a batch and a project row locked for a minute).
+func TestApply_BulkRemovalOfADeepTree(t *testing.T) {
+	e := exFixture(t)
+	f, pid := e.f, e.pid
+	const chains, depth = 10, 30
+	exReinstall(t, f, pid, exChains(chains, depth))
+
+	emptied := Plan{Weekend: DefaultWeekend}
+	_, changes, _ := exPreview(t, f, pid, emptied)
+	if got := dfxCount(changes, kindDelete); got != chains*depth {
+		t.Fatalf("%d removal rows, want %d", got, chains*depth)
+	}
+	n := exApply(t, f, f.caller(e.mgr), pid, emptied, "cleared.gan", exKeysOf(changes)...)
+	if n != chains*depth {
+		t.Errorf("applied %d rows, want %d", n, chains*depth)
+	}
+	var live int
+	if err := f.app.DB.QueryRow(context.Background(), `SELECT count(*) FROM project_task
+		WHERE tenant_id = $1 AND project_id = $2 AND deleted_at IS NULL`, f.tenant, pid).Scan(&live); err != nil {
+		t.Fatalf("count the live tasks: %v", err)
+	}
+	if live != 0 {
+		t.Errorf("%d tasks still live, want the whole tree gone", live)
 	}
 }

@@ -132,18 +132,24 @@ type datesValue struct {
 }
 
 // moveValue is a move row: "under X, after Y", either of them null for the top
-// level and for the first sibling.
+// level and for the first sibling. The two names are for the review list only, and
+// are named the way a dependency row names its ends (nameOf): a manager decides a
+// move on words, not on two uuids. Apply reads the keys and nothing else.
 type moveValue struct {
-	Parent *string `json:"parent"`
-	After  *string `json:"after"`
+	Parent     *string `json:"parent"`
+	ParentName *string `json:"parent_name,omitempty"`
+	After      *string `json:"after"`
+	AfterName  *string `json:"after_name,omitempty"`
 }
 
 // createValue is what a row the file added would hold. The parent and the
-// deliverable are carried by key, never by name: names repeat, and apply must
-// never have to guess which "Design" the row meant.
+// deliverable are carried by key, and apply resolves only those: names repeat, and
+// the row must never have to guess which "Design" it meant. ParentName rides along
+// for the review list, which says "under Design" rather than "under <uuid>".
 type createValue struct {
 	Name         string          `json:"name"`
 	Parent       *string         `json:"parent"`
+	ParentName   *string         `json:"parent_name,omitempty"`
 	Start        string          `json:"start"`
 	End          string          `json:"end"`
 	PlannedHours float64         `json:"planned_hours"`
@@ -556,8 +562,13 @@ func (d *diff) createRow(i int) {
 		PlannedHours: ft.PlannedHours,
 	}
 	var requires []string
-	if parent := d.fileParent(i); d.needsCreate(parent) {
-		requires = append(requires, parent)
+	if parent := d.fileParent(i); parent != "" {
+		// The name the wizard prints after "under" (the wireframe's "Create under
+		// 2 · Design"); apply still resolves the key, never the name.
+		value.ParentName = strPtr(d.nameOf(parent))
+		if d.needsCreate(parent) {
+			requires = append(requires, parent)
+		}
 	}
 	// A row the file added has no task to point at, so its deliverable rides inside
 	// its create rather than as a row of its own.
@@ -731,11 +742,25 @@ func (d *diff) moveRow(i int) {
 		Task:            ct.Name,
 		Wbs:             d.wbs[c],
 		Field:           fieldParent,
-		Before:          moveValue{Parent: strPtr(ct.Parent), After: d.precedingCur(c, ct.Parent)},
-		After:           moveValue{Parent: strPtr(parent), After: after},
+		Before:          d.moveValueOf(ct.Parent, d.precedingCur(c, ct.Parent)),
+		After:           d.moveValueOf(parent, after),
 		DefaultSelected: true,
 		Requires:        requires,
 	})
+}
+
+// moveValueOf is one side of a move row: the two keys apply writes, and the two
+// names the review list prints beside them (nameOf, which answers a key neither
+// plan holds with the key itself, exactly as the dependency rows do).
+func (d *diff) moveValueOf(parent string, after *string) moveValue {
+	v := moveValue{Parent: strPtr(parent), After: after}
+	if parent != "" {
+		v.ParentName = strPtr(d.nameOf(parent))
+	}
+	if after != nil && *after != "" {
+		v.AfterName = strPtr(d.nameOf(*after))
+	}
+	return v
 }
 
 // outsideLcs is the set of siblings that have to move: the children of one parent

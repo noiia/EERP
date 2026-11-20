@@ -101,9 +101,13 @@ function makeValueText(t: (s: string) => string, num: (n: number) => string) {
     const pred = str(o.pred_name) ?? str(o.pred)
     const succ = str(o.succ_name) ?? str(o.succ)
     if (pred && succ) return `${pred} → ${succ}`
-    // A new task reads as one line: name, its days, its hours.
+    // A new task reads as one line: its parent, its days, its hours. The parent is the
+    // half a manager decides about a create (the wireframe's "Create under 2 · Design"),
+    // and it is the same name the move rows show.
     if (str(o.name) && (start || end || typeof o.planned_hours === 'number')) {
       const bits = [str(o.name)!]
+      const bornUnder = str(o.parent_name) ?? str(o.parent)
+      if (bornUnder) bits.push(`${t('under')} ${bornUnder}`)
       if (start && end) bits.push(`${dayText(start)} → ${dayText(end)}`)
       if (typeof o.planned_hours === 'number') bits.push(`${num(o.planned_hours)} ${t('h')}`)
       return bits.join(', ')
@@ -112,9 +116,13 @@ function makeValueText(t: (s: string) => string, num: (n: number) => string) {
     if (start) return dayText(start)
     if (end) return dayText(end)
     if (str(o.email)) return str(o.name) ?? str(o.email)!
+    // A move names its ends by their names (what the server sends beside the keys), never
+    // by the task id: a UUID is not something a manager reads off a review list.
     const parts: string[] = []
-    if (str(o.parent)) parts.push(`${t('under')} ${str(o.parent)}`)
-    if (str(o.after)) parts.push(`${t('after')} ${str(o.after)}`)
+    const under = str(o.parent_name) ?? str(o.parent)
+    const behind = str(o.after_name) ?? str(o.after)
+    if (under) parts.push(`${t('under')} ${under}`)
+    if (behind) parts.push(`${t('after')} ${behind}`)
     if (parts.length) return parts.join(', ')
     if (str(o.name)) return str(o.name)!
     return ''
