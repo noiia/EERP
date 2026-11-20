@@ -1287,12 +1287,16 @@ func TestApply_RefusedPlacementNamesTheCreate(t *testing.T) {
 	var placeErr error
 	rollback := errors.New("roll the batch back")
 	ctx := ctxFor(f.caller(e.mgr))
+	// Read before the transaction, as the apply route does: a second connection reading
+	// `users` while this transaction holds its lock waits forever behind any DDL another
+	// test package queues on that table in the meantime (CI runs packages in parallel).
+	users := exUsers(t, f)
 	txErr := orm.Transact(ctx, f.app.DB, func(tx *orm.Tx) error {
 		cur, err := loadPlan(ctx, tx, f.tenant, pid, file.Weekend)
 		if err != nil {
 			return err
 		}
-		a, err := newApplier(f.handler(), ctx, tx, f.tenant, pid, cur, file, exUsers(t, f), []string{"new:7", "new:8"})
+		a, err := newApplier(f.handler(), ctx, tx, f.tenant, pid, cur, file, users, []string{"new:7", "new:8"})
 		if err != nil {
 			return err
 		}
