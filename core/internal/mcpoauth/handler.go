@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
-	"slices"
 	"strings"
 	"time"
 
@@ -129,9 +128,6 @@ func (h *Handler) Register(c *echo.Context) error {
 	var body struct {
 		RedirectURIs []string `json:"redirect_uris"`
 		ClientName   string   `json:"client_name"`
-		AuthMethod   string   `json:"token_endpoint_auth_method"`
-		GrantTypes   []string `json:"grant_types"`
-		Response     []string `json:"response_types"`
 	}
 	if err := c.Bind(&body); err != nil {
 		return oauthError(c, http.StatusBadRequest, "invalid_client_metadata", "malformed registration request")
@@ -139,14 +135,9 @@ func (h *Handler) Register(c *echo.Context) error {
 	if err := h.clients.checkRedirectURIs(body.RedirectURIs); err != nil {
 		return oauthError(c, http.StatusBadRequest, "invalid_redirect_uri", err.Error())
 	}
-	if body.AuthMethod != "" && body.AuthMethod != "none" {
-		return oauthError(c, http.StatusBadRequest, "invalid_client_metadata", "only public clients (token_endpoint_auth_method none) are supported")
-	}
-	for _, g := range body.GrantTypes {
-		if g != "authorization_code" && g != "refresh_token" {
-			return oauthError(c, http.StatusBadRequest, "invalid_client_metadata", "unsupported grant type "+g)
-		}
-	}
+	// Every client is registered public (token_endpoint_auth_method none, PKCE): RFC 7591
+	// lets the server answer with other values than requested, and the response says so.
+	// Grant types it doesn't serve (jwt-bearer…) are left out the same way.
 	host, _ := url.Parse(body.RedirectURIs[0])
 	client, err := h.store.RegisterClient(c.Request().Context(), clientName(body.ClientName, host.Hostname()), body.RedirectURIs)
 	if err != nil {
@@ -191,7 +182,7 @@ func (h *Handler) validate(ctx context.Context, q url.Values) (authRequest, *aut
 		}
 		return authRequest{}, &authError{code: "invalid_client", description: "This application is not allowed to connect to EERP."}
 	}
-	if !slices.Contains(client.RedirectURIs, redirectURI) {
+	if !redirectAllowed(client.RedirectURIs, redirectURI) {
 		return authRequest{}, &authError{code: "invalid_request", description: "redirect_uri is not registered for this application"}
 	}
 	r := authRequest{client: client, redirectURI: redirectURI, challenge: q.Get("code_challenge"), state: q.Get("state")}

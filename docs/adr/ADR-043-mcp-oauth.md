@@ -9,7 +9,7 @@ EERP's MCP endpoint (`/api/v1/mcp`) accepted one credential: an ERP access token
 `Authorization: Bearer` header. That works for Claude Code or a script, which can set a
 header, but not for the hosted assistants people actually use:
 
-- **claude.ai** custom connectors offer no header field. They connect without credentials
+- **claude.ai** (and Claude Desktop, which shares its connectors) custom connectors offer no header field. They connect without credentials
   or through OAuth, identifying themselves by a **Client ID Metadata Document** (CIMD, an
   https `client_id` URL Anthropic hosts) or by **dynamic client registration** (DCR,
   RFC 7591).
@@ -61,7 +61,16 @@ sequenceDiagram
    `claude.ai`, `chatgpt.com`). DCR is open to anyone, but can only ever send a code back
    to a trusted host, after the user approved it. The CIMD fetch dials public addresses
    only (checked on the resolved IP), follows no redirect, reads at most 64 KiB in 5 s,
-   requires the document to name its own URL as `client_id`, and is cached an hour.
+   requires the document to name its own URL as `client_id`, and is cached an hour. Every client
+   is public (PKCE, no secret): a document preferring another token endpoint auth method is
+   accepted when it also lists `none` (ChatGPT's declares `private_key_jwt` and supports
+   `none`), and dynamic registration answers `none` whatever was asked (RFC 7591 lets the
+   server choose).
+   Native apps (Claude Code, Claude Desktop's `mcp-remote` bridge) receive the code on a
+   **loopback** callback, `http://localhost|127.0.0.1|[::1]/…`, on a port they pick per
+   sign-in: such a redirect URI is accepted without a trusted host and matches its
+   registered form on any port (RFC 8252 §7.3). The code can only reach a program on the
+   user's own machine, after the user approved it on the consent page.
 3. **Consent.** `/app/oauth/authorize` is an ERP page: a signed-out user goes through the
    login (with `next` back to the request), then sees the app's claimed name **and the host
    it comes from**, with Allow and Deny. Go re-validates the whole request on both the read

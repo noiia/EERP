@@ -368,7 +368,7 @@ func TestClientMetadataDocument(t *testing.T) {
 			"other-client-id":     `{"client_id":"https://claude.ai/x","redirect_uris":[%[2]q]}`,
 			"untrusted-redirect":  `{"client_id":%[1]q,"redirect_uris":["https://evil.example/cb"]}`,
 			"http-redirect":       `{"client_id":%[1]q,"redirect_uris":["http://claude.ai/cb"]}`,
-			"confidential-client": `{"client_id":%[1]q,"redirect_uris":[%[2]q],"token_endpoint_auth_method":"client_secret_basic"}`,
+			"confidential-client": `{"client_id":%[1]q,"redirect_uris":[%[2]q],"token_endpoint_auth_method":"client_secret_basic","token_endpoint_auth_methods_supported":["client_secret_basic"]}`,
 			"no-redirect":         `{"client_id":%[1]q}`,
 		} {
 			id := base + "/" + name
@@ -376,6 +376,15 @@ func TestClientMetadataDocument(t *testing.T) {
 			if _, err := f.h.ResolveClient(ctx, id); err == nil {
 				t.Errorf("%s accepted", name)
 			}
+		}
+	})
+	t.Run("a client preferring private_key_jwt but able to be public is accepted (ChatGPT)", func(t *testing.T) {
+		id := base + "/chatgpt.json"
+		*f.doc = fmt.Sprintf(`{"client_id":%q,"client_name":"ChatGPT","redirect_uris":[%q],"token_endpoint_auth_method":"private_key_jwt",
+			"token_endpoint_auth_methods_supported":["none","private_key_jwt"],"grant_types":["authorization_code","refresh_token","urn:ietf:params:oauth:grant-type:jwt-bearer"]}`, id, testRedirect)
+		info, err := f.h.ResolveClient(ctx, id)
+		if err != nil || info.Name != "ChatGPT" {
+			t.Fatalf("ChatGPT-shaped document refused: %+v %v", info, err)
 		}
 	})
 	t.Run("the production client refuses private addresses", func(t *testing.T) {
@@ -391,9 +400,13 @@ func TestDynamicRegistration(t *testing.T) {
 	code, out, _ := f.call("POST", "/api/v1/oauth/register", "", "application/json",
 		`{"redirect_uris":["https://evil.example/cb"],"client_name":"x"}`)
 	wantOAuthError(t, code, out, 400, "invalid_redirect_uri")
+	// A client asking for another auth method or grant is registered public anyway.
 	code, out, _ = f.call("POST", "/api/v1/oauth/register", "", "application/json",
-		`{"redirect_uris":["`+testRedirect+`"],"client_name":"x","token_endpoint_auth_method":"client_secret_post"}`)
-	wantOAuthError(t, code, out, 400, "invalid_client_metadata")
+		`{"redirect_uris":["`+testRedirect+`"],"client_name":"x","token_endpoint_auth_method":"private_key_jwt","grant_types":["authorization_code","urn:ietf:params:oauth:grant-type:jwt-bearer"]}`)
+	if code != 201 || out["token_endpoint_auth_method"] != "none" || fmt.Sprint(out["grant_types"]) != "[authorization_code refresh_token]" {
+		t.Fatalf("register private_key_jwt: %d %v", code, out)
+	}
+	f.registeredClients = append(f.registeredClients, out["client_id"].(string))
 
 	code, out, _ = f.call("POST", "/api/v1/oauth/register", "", "application/json",
 		`{"redirect_uris":["`+testRedirect+`"],"client_name":"ChatGPT","grant_types":["authorization_code","refresh_token"]}`)
@@ -500,5 +513,53 @@ func TestConfig(t *testing.T) {
 	s, on := FromConfig(&types.Config{MCPEnabled: true, MCPOAuthIssuer: "https://erp.example.com/"})
 	if !on || s.Resource() != "https://erp.example.com/api/v1/mcp" || !s.TrustedHosts["claude.ai"] || !s.TrustedHosts["chatgpt.com"] {
 		t.Errorf("settings %+v", s)
+	}
+}
+
+// TestLoopbackClients: Claude Code (and Claude Desktop's mcp-remote) receive the code on
+// http://localhost:<port>/callback, a port picked per sign-in (RFC 8252 §7.3).
+func TestLoopbackClients(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	base := strings.TrimSuffix(f.cimd, "/client.json")
+	id := base + "/claude-code.json"
+	*f.doc = fmt.Sprintf(`{"client_id":%q,"client_name":"Claude Code","redirect_uris":["http://localhost/callback","http://127.0.0.1/callback"],"token_endpoint_auth_method":"none"}`, id)
+	if _, err := f.h.ResolveClient(ctx, id); err != nil {
+		t.Fatalf("Claude Code document refused: %v", err)
+	}
+	alice := f.session(f.alice, f.tenant, "")
+	const redirect = "http://localhost:54321/callback"
+
+	code, out := f.approve(alice, authParams(id, map[string]string{"redirect_uri": redirect}), true)
+	to, _ := out["redirect_to"].(string)
+	if code != 200 || out["ok"] != true || !strings.HasPrefix(to, redirect+"?") {
+		t.Fatalf("loopback approve: %d %v", code, out)
+	}
+	u, _ := url.Parse(to)
+	if code, out := f.exchange(id, u.Query().Get("code"), testVerifier, redirect); code != 200 || out["access_token"] == nil {
+		t.Fatalf("loopback exchange: %d %v", code, out)
+	}
+
+	for name, uri := range map[string]string{
+		"another path":          "http://localhost:54321/other",
+		"a non-loopback http":   "http://evil.example:54321/callback",
+		"a lookalike host":      "http://localhost.evil.example/callback",
+		"https on the loopback": "https://localhost:54321/callback",
+	} {
+		if _, out := f.approve(alice, authParams(id, map[string]string{"redirect_uri": uri}), true); out["ok"] != false || out["redirect_to"] != nil {
+			t.Errorf("%s accepted: %v", name, out)
+		}
+	}
+
+	// mcp-remote registers itself with its loopback callback.
+	code, reg, _ := f.call("POST", "/api/v1/oauth/register", "", "application/json",
+		`{"redirect_uris":["http://localhost:3334/oauth/callback"],"client_name":"MCP CLI Proxy"}`)
+	if code != 201 {
+		t.Fatalf("loopback registration: %d %v", code, reg)
+	}
+	f.registeredClients = append(f.registeredClients, reg["client_id"].(string))
+	if code, out, _ := f.call("POST", "/api/v1/oauth/register", "", "application/json",
+		`{"redirect_uris":["http://evil.example/cb"]}`); code != 400 || out["error"] != "invalid_redirect_uri" {
+		t.Errorf("plain http registration: %d %v", code, out)
 	}
 }

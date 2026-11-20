@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -130,6 +131,7 @@ func (r *resolver) fetch(ctx context.Context, clientID string) (ClientInfo, erro
 		ClientName   string   `json:"client_name"`
 		RedirectURIs []string `json:"redirect_uris"`
 		AuthMethod   string   `json:"token_endpoint_auth_method"`
+		AuthMethods  []string `json:"token_endpoint_auth_methods_supported"`
 	}
 	if err := json.Unmarshal(body, &doc); err != nil {
 		return ClientInfo{}, fmt.Errorf("client metadata: %w", err)
@@ -137,7 +139,9 @@ func (r *resolver) fetch(ctx context.Context, clientID string) (ClientInfo, erro
 	if doc.ClientID != clientID {
 		return ClientInfo{}, errors.New("client metadata: client_id does not match its URL")
 	}
-	if doc.AuthMethod != "" && doc.AuthMethod != "none" {
+	// A client may prefer another method (ChatGPT declares private_key_jwt) as long as it
+	// can be a public client: EERP's metadata offers "none" only, so that is what it uses.
+	if doc.AuthMethod != "" && doc.AuthMethod != "none" && !slices.Contains(doc.AuthMethods, "none") {
 		return ClientInfo{}, errors.New("client metadata: only public clients (token_endpoint_auth_method none) are supported")
 	}
 	if err := r.checkRedirectURIs(doc.RedirectURIs); err != nil {
@@ -158,11 +162,47 @@ func (r *resolver) checkRedirectURIs(uris []string) error {
 		return errors.New("between 1 and 10 redirect URIs are required")
 	}
 	for _, raw := range uris {
-		if _, ok := r.trustedURI(raw); !ok || len(raw) > 2000 {
-			return fmt.Errorf("redirect URI %q is not an https URL on a trusted host", raw)
+		_, trusted := r.trustedURI(raw)
+		if (!trusted && loopback(raw) == nil) || len(raw) > 2000 {
+			return fmt.Errorf("redirect URI %q is neither an https URL on a trusted host nor a loopback one", raw)
 		}
 	}
 	return nil
+}
+
+// loopback parses a native app's callback (RFC 8252 §7.3): plain http to this machine
+// (localhost, 127.0.0.1, [::1]), as Claude Code and Claude Desktop's mcp-remote use. A code
+// sent there reaches only a program on the user's own computer. nil when raw isn't one.
+func loopback(raw string) *url.URL {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "http" || u.User != nil || u.Fragment != "" {
+		return nil
+	}
+	switch u.Hostname() {
+	case "localhost", "127.0.0.1", "::1":
+		return u
+	}
+	return nil
+}
+
+// redirectAllowed reports whether a request's redirect URI is one the client registered:
+// exactly, or, for a loopback callback, the same URL on any port (the app listens on a
+// port it picks for each sign-in, RFC 8252 §7.3).
+func redirectAllowed(registered []string, uri string) bool {
+	if slices.Contains(registered, uri) {
+		return true
+	}
+	got := loopback(uri)
+	if got == nil {
+		return false
+	}
+	for _, r := range registered {
+		if want := loopback(r); want != nil && want.Hostname() == got.Hostname() &&
+			want.EscapedPath() == got.EscapedPath() && want.RawQuery == got.RawQuery {
+			return true
+		}
+	}
+	return false
 }
 
 // clientName is the claimed name, trimmed to 200 characters, else the host.

@@ -4,7 +4,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 const { decideAuthorization } = vi.hoisted(() => ({ decideAuthorization: vi.fn() }))
 vi.mock('@/lib/mcp-oauth', () => ({ decideAuthorization }))
 
-import OAuthConsent from './OAuthConsent'
+import OAuthConsent, { safeCallback } from './OAuthConsent'
 
 const params = { client_id: 'https://claude.ai/c', redirect_uri: 'https://claude.ai/cb' }
 const check = { ok: true as const, client_id: params.client_id, client_name: 'Claude', client_host: 'claude.ai', redirect_uri: params.redirect_uri }
@@ -54,4 +54,15 @@ it('reports an unreachable EERP after Allow', async () => {
   render(<OAuthConsent check={check} params={params} />)
   fireEvent.click(screen.getByRole('button', { name: 'Allow' }))
   expect(await screen.findByText('EERP could not be reached. Try again.')).toBeTruthy()
+})
+
+it('leaves only for https or loopback callbacks', () => {
+  expect(safeCallback('https://claude.ai/api/mcp/auth_callback?code=c')).toBe(true)
+  expect(safeCallback('http://localhost:54321/callback?code=c')).toBe(true)
+  expect(safeCallback('http://127.0.0.1:8080/callback')).toBe(true)
+  expect(safeCallback('http://[::1]:8080/callback')).toBe(true)
+  expect(safeCallback('http://evil.example/cb')).toBe(false)
+  expect(safeCallback('http://localhost.evil.example/cb')).toBe(false)
+  expect(safeCallback('javascript:alert(1)')).toBe(false)
+  expect(safeCallback('not a url')).toBe(false)
 })

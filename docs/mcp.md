@@ -97,6 +97,24 @@ Enterprise plans an owner adds it under organization settings first):
 3. *Connect*: claude.ai opens EERP. Sign in if asked, check that the page names
    the app and **claude.ai** as its host, then *Allow*.
 
+**Claude Desktop** uses the same connectors as claude.ai: add it once in
+claude.ai (or in the desktop app's Settings → Connectors) and it is available in
+both, signed in with the same consent. A server declared instead in Desktop's
+local `claude_desktop_config.json` through the `mcp-remote` bridge also works: the
+bridge registers itself and receives the code on `http://localhost:<port>`.
+
+**Claude Code** runs the same sign-in from the terminal, with its own published
+identity and a `http://localhost:<port>/callback` callback:
+
+```bash
+claude mcp add --transport http eerp https://erp.example.com/api/v1/mcp
+# then, in Claude Code: /mcp → eerp → Authenticate (opens EERP's consent page)
+```
+
+Loopback callbacks (`http://localhost`, `127.0.0.1`, `[::1]`) are accepted for any
+app, on any port (RFC 8252): a code sent there only reaches a program on the
+user's own computer, after they approved it.
+
 **ChatGPT** (Settings → Apps & Connectors → *Create*; developer mode may have to
 be enabled first, and workspace admins may restrict custom connectors):
 
@@ -117,8 +135,11 @@ Account → Authorized apps**; a revoked app's next call gets a 401 at once.
 Disabling the ERP user stops the app at its next refresh.
 
 **Troubleshooting.** *This application is not allowed to connect to EERP*: the
-app's metadata or callback host is not in `mcp_oauth_trusted_hosts` (the backend
-log names it). *Connecting apps to EERP is not enabled on this server*:
+app's metadata or callback host is not in `mcp_oauth_trusted_hosts`, or its
+metadata document can't be a public client (the backend log line
+`mcp oauth: client refused` names the client and the reason). ChatGPT's document
+(`https://chatgpt.com/oauth/client.json`) prefers `private_key_jwt` but supports
+`none`, which EERP uses. *Connecting apps to EERP is not enabled on this server*:
 `mcp_oauth_issuer` is empty or MCP is disabled. The assistant says it can't reach
 the server: EERP must be publicly reachable over HTTPS with a certificate a
 public client trusts, and `mcp_oauth_issuer` must be exactly that origin.

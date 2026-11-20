@@ -9,9 +9,19 @@ import Typography from '@mui/material/Typography'
 import { useT, ViewBanner } from '@eerp/core-front'
 import { decideAuthorization, type AuthorizeCheck } from '@/lib/mcp-oauth'
 
-/** Only ever leave for the https URL Go validated against the app's registered callbacks. */
+/** Only ever leave for the callback Go validated against the app's registered ones: an https
+ * URL, or a loopback one (http://localhost…, a native app such as Claude Code, RFC 8252). */
+export function safeCallback(to: string): boolean {
+  try {
+    const u = new URL(to)
+    return u.protocol === 'https:' || (u.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname))
+  } catch {
+    return false
+  }
+}
+
 function leave(to: string) {
-  if (to.startsWith('https://')) window.location.assign(to)
+  if (safeCallback(to)) window.location.assign(to)
 }
 
 /** The consent screen an MCP client (claude.ai, ChatGPT) sends the user to
