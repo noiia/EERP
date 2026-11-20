@@ -28,8 +28,63 @@ import (
 // It writes plain SQL with the ids the file itself supplies and nothing else. It
 // shares no code with the importer, so a bug cannot hide behind a helper that makes
 // the same mistake twice; the fixture is pinned by its own test, below.
+// exReapStale removes what an interrupted run left behind. The fixtures' row ids
+// are fixed (the .gan files carry them), so a run killed before its cleanup would
+// make every later insert collide. Those ids exist only in tests: a tenant still
+// holding one from more than 15 minutes ago (longer than any run) is such a
+// leftover, and all of its rows go. A run in progress is never touched.
+func exReapStale(t *testing.T, f *fixture, ids []uuid.UUID) {
+	t.Helper()
+	ctx := context.Background()
+	rows, err := f.app.DB.Query(ctx, `SELECT tenant_id FROM project_task WHERE id = ANY($1) AND created_at < now() - interval '15 minutes'
+		UNION SELECT tenant_id FROM project_milestone WHERE id = ANY($1) AND created_at < now() - interval '15 minutes'`, ids)
+	if err != nil {
+		t.Fatalf("stale fixture rows: %v", err)
+	}
+	var stale []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		if id != f.tenant {
+			stale = append(stale, id)
+		}
+	}
+	rows.Close()
+	if len(stale) == 0 {
+		return
+	}
+	// Every table with a tenant_id, a few passes so foreign keys resolve in any order
+	// (a delete a reference still blocks fails alone and is retried on the next pass).
+	tables, err := f.app.DB.Query(ctx, `SELECT DISTINCT table_name FROM information_schema.columns
+		WHERE column_name = 'tenant_id' AND table_schema = current_schema()`)
+	if err != nil {
+		t.Fatalf("tenant tables: %v", err)
+	}
+	var names []string
+	for tables.Next() {
+		var n string
+		if err := tables.Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		names = append(names, n)
+	}
+	tables.Close()
+	for pass := 0; pass < 5; pass++ {
+		for _, n := range names {
+			_, _ = f.app.DB.Exec(ctx, `DELETE FROM "`+strings.ReplaceAll(n, `"`, `""`)+`" WHERE tenant_id = ANY($1)`, stale)
+		}
+	}
+}
+
 func exInstallPlan(t *testing.T, f *fixture, pid uuid.UUID, p Plan) {
 	t.Helper()
+	ids := make([]uuid.UUID, 0, len(p.Tasks))
+	for _, row := range p.Tasks {
+		ids = append(ids, exRowID(t, row.Ref))
+	}
+	exReapStale(t, f, ids)
 	for _, row := range p.Tasks {
 		if !row.Milestone {
 			continue

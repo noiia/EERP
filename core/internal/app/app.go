@@ -27,6 +27,7 @@ import (
 	"core/internal/graphfield"
 	"core/internal/mail"
 	"core/internal/mcpbridge"
+	"core/internal/mcpoauth"
 	authmw "core/internal/middleware"
 	"core/internal/module"
 	"core/internal/notebook"
@@ -120,6 +121,9 @@ func Build(ctx context.Context, cfg *types.Config, configPath string, debug bool
 		return nil, err
 	}
 	if err := mcpbridge.ValidateConfig(configContent); err != nil {
+		return nil, err
+	}
+	if err := mcpoauth.ValidateConfig(configContent); err != nil {
 		return nil, err
 	}
 	for _, w := range mail.ConfigWarnings(configContent) {
@@ -1218,8 +1222,16 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 
 	// Snapshot the final business routes, after all generic-handler overrides.
 	if configContent.MCPEnabled {
-		mcpbridge.New(srv.Echo(), permRepo, moduleRuntime.IsTableActive, configContent.MCPAllowWrites, app.Logger).
-			Mount(srv.Echo(), configContent, jwtMw)
+		bridge := mcpbridge.New(srv.Echo(), permRepo, moduleRuntime.IsTableActive, configContent.MCPAllowWrites, app.Logger)
+		// OAuth for MCP clients (ADR-043): mounted after the snapshot above, and
+		// never admitted to MCP's own operation catalog anyway.
+		if oauth, on := mcpoauth.FromConfig(configContent); on {
+			oauthHandler := mcpoauth.NewHandler(oauth, mcpoauth.NewStore(app.DB), tokenSvc, userRepo, permRepo,
+				tokenSvc.AccessTTL(), tokenSvc.RefreshTTL())
+			oauthHandler.Mount(srv.Echo(), jwtMw, mcpRateLimit(configContent), configContent.AuthRateLimitPerMinute)
+			bridge.UseOAuth(oauth.ResourceMetadataURL(), oauthHandler.GrantLive)
+		}
+		bridge.Mount(srv.Echo(), configContent, jwtMw)
 	}
 	a.server, a.userRepo, a.permRepo, a.presenceHub = srv, userRepo, permRepo, presenceHub
 	for _, r := range srv.Routes() {
@@ -1381,4 +1393,13 @@ func mountWebsiteAuth(g *echo.Group, signup, login, refresh, logout echo.Handler
 	g.POST("/login", login)
 	g.POST("/refresh", refresh)
 	g.POST("/logout", logout)
+}
+
+// mcpRateLimit is the per-IP limit of calls an MCP client's servers make
+// (mcp_rate_limit_per_minute, default 120), shared with the OAuth client routes.
+func mcpRateLimit(c *types.Config) int {
+	if c.MCPRateLimitPerMinute > 0 {
+		return c.MCPRateLimitPerMinute
+	}
+	return 120
 }

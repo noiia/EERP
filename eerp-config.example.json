@@ -7,6 +7,8 @@
     "mcp_allow_writes": false,
     "mcp_allowed_origins": [],
     "mcp_rate_limit_per_minute": 120,
+    "mcp_oauth_issuer": "",
+    "mcp_oauth_trusted_hosts": ["claude.ai", "chatgpt.com"],
     "master_key": "change-me-in-production",
     "access_ttl_seconds": 21600,
     "refresh_ttl_seconds": 604800,

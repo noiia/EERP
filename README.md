@@ -32,6 +32,12 @@ stay current as the design evolves.
 
 EERP also provides an optional authenticated **MCP server**, including project access,
 model discovery, business actions, resources and prompts. See the [MCP setup and API guide](docs/mcp.md).
+Hosted assistants connect with OAuth, signing in through the ERP's own login:
+set `mcp_enabled` and `mcp_oauth_issuer` (your public HTTPS origin), then add
+`https://<your host>/api/v1/mcp` as a custom connector in **claude.ai**
+(Settings → Connectors) or **ChatGPT** (Settings → Apps & Connectors) and allow it
+on EERP's consent page. Step by step: [Connect claude.ai or ChatGPT](docs/mcp.md#connect-claudeai-or-chatgpt)
+([ADR-043](docs/adr/ADR-043-mcp-oauth.md)).
 
 ---
 

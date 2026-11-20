@@ -15,11 +15,13 @@ Rebuild its image first if you have just installed the implementation:
   "mcp_enabled": true,
   "mcp_allow_writes": false,
   "mcp_allowed_origins": [],
-  "mcp_rate_limit_per_minute": 120
+  "mcp_rate_limit_per_minute": 120,
+  "mcp_oauth_issuer": "https://erp.example.com",
+  "mcp_oauth_trusted_hosts": ["claude.ai", "chatgpt.com"]
 }
 ```
 
-All four options are optional. MCP is disabled by default, and writes are
+All options are optional. MCP is disabled by default, and writes are
 disabled independently. Setting `mcp_allow_writes: true` makes the create,
 update, delete, restore and business action tools available. Existing EERP
 permissions are still required for every action.
@@ -30,18 +32,98 @@ to both `mcp_allowed_origins` and EERP's general CORS `allowed_origins` setting.
 Wildcards, paths, embedded credentials and `null` origins are rejected. Origin
 validation also applies to CORS preflight requests.
 
+`mcp_oauth_issuer` turns on OAuth sign-in for hosted assistants (claude.ai,
+ChatGPT, see [Connect claude.ai or ChatGPT](#connect-claudeai-or-chatgpt)). It
+must be the public origin users open EERP at, `https://` with no path; leave it
+empty to keep Bearer tokens only. `mcp_oauth_trusted_hosts` lists the hosts an
+OAuth client may come from (default `claude.ai` and `chatgpt.com`).
+
 The existing nginx proxy already forwards `/api/v1/*` to the backend. In
 production, use the same server's public HTTPS URL:
 `https://erp.example.com/api/v1/mcp`.
 
 ## Authentication and connection
 
-Every request must include **`Authorization: Bearer <ERP access token>`**.
-Use a dedicated ERP account with the appropriate roles. This endpoint has no
-shared MCP token, automatic privilege elevation or cookie authentication.
-Website visitor tokens, refresh tokens and identities without a user or tenant
-are rejected. Accounts required to change their password must do so in EERP
-before using MCP.
+MCP accepts two credentials, both carried as **`Authorization: Bearer <token>`**:
+
+| Credential | For | How it is obtained |
+| --- | --- | --- |
+| OAuth access token (audience `mcp`) | claude.ai, ChatGPT and other OAuth MCP clients | The client runs the sign-in itself, see below |
+| ERP access token | Claude Code, scripts, clients that let you set a header | `POST /api/v1/auth/login` or the LDAP/OIDC flow |
+
+Either way the token acts as one ERP user, with that user's roles. Use a
+dedicated ERP account with the appropriate roles when the assistant is shared.
+There is no shared MCP token, automatic privilege elevation or cookie
+authentication. Website visitor tokens, refresh tokens and identities without a
+user or tenant are rejected. Accounts required to change their password must do
+so in EERP before using MCP.
+
+### Connect claude.ai or ChatGPT
+
+EERP is its own OAuth authorization server for MCP ([ADR-043](adr/ADR-043-mcp-oauth.md)):
+no identity provider is needed in front of it, and the user signs in with any
+ERP method (password, LDAP, OIDC).
+
+```mermaid
+sequenceDiagram
+    participant A as claude.ai / ChatGPT
+    participant E as EERP
+    participant U as You (browser)
+    A->>E: MCP call without a token → 401 + where to sign in
+    A->>U: opens EERP's consent page
+    U->>E: ERP login, then Allow
+    E-->>A: one-time code → access + refresh tokens
+    A->>E: MCP calls as you
+```
+
+Prerequisites on the server: `mcp_enabled: true`, `mcp_oauth_issuer` set to the
+public HTTPS origin (for example `https://erp.example.com`; `make bootstrap-prod`
+writes `https://<ERP_HOST>` there, so in production only `mcp_enabled` is left to
+turn on), the backend restarted, and EERP reachable from the internet over HTTPS with a valid
+certificate (the assistant's servers call it). Check it with:
+
+```bash
+curl https://erp.example.com/.well-known/oauth-authorization-server
+curl -i -X POST https://erp.example.com/api/v1/mcp   # 401 with a WWW-Authenticate header
+```
+
+**claude.ai** (Settings → Connectors → *Add custom connector*; on Team and
+Enterprise plans an owner adds it under organization settings first):
+
+1. Name: `EERP`; Remote MCP server URL: `https://erp.example.com/api/v1/mcp`.
+2. Leave *OAuth Client ID* and *Secret* empty, and keep the recommended
+   *Use Claude's published identity* option (CIMD). Dynamic registration also
+   works.
+3. *Connect*: claude.ai opens EERP. Sign in if asked, check that the page names
+   the app and **claude.ai** as its host, then *Allow*.
+
+**ChatGPT** (Settings → Apps & Connectors → *Create*; developer mode may have to
+be enabled first, and workspace admins may restrict custom connectors):
+
+1. Name: `EERP`; MCP server URL: `https://erp.example.com/api/v1/mcp`;
+   Authentication: *OAuth*, with no client ID or secret (ChatGPT registers itself).
+2. Create, then connect: sign in to EERP and *Allow* (host **chatgpt.com**).
+
+The consent page always shows the host an app comes from: its name is whatever it
+claims. Only hosts in `mcp_oauth_trusted_hosts` are accepted, for the app's
+metadata document and for every callback URL, so a code can only ever go back to
+them.
+
+**Tokens and revocation.** The access token lives at most an hour and works only
+on `/api/v1/mcp` (any other route answers 403). The client renews it with a
+refresh token that rotates on each use; reusing an old one revokes the
+connection. Each user lists and revokes their connected apps in **Settings →
+Account → Authorized apps**; a revoked app's next call gets a 401 at once.
+Disabling the ERP user stops the app at its next refresh.
+
+**Troubleshooting.** *This application is not allowed to connect to EERP*: the
+app's metadata or callback host is not in `mcp_oauth_trusted_hosts` (the backend
+log names it). *Connecting apps to EERP is not enabled on this server*:
+`mcp_oauth_issuer` is empty or MCP is disabled. The assistant says it can't reach
+the server: EERP must be publicly reachable over HTTPS with a certificate a
+public client trusts, and `mcp_oauth_issuer` must be exactly that origin.
+
+### Claude Code and header-capable clients
 
 The client must support Streamable HTTP and a configurable Bearer header.
 For clients that accept the following `mcpServers` format, use a configuration
@@ -66,10 +148,6 @@ Obtain an access token through the existing ERP sign-in flow
 its token through EERP's existing refresh mechanism and updates its header when
 the token expires. Keep passwords, the master key and refresh tokens out of
 tool arguments, URLs and version-controlled configuration files.
-
-The server does not implement an MCP OAuth authorization server or OAuth
-discovery. Clients that require OAuth and cannot set a custom Bearer header
-need an additional authentication integration.
 
 To check the protocol with an access token already stored in the
 `EERP_ACCESS_TOKEN` environment variable:
@@ -233,14 +311,21 @@ error: check its outcome before retrying it.
   and development data seeding are excluded. New families of dedicated routes
   require explicit admission in `mcpbridge.New`; new CRUD models are discovered
   automatically.
+- OAuth (when `mcp_oauth_issuer` is set) adds the `/.well-known/oauth-*`
+  metadata, `/api/v1/oauth/register` and `/api/v1/oauth/token` (limited per IP
+  like MCP itself, since every user of one assistant comes from its servers) and
+  the consent calls (limited like sign-in). An OAuth token is refused on every
+  route but MCP, and none of these routes is in MCP's own operation catalog.
 - Business content and files are untrusted data. Clients must retain control
   over tool calls and obtain the user's consent for mutations.
 
 Permissions and groups follow EERP's existing session and cache mechanisms.
 Revocation is subject to those mechanisms' guarantees and must not be assumed
-to take effect immediately. MCP adds no authorization cache of its own.
+to take effect immediately, except for revoking an OAuth app, which every MCP
+request checks. MCP adds no authorization cache of its own.
 
-The implementation is in `core/internal/mcpbridge`, with final route wiring in
+The implementation is in `core/internal/mcpbridge` (OAuth: `core/internal/mcpoauth`,
+the consent page `core-front/apps/shell/app/app/oauth/authorize`), with final route wiring in
 `core/internal/app/app.go` and schema projection in `core/orm/server/catalog.go`.
 The [MCP transport specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)
 and SDK define JSON-RPC negotiation and the protocol lifecycle.
@@ -251,8 +336,9 @@ From `core/`, using Go 1.27.3 (the repository's pinned version):
 
 ```bash
 go test -race ./internal/mcpbridge ./orm/server
-go test ./internal/types ./internal/app
+go test ./internal/types ./internal/app ./internal/middleware
 CONFIG=$PWD/../eerp-config.json go test ./modules/project -run MCP   # absolute: tests run from their package dir
+CONFIG=$PWD/../eerp-config.json go test ./internal/mcpoauth ./internal/app -run 'MCP|OAuth|Test'   # OAuth flows
 ```
 
 Tests that do not require a database cover the protocol, tools, resources,
@@ -260,4 +346,9 @@ prompts, official client interoperability, origins, JWT authentication,
 read-only mode, permissions, concurrent identity isolation, files, errors and
 limits. PostgreSQL project tests verify access for managers, members,
 non-members and other tenants through the actual MCP endpoint. They use an
-isolated test tenant and clean up only the rows created by the test.
+isolated test tenant and clean up only the rows created by the test. The OAuth
+tests cover discovery, CIMD fetch refusals (http, untrusted host, private
+address, redirect, oversized or self-inconsistent documents), dynamic
+registration, wrong redirect URIs, missing or wrong PKCE verifiers, code reuse,
+refresh rotation and reuse, audience separation, revocation, disabled users and
+tenant isolation, and one full flow through the real MCP endpoint.

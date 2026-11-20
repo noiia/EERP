@@ -352,13 +352,23 @@ operations.
   groups, row scopes, active module checks and read-only mode effective. Preserve
   the configured request and execution limits. MCP operations must continue
   through the existing API handlers and business overrides.
+- OAuth for hosted MCP clients (claude.ai, ChatGPT; [ADR-043](docs/adr/ADR-043-mcp-oauth.md),
+  `core/internal/mcpoauth`, on when `mcp_oauth_issuer` is set): EERP is its own
+  authorization server (CIMD + DCR, PKCE S256, consent page `/app/oauth/authorize`,
+  grants revocable in Settings → Account). Its tokens carry audience `mcp` and a
+  grant id: `middleware.authenticate` accepts them only on requests marked by
+  `auth.WithMCPRequest` (the MCP route and the API calls it makes), and the MCP
+  route checks the grant is live on every request. Pitfalls: never accept an
+  `mcp` token on another route; a client is trusted only by its hosts
+  (`mcp_oauth_trusted_hosts`), for the metadata URL and every redirect URI.
 - Update [docs/mcp.md](docs/mcp.md) for changes to capabilities, arguments,
   responses, authentication, limits or setup. Update README links and example
   configuration files when affected. Keep all MCP documentation in English.
 - Add or adjust meaningful tests for changed MCP behavior, including access
   denial and tenant/project isolation when relevant. Existing MCP tests live in
   `core/internal/mcpbridge/server_test.go`, `core/orm/server/catalog_test.go`,
-  `core/internal/app/mcp_test.go` and `core/modules/project/mcp_test.go`.
+  `core/internal/app/mcp_test.go`, `core/modules/project/mcp_test.go` and (OAuth)
+  `core/internal/mcpoauth/oauth_test.go`.
 
 When MCP behavior changes, run the relevant checks from `core/`:
 

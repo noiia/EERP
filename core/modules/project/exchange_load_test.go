@@ -56,10 +56,19 @@ func exMilestoneName(f *fixture, milestone uuid.UUID, name string) {
 
 // exStaff seeds a live staff user with the three profile fields the loader's
 // display name rule reads, in the order it prefers them.
+// exStaffMarker tags the users exStaff creates, so a later run can recognise its own leftovers.
+const exStaffMarker = "exchange-test-fixture"
+
 func exStaff(f *fixture, email, displayName, name, surname string) uuid.UUID {
 	f.t.Helper()
-	id := f.id(`INSERT INTO users (tenant_id, email, kind, display_name, name, surname)
-		VALUES ($1, $2, '', $3, $4, $5) RETURNING id`, f.tenant, email, displayName, name, surname)
+	// The emails are fixed (the .gan fixtures name these people) and live emails
+	// are unique across tenants, so a run killed before its cleanup would block
+	// every later one. Rows this helper made carry exStaffMarker: one older than
+	// any test run is a leftover and goes. Two runs at once still collide.
+	f.exec(`DELETE FROM users WHERE lower(email) = lower($1) AND job_title = $2 AND deleted_at IS NULL
+		AND created_at < now() - interval '15 minutes'`, email, exStaffMarker)
+	id := f.id(`INSERT INTO users (tenant_id, email, kind, display_name, name, surname, job_title)
+		VALUES ($1, $2, '', $3, $4, $5, $6) RETURNING id`, f.tenant, email, displayName, name, surname, exStaffMarker)
 	f.t.Cleanup(func() {
 		_, _ = f.app.DB.Exec(context.Background(), `DELETE FROM users WHERE id = $1`, id)
 	})

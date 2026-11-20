@@ -14,6 +14,7 @@ import (
 	"core/internal/version"
 	ormserver "core/orm/server"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -34,6 +35,15 @@ func (b *Bridge) Mount(e *echo.Echo, cfg *types.Config, jwt echo.MiddlewareFunc)
 		return func(c *echo.Context) error {
 			if c.Request().URL.Path == Path {
 				c.Response().Header().Set("Cache-Control", "no-store")
+				// Every 401 on MCP (no token, a bad one, a revoked grant) tells an
+				// OAuth client where to sign in.
+				if res, err := echo.UnwrapResponse(c.Response()); err == nil && b.resourceMetadata != "" {
+					res.Before(func() {
+						if res.Status == http.StatusUnauthorized {
+							res.Header().Set("WWW-Authenticate", `Bearer resource_metadata="`+b.resourceMetadata+`"`)
+						}
+					})
+				}
 				origins := c.Request().Header.Values("Origin")
 				if len(origins) > 1 || (len(origins) == 1 && !allowed[origins[0]]) {
 					return c.JSON(http.StatusForbidden, map[string]string{"error": "MCP origin denied"})
@@ -55,11 +65,33 @@ func (b *Bridge) Mount(e *echo.Echo, cfg *types.Config, jwt echo.MiddlewareFunc)
 			if identity.MustChangePassword {
 				return c.JSON(http.StatusForbidden, map[string]string{"error": "PASSWORD_CHANGE_REQUIRED"})
 			}
+			if identity.GrantID != uuid.Nil {
+				live := false
+				if b.grantLive != nil {
+					var err error
+					if live, err = b.grantLive(c.Request().Context(), identity.GrantID, identity.UserID); err != nil {
+						return err
+					}
+				}
+				if !live {
+					return c.JSON(http.StatusUnauthorized, map[string]string{"error": "This connection was revoked; sign in again"})
+				}
+			}
 			r := c.Request()
 			ctx := context.WithValue(r.Context(), callerKey{}, caller{authorization: r.Header.Get("Authorization"), remoteAddr: r.RemoteAddr})
 			transport.ServeHTTP(c.Response(), r.WithContext(ctx))
 			return nil
-		}, ormserver.BodyLimit("1M"), ormserver.AuthRateLimiter(limit), jwt)
+		}, ormserver.BodyLimit("1M"), ormserver.AuthRateLimiter(limit), markMCP, jwt)
+}
+
+// markMCP marks the request (and the API calls MCP makes from it, whose
+// contexts derive from it) as MCP's: the only place an "mcp" audience token is
+// accepted (middleware.authenticate).
+func markMCP(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		c.SetRequest(c.Request().WithContext(auth.WithMCPRequest(c.Request().Context())))
+		return next(c)
+	}
 }
 
 type CatalogInput struct {

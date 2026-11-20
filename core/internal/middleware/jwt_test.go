@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"core/internal/auth"
 	authmw "core/internal/middleware"
@@ -300,5 +301,64 @@ func TestOptionalWebsiteJWT(t *testing.T) {
 				t.Errorf("code=%d identity=%v, want %d %v", rec.Code, got, tt.want, tt.wantIdentity)
 			}
 		})
+	}
+}
+
+// An OAuth MCP token (aud "mcp", ADR-043) is accepted only where the request is
+// marked as MCP's: never as an ERP session, never on the website.
+func TestJWTMiddleware_MCPAudience(t *testing.T) {
+	svc := newSvc()
+	user := auth.Users{Email: "a@b.c"}
+	user.ID, user.TenantID = uuid.New(), uuid.New()
+	grant := uuid.New()
+	mcpToken, err := svc.IssueMCPAccess(user, nil, nil, nil, grant, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	erpToken, _ := svc.IssueAccess(user, nil, nil, nil)
+	website := user
+	website.Kind = auth.KindWebsite
+	siteToken, _ := svc.IssueAccess(website, nil, nil, nil)
+
+	markMCP := func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			c.SetRequest(c.Request().WithContext(auth.WithMCPRequest(c.Request().Context())))
+			return next(c)
+		}
+	}
+	var seen auth.Identity
+	ok := func(c *echo.Context) error {
+		seen = auth.MustIdentity(c.Request().Context())
+		return c.NoContent(http.StatusOK)
+	}
+	e := testEcho()
+	e.GET("/erp", ok, authmw.JWTMiddleware(svc))
+	e.GET("/mcp", ok, markMCP, authmw.JWTMiddleware(svc))
+	e.GET("/site", ok, authmw.WebsiteJWTMiddleware(svc))
+
+	for _, tc := range []struct {
+		path, token string
+		want        int
+	}{
+		{"/erp", mcpToken, http.StatusForbidden},
+		{"/site", mcpToken, http.StatusForbidden},
+		{"/mcp", mcpToken, http.StatusOK},
+		{"/mcp", erpToken, http.StatusOK}, // an ERP token still works on MCP (Claude Code, scripts)
+		{"/mcp", siteToken, http.StatusForbidden},
+		{"/erp", erpToken, http.StatusOK},
+	} {
+		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		req.Header.Set("Authorization", "Bearer "+tc.token)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		if rec.Code != tc.want {
+			t.Errorf("%s: %d, want %d", tc.path, rec.Code, tc.want)
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, "/mcp", nil)
+	req.Header.Set("Authorization", "Bearer "+mcpToken)
+	e.ServeHTTP(httptest.NewRecorder(), req)
+	if seen.GrantID != grant || seen.UserID != user.ID {
+		t.Errorf("identity %+v, want the grant and user", seen)
 	}
 }

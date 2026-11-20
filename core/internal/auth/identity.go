@@ -20,6 +20,8 @@ type Identity struct {
 	// MustChangePassword mirrors Claims.MustChangePassword — see its own doc
 	// comment. Read by PermissionMiddleware, not by any handler.
 	MustChangePassword bool
+	// GrantID is set for an OAuth MCP token (Claims.GrantID), uuid.Nil otherwise.
+	GrantID uuid.UUID
 }
 
 type contextKey struct{}
@@ -55,5 +57,21 @@ func NewIdentityFromClaims(claims *Claims) Identity {
 		Roles:              claims.Roles,
 		Groups:             claims.Groups,
 		MustChangePassword: claims.MustChangePassword,
+		GrantID:            claims.GrantID,
 	}
+}
+
+type mcpRequestKey struct{}
+
+// WithMCPRequest marks ctx as the MCP endpoint's request, or an API call MCP
+// makes on its behalf: the only places an "mcp" audience token is accepted.
+// A context value, so no client can set it.
+func WithMCPRequest(ctx context.Context) context.Context {
+	return context.WithValue(ctx, mcpRequestKey{}, true)
+}
+
+// IsMCPRequest reports whether ctx was marked by WithMCPRequest.
+func IsMCPRequest(ctx context.Context) bool {
+	v, _ := ctx.Value(mcpRequestKey{}).(bool)
+	return v
 }

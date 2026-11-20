@@ -193,7 +193,7 @@ if [ ! -f "$CONFIG" ]; then
   say "creating $CONFIG from its template"
   cp eerp-config.prod.example.json "$CONFIG"
 fi
-for key in euro_office_url euro_office_internal_url euro_office_storage_url euro_office_jwt_secret; do
+for key in euro_office_url euro_office_internal_url euro_office_storage_url euro_office_jwt_secret mcp_oauth_issuer; do
   rg -q "\"$key\"" "$CONFIG" || sed -i "1a\\    \"$key\": \"\"," "$CONFIG"
 done
 say "writing secrets and settings into $CONFIG"
@@ -206,6 +206,8 @@ set_json euro_office_url "https://${ERP_HOST}/euro-office"
 set_json euro_office_internal_url "http://euro-office"
 set_json euro_office_storage_url "http://core-back:8080"
 set_json site_url "https://${SITE_HOST:-$ERP_HOST}"
+# OAuth for MCP clients (ADR-043): only used once mcp_enabled is true.
+set_json mcp_oauth_issuer "https://${ERP_HOST}"
 if [ -n "${SMTP_HOST:-}" ]; then
   set_json smtp_host "$SMTP_HOST"
   # shellcheck disable=SC2153 # assigned by setting() through printf -v

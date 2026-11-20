@@ -103,7 +103,15 @@ type Config struct {
 	MCPAllowWrites        bool     `json:"mcp_allow_writes" needed:"false"`
 	MCPAllowedOrigins     []string `json:"mcp_allowed_origins" needed:"false"`
 	MCPRateLimitPerMinute int      `json:"mcp_rate_limit_per_minute" needed:"false"`
-	ModuleRoot            []string `json:"module_root" needed:"true"`
+	// MCPOAuthIssuer turns on OAuth sign-in for MCP clients such as claude.ai and
+	// ChatGPT (ADR-043): the public origin users open EERP at, e.g.
+	// "https://erp.example.com". Empty = no OAuth; MCP then takes ERP Bearer
+	// tokens only. MCPOAuthTrustedHosts lists the hosts a client may come from:
+	// its metadata document URL and every redirect URI must be on one of them.
+	// nil = DefaultTrustedHosts (claude.ai, chatgpt.com).
+	MCPOAuthIssuer       string   `json:"mcp_oauth_issuer" needed:"false"`
+	MCPOAuthTrustedHosts []string `json:"mcp_oauth_trusted_hosts" needed:"false"`
+	ModuleRoot           []string `json:"module_root" needed:"true"`
 	// Environment is exactly "development" or "production" — main.go refuses to
 	// boot on anything else (docs/security/pentest-2026-09-24.md's follow-up).
 	// It's the single switch behind two behaviors that used to be separate,

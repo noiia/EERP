@@ -92,7 +92,9 @@ func authenticate(c *echo.Context, next echo.HandlerFunc, tokens *auth.TokenServ
 	}
 	// Audience gate (ADR-024): lives here, not in roles, so no role grant can
 	// ever let a website token into the ERP — or an ERP token into the site.
-	if claims.IsWebsite() != website {
+	// An OAuth MCP token (ADR-043) works only through the MCP endpoint, never
+	// as an ERP session: a connector can't sign in to the ERP or authorize apps.
+	if claims.IsWebsite() != website || (claims.IsMCP() && !auth.IsMCPRequest(c.Request().Context())) {
 		return c.JSON(http.StatusForbidden, map[string]any{"error": map[string]any{
 			"code": "FORBIDDEN", "message": "This session cannot access this resource.",
 			"request_id": c.Response().Header().Get(echo.HeaderXRequestID),

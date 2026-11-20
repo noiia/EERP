@@ -9,6 +9,7 @@ import (
 	"core/internal/auth"
 	"core/internal/auth/providers"
 	"core/internal/common"
+	"core/internal/mcpoauth"
 	"core/internal/module"
 	"core/orm"
 
@@ -49,6 +50,17 @@ func (m *authModule) Register() error {
 		return err
 	}
 	if err := orm.Register[auth.RefreshTokens](orm.WithExcluded()); err != nil {
+		return err
+	}
+	// OAuth for MCP clients (ADR-043): clients, codes and grants carry
+	// credentials (hashed), so they stay off the generic CRUD surface.
+	if err := orm.Register[mcpoauth.Client](orm.WithTableName("oauth_client"), orm.WithExcluded()); err != nil {
+		return err
+	}
+	if err := orm.Register[mcpoauth.Code](orm.WithTableName("oauth_code"), orm.WithExcluded()); err != nil {
+		return err
+	}
+	if err := orm.Register[mcpoauth.Grant](orm.WithTableName("oauth_grant"), orm.WithExcluded()); err != nil {
 		return err
 	}
 	// RoleBelongs is deliberately NOT WithExcluded: it rides the generic CRUD

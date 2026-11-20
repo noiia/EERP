@@ -56,6 +56,18 @@ type Bridge struct {
 	allowWrites bool
 	logger      *zap.Logger
 	slots       chan struct{}
+	// OAuth (ADR-043), set by UseOAuth: where a 401 points the client, and the
+	// revocation check for tokens issued under a grant.
+	resourceMetadata string
+	grantLive        func(ctx context.Context, grant, user uuid.UUID) (bool, error)
+}
+
+// UseOAuth turns on OAuth for MCP clients: a 401 names the protected resource
+// metadata (RFC 9728), and a token issued under a grant is refused once the
+// grant is revoked or expired.
+func (b *Bridge) UseOAuth(resourceMetadata string, grantLive func(ctx context.Context, grant, user uuid.UUID) (bool, error)) *Bridge {
+	b.resourceMetadata, b.grantLive = resourceMetadata, grantLive
+	return b
 }
 
 // New snapshots routes after all business overrides have been mounted. Only

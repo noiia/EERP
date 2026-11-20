@@ -17,6 +17,13 @@ const AudienceWebsite = "website"
 // IsWebsite reports whether the token was issued to a website user.
 func (c *Claims) IsWebsite() bool { return slices.Contains(c.Audience, AudienceWebsite) }
 
+// AudienceMCP marks a token issued to an OAuth MCP client (ADR-043). It is
+// accepted only on the MCP endpoint and the API calls MCP makes on its behalf.
+const AudienceMCP = "mcp"
+
+// IsMCP reports whether the token was issued to an OAuth MCP client.
+func (c *Claims) IsMCP() bool { return slices.Contains(c.Audience, AudienceMCP) }
+
 // Claims is the JWT payload for access tokens.
 type Claims struct {
 	Sub    uuid.UUID `json:"sub"`
@@ -41,6 +48,9 @@ type Claims struct {
 	// the token's own short TTL bounds how long a just-cleared flag can still
 	// read as set).
 	MustChangePassword bool `json:"must_change_password,omitempty"`
+	// GrantID is the OAuth grant an MCP token was issued under (aud "mcp"
+	// only): revoking the grant ends the token at once.
+	GrantID uuid.UUID `json:"gid,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -85,6 +95,26 @@ func (t *TokenService) IssueAccessWithTTL(user Users, roles []string, groups []s
 	signed, err := token.SignedString([]byte(t.cfg.MasterPassword))
 	if err != nil {
 		return "", fmt.Errorf("token: sign access: %w", err)
+	}
+	return signed, nil
+}
+
+// IssueMCPAccess issues an access token for an OAuth MCP client: the user's
+// usual claims, audience "mcp", and the grant it belongs to.
+func (t *TokenService) IssueMCPAccess(user Users, roles, groups, permissions []string, grant uuid.UUID, ttl time.Duration) (string, error) {
+	claims := Claims{
+		Sub: user.ID, Tenant: user.TenantID, Roles: roles, Groups: groups, Permissions: permissions,
+		MustChangePassword: user.MustChangePassword, GrantID: grant,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   user.ID.String(),
+			Audience:  jwt.ClaimStrings{AudienceMCP},
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl)),
+		},
+	}
+	signed, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(t.cfg.MasterPassword))
+	if err != nil {
+		return "", fmt.Errorf("token: sign mcp access: %w", err)
 	}
 	return signed, nil
 }
@@ -172,3 +202,9 @@ func (t *TokenService) refreshTTLDuration() time.Duration {
 	}
 	return 7 * 24 * time.Hour
 }
+
+// AccessTTL is the configured ERP access token lifetime.
+func (t *TokenService) AccessTTL() time.Duration { return t.accessTTLDuration() }
+
+// RefreshTTL is the configured refresh token lifetime.
+func (t *TokenService) RefreshTTL() time.Duration { return t.refreshTTLDuration() }

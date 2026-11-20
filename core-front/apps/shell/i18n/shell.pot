@@ -3192,3 +3192,51 @@ msgstr ""
 
 msgid "No match"
 msgstr ""
+
+msgid "EERP could not be reached. Try again."
+msgstr ""
+
+msgid "Connecting apps to EERP is not enabled on this server."
+msgstr ""
+
+msgid "Return to the application"
+msgstr ""
+
+msgid "{app} wants to use EERP on your behalf, through its MCP connector."
+msgstr ""
+
+msgid "Request from {host}. It will see and do only what your own roles allow, until you revoke it in Settings → Account."
+msgstr ""
+
+msgid "Deny"
+msgstr ""
+
+msgid "Allow"
+msgstr ""
+
+msgid "Connect {app}?"
+msgstr ""
+
+msgid "Connect an app"
+msgstr ""
+
+msgid "never"
+msgstr ""
+
+msgid "Authorized apps"
+msgstr ""
+
+msgid "AI assistants you connected to EERP through MCP. They act with your own permissions."
+msgstr ""
+
+msgid "No app is connected."
+msgstr ""
+
+msgid "Revoke"
+msgstr ""
+
+msgid "Connected"
+msgstr ""
+
+msgid "Last used"
+msgstr ""
