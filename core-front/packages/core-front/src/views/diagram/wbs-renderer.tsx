@@ -48,7 +48,8 @@ const DELIVERABLE = 'deliverable:'
 /** Item ids per `in[id]=` read (the same chunk size the relation labels use). */
 const DELIVERABLE_CHUNK = 100
 /** From this task level on (1 = a top task, so `1.1.1`), children stack vertically under their
- * parent, each joined by an elbow from the parent's left side. */
+ * parent, each joined by an elbow from the parent's left side — except a level-3 family showing
+ * level-4 tasks, which spreads in a row of column headers. */
 const STACK_LEVEL = 3
 /** The Layers menu's names for levels 1, 2, 3…: "Layer X", "Layer X.Y", "Layer X.Y.Z". */
 const LAYER_LETTERS = 'XYZWVUTS'
@@ -143,7 +144,14 @@ export function WbsRenderer<T extends HasId>({
     }
     return levels.get(id)!
   }
-  const stacked = (id: string) => levelOf(id) >= STACK_LEVEL
+  const shown = new Set(visible)
+  // Level 3 stacks unless one of its siblings shows level-4 children: then the level-3 siblings
+  // spread side by side as column headers, each with its children stacked under it.
+  const stacked = (id: string) => {
+    const level = levelOf(id)
+    if (level !== STACK_LEVEL) return level > STACK_LEVEL
+    return !nodes[nodes[id].parentId!].children.some((s) => nodes[s].children.some((c) => shown.has(c)))
+  }
 
   // ---- Layers menu: one checkbox per task level. Level k shows while every box of level
   // k-1 (0 = the group roots) that has children is unfolded; unticking it folds them all,
@@ -305,7 +313,6 @@ export function WbsRenderer<T extends HasId>({
     }
     return { id, position: { x: 0, y: 0 }, data, ...(stacked(id) ? { targetPosition: Position.Left } : {}) }
   })
-  const shown = new Set(visible)
   const edges: Edge[] = [...deliverableEdges, ...visible.flatMap((id) => {
     const p = nodes[id].parentId
     // A group root's line isn't a parent link: it can't be deleted or moved.

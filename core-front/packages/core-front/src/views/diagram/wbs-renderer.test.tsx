@@ -180,6 +180,26 @@ describe('WbsRenderer', () => {
     expect(at('F').y).toBeGreaterThan(at('E').y)
   })
 
+  it('spreads level 3 as column headers once one of them shows level-4 tasks', async () => {
+    setup(undefined, true, {
+      initialData: [
+        ...rows(),
+        { id: 'E', name: 'Wireframes', parent_id: 'B', project_id: 'p1', planned_hours: 1 },
+        { id: 'F', name: 'Icons', parent_id: 'B', project_id: 'p1', planned_hours: 1 },
+        { id: 'G', name: 'Sketch', parent_id: 'E', project_id: 'p1', planned_hours: 1 },
+      ],
+    })
+    await waitFor(() => expect(rf.props.nodes.map((n) => n.id)).toContain('G'))
+    const edge = (target: string) => rf.props.edges.find((e) => e.target === target)!
+    const at = (id: string) => rf.props.nodes.find((n) => n.id === id)!.position
+    expect(edge('E').type).toBeUndefined()
+    expect(edge('F').type).toBeUndefined()
+    expect(at('E').y).toBe(at('F').y)
+    expect(at('F').x).toBeGreaterThan(at('E').x)
+    expect(edge('G')).toMatchObject({ source: 'E', type: 'step', sourceHandle: 'stack' })
+    expect(at('G').y).toBeGreaterThan(at('E').y)
+  })
+
   it('chevron folds and saves folded ids', async () => {
     const { saveViewLayout } = setup()
     await screen.findByTestId('node-A')

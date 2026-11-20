@@ -94,6 +94,11 @@ one parent share one vertical line. Wide project trees stay readable this way: a
 every level would push the leaves kilometers apart. Levels 1 and 2 keep the top-down rows. Display only:
 drops, numbers and parent links behave as before.
 
+Once a level-3 task shows level-4 children (unfolded), its whole family of level-3 siblings leaves the
+column and spreads in a top-down row under their level-2 parent, like levels 1 and 2. Each level-3 box
+then heads a column: its level-4 children (and deeper) stack under it as above. A family whose level-3
+tasks are all leaves, or all folded, keeps the single column.
+
 ### Export
 
 A PNG/PDF export draws every box in full (also when zoomed out) and prints its fields as plain wrapping
