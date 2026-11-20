@@ -39,7 +39,6 @@ services:
     # deliberately (stop db, copy the old volume into <project>_pgdata, e.g.
     # `docker run --rm -v <old-volume>:/from:ro -v <project>_pgdata:/to alpine cp -a /from/. /to/`),
     # then delete these two lines.
-    volumes: !reset []
     expose:
       - "5432"
 
@@ -54,7 +53,7 @@ services:
       - "6379"
 
   mailpit:
-    profiles: ["dev-only"]   # never started in production — point smtp_* at a real relay
+    profiles: ["dev-only"] # never started in production — point smtp_* at a real relay
     ports: !reset []
 
   core-back:
