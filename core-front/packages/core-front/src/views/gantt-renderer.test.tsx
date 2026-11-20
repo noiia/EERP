@@ -120,13 +120,15 @@ describe('GanttRenderer', () => {
     it('exports the timeline as drawn, folded rows left out, as PNG or PDF', async () => {
       renderGantt([grandchild, child, parent], tree)
       fireEvent.click(screen.getByRole('button', { name: 'Collapse Child' }))
-      fireEvent.click(screen.getByRole('button', { name: 'Export PNG' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Export' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Export PNG' }))
       await waitFor(() => expect(exportElementPng).toHaveBeenCalledTimes(1))
       const [el, name] = exportElementPng.mock.calls[0]
       expect(within(el).getByText('Child')).toBeInTheDocument()
       expect(within(el).queryByText('Grandchild')).toBeNull()
       expect(name).toBe('Gantt 2026-03-02 – 2026-05-24')
-      fireEvent.click(screen.getByRole('button', { name: 'Export PDF' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Export' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Export PDF' }))
       await waitFor(() => expect(exportElementPdf).toHaveBeenCalledWith(el, expect.objectContaining({ title: name }), name))
     })
 
@@ -1195,18 +1197,20 @@ describe('GanttRenderer', () => {
 
     const PINNED: EntityListOptions = { filter: { project_id: 'p1' } }
 
-    it('shows no Export or Import control while the list is not pinned', async () => {
+    it('offers no plan file nor Import while the list is not pinned', async () => {
       // The guard passes: the only thing that can keep the Import control hidden here is the missing pin.
       registerKanbanColumnsGuard('test.exchange', async () => true)
       renderExchange(undefined, exchangeCfg)
       // The pending reads (server load, the import guard) settle after the sync body: flush inside act.
       await act(async () => {})
-      expect(screen.queryByRole('button', { name: 'Export' })).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: 'Export' }))
+      expect(screen.queryByRole('menuitem', { name: 'GanttProject (.gan)' })).toBeNull()
       expect(screen.queryByRole('button', { name: 'Import' })).toBeNull()
       cleanup()
       renderExchange({}, exchangeCfg)
       await act(async () => {})
-      expect(screen.queryByRole('button', { name: 'Export' })).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: 'Export' }))
+      expect(screen.queryByRole('menuitem', { name: 'GanttProject (.gan)' })).toBeNull()
       expect(screen.queryByRole('button', { name: 'Import' })).toBeNull()
     })
 
@@ -1224,7 +1228,9 @@ describe('GanttRenderer', () => {
         </RelationOpsProvider>,
       )
       await act(async () => {})
-      expect(screen.queryByRole('button', { name: 'Export' })).toBeNull()
+      // The image exports stay; no plan file is offered.
+      fireEvent.click(screen.getByRole('button', { name: 'Export' }))
+      expect(screen.getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Export PNG', 'Export PDF'])
     })
 
     it('Export lists every format as a download of the pinned project', async () => {
@@ -1269,14 +1275,13 @@ describe('GanttRenderer', () => {
       expect(await screen.findByText('Import GanttProject (.gan)')).toBeInTheDocument()
     })
 
-    it('on phone both controls sit in the More menu', async () => {
+    it('on phone Export is an icon button and Import sits in the More menu', async () => {
       setViewportWidth(390)
       registerKanbanColumnsGuard('test.exchange', async () => true)
       renderExchange(PINNED, exchangeCfg)
-      expect(screen.queryByRole('button', { name: 'Export' })).toBeNull()
+      expect(screen.getByRole('button', { name: 'Export' })).not.toHaveTextContent('Export')
       expect(screen.queryByRole('button', { name: 'Import' })).toBeNull()
-      fireEvent.click(screen.getByRole('button', { name: 'More' }))
-      fireEvent.click(await screen.findByRole('menuitem', { name: 'Export' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Export' }))
       expect(await screen.findByRole('menuitem', { name: 'GanttProject (.gan)' })).toHaveAttribute(
         'href',
         '/api/exchange/project/p1/gan/export',
@@ -1284,7 +1289,7 @@ describe('GanttRenderer', () => {
       cleanup()
       setViewportWidth(390)
       renderExchange(PINNED, exchangeCfg)
-      fireEvent.click(screen.getByRole('button', { name: 'More' }))
+      fireEvent.click(await screen.findByRole('button', { name: 'More' }))
       fireEvent.click(await screen.findByRole('menuitem', { name: 'Import' }))
       expect(await screen.findByRole('menuitem', { name: 'MS Project (MSPDI)' })).toBeInTheDocument()
     })

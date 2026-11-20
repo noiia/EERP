@@ -2,11 +2,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { flushSync } from 'react-dom'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import IconButton from '@mui/material/IconButton'
-import Menu from '@mui/material/Menu'
-import MenuItem from '@mui/material/MenuItem'
 import Popover from '@mui/material/Popover'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
@@ -15,6 +12,7 @@ import {
   Background,
   Controls,
   getNodesBounds,
+  Panel,
   Position,
   ReactFlow,
   type Connection,
@@ -38,6 +36,7 @@ import type { HasId } from '../stores'
 import { freeSpot, segmentHitsRect, separateBoxes, type Point, type Rect } from './collide'
 import { historyKey, type UndoHistory } from './history'
 import { DeliverableBox } from './deliverable-box'
+import { ExportMenu, ToolButton } from './toolbar'
 import { BusEdge, ObsBox } from './obs-box'
 import { PbsBox } from './pbs-box'
 import { compactTheme, ForceDetail, LabelBox, NOTE_BOX_SIZE, NOTE_LIMIT, NOTE_LINK_LIMIT, NoteBox, TASK_BOX_SIZE, TaskBox, type NoteBoxData } from './task-box'
@@ -163,6 +162,7 @@ function toggled(prev: Set<string>, picks: { id: string; selected: boolean }[]):
 function DiagramHelp({ mode, links, drop, insert, history, notes }: { mode: 'wbs' | 'pert' | 'obs' | 'pbs'; links: boolean; drop: boolean; insert: boolean; history: boolean; notes: boolean }) {
   const t = useT()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+  const phone = usePhone()
   const shared = mode === 'obs' || mode === 'pbs'
   const tips = [
     t('Scroll to zoom, drag the background to move around.'),
@@ -184,7 +184,7 @@ function DiagramHelp({ mode, links, drop, insert, history, notes }: { mode: 'wbs
   ].filter((x): x is string => !!x)
   return (
     <>
-      <IconButton size="small" aria-label={t('How to use this diagram')} onClick={(e) => setAnchor(e.currentTarget)}>
+      <IconButton size="small" aria-label={t('How to use this diagram')} onClick={(e) => setAnchor(e.currentTarget)} sx={phone ? TOUCH : undefined}>
         <FontAwesomeIcon icon={byPrefixAndName.fas['circle-info']} />
       </IconButton>
       <Popover open={!!anchor} anchorEl={anchor} onClose={() => setAnchor(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}>
@@ -329,7 +329,6 @@ function Canvas(props: DiagramCanvasProps) {
   const phone = usePhone()
   // CSS only on the same element: no remount, so unsaved notes and positions stay.
   const [fullscreen, setFullscreen] = useState(false)
-  const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
   const fitTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const container = useRef<HTMLDivElement>(null)
   const phoneHeight = useFillHeight(container, phone && !fullscreen)
@@ -752,15 +751,7 @@ function Canvas(props: DiagramCanvasProps) {
   }
 
   const fullscreenLabel = fullscreen ? t('Exit full screen') : t('Full screen')
-  const closeMore = () => setMoreAnchor(null)
   const help = <DiagramHelp mode={mode} links={!!props.onConnect} drop={!!onNodeDrop} insert={!!props.onInsert} history={!!props.history} notes={!!props.notes} />
-  const addNoteButton = props.notes ? <Button size="small" onClick={addNote} disabled={notes.length >= NOTE_LIMIT}>{t('Add note')}</Button> : null
-  const legendItems = legend.map((l) => (
-    <Stack key={l.label} direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
-      <Box aria-hidden sx={{ width: 12, height: 12, borderRadius: 0.5, bgcolor: l.color }} />
-      <Typography variant="caption" color="text.secondary">{l.label}</Typography>
-    </Stack>
-  ))
   const extra = typeof props.toolbarExtra === 'function' ? props.toolbarExtra(centerSpot) : props.toolbarExtra
 
   return (
@@ -769,12 +760,16 @@ function Canvas(props: DiagramCanvasProps) {
       sx={fullscreen ? { position: 'fixed', inset: 0, zIndex: (th) => th.zIndex.drawer + 2, bgcolor: 'background.default', height: '100dvh', display: 'flex', flexDirection: 'column', p: 1 } : undefined}
     >
       <ErrorAlert error={saveError ?? exportError} />
-      <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: phone ? 'nowrap' : 'wrap', alignItems: 'center', mb: 1 }}>
-        {phone ? null : help}
-        {phone || props.readOnly ? null : <Button size="small" onClick={rearrange}>{t('Re-arrange')}</Button>}
-        {phone ? null : <Button size="small" onClick={() => void exportAs('png')}>{t('Export PNG')}</Button>}
-        {phone ? null : <Button size="small" onClick={() => void exportAs('pdf')}>{t('Export PDF')}</Button>}
-        <Button size="small" onClick={() => instance.current?.fitView()} sx={phone ? TOUCH : undefined}>{t('Fit view')}</Button>
+      <Stack direction="row" spacing={phone ? 0.5 : 1} useFlexGap sx={{ flexWrap: 'wrap', alignItems: 'center', mb: 1 }}>
+        {help}
+        {props.readOnly ? null : <ToolButton icon="wand-magic-sparkles" label={t('Re-arrange')} onClick={rearrange} />}
+        <ExportMenu
+          options={[
+            { key: 'png', label: t('Export PNG'), icon: 'file-image', onClick: () => void exportAs('png') },
+            { key: 'pdf', label: t('Export PDF'), icon: 'file-pdf', onClick: () => void exportAs('pdf') },
+          ]}
+        />
+        <ToolButton icon="maximize" label={t('Fit view')} onClick={() => instance.current?.fitView()} />
         {props.history ? (
           <>
             <IconButton size="small" aria-label={t('Undo')} title={t('Undo') + ' (Ctrl+Z)'} disabled={!props.history.canUndo} onClick={() => void props.history?.undo()} sx={phone ? TOUCH : undefined}>
@@ -788,27 +783,8 @@ function Canvas(props: DiagramCanvasProps) {
         <IconButton size="small" aria-label={fullscreenLabel} title={fullscreenLabel} onClick={() => showFullscreen(!fullscreen)} sx={phone ? TOUCH : undefined}>
           <FontAwesomeIcon icon={byPrefixAndName.fas[fullscreen ? 'compress' : 'expand']} />
         </IconButton>
-        {phone ? null : addNoteButton}
-        {phone ? null : legendItems}
-        {phone ? null : extra}
-        {phone ? (
-          <>
-            <IconButton size="small" aria-label={t('More')} onClick={(e) => setMoreAnchor(e.currentTarget)} sx={TOUCH}>
-              <FontAwesomeIcon icon={byPrefixAndName.fas['ellipsis-vertical']} />
-            </IconButton>
-            <Menu open={!!moreAnchor} anchorEl={moreAnchor} onClose={closeMore}>
-              {props.readOnly ? null : <MenuItem onClick={() => { closeMore(); rearrange() }}>{t('Re-arrange')}</MenuItem>}
-              <MenuItem onClick={() => { closeMore(); void exportAs('png') }}>{t('Export PNG')}</MenuItem>
-              <MenuItem onClick={() => { closeMore(); void exportAs('pdf') }}>{t('Export PDF')}</MenuItem>
-              {props.notes ? <MenuItem disabled={notes.length >= NOTE_LIMIT} onClick={() => { closeMore(); addNote() }}>{t('Add note')}</MenuItem> : null}
-              <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', alignItems: 'center', px: 2, py: 1, maxWidth: 320 }}>
-                {help}
-                {legendItems}
-                {extra ? <Box onClick={closeMore}>{extra}</Box> : null}
-              </Stack>
-            </Menu>
-          </>
-        ) : null}
+        {props.notes ? <ToolButton icon="note-sticky" label={t('Add note')} onClick={addNote} disabled={notes.length >= NOTE_LIMIT} /> : null}
+        {extra}
       </Stack>
       <Box
         ref={container}
@@ -850,6 +826,19 @@ function Canvas(props: DiagramCanvasProps) {
           >
             <Background />
             <Controls showInteractive={false} />
+            {legend.length ? (
+              // Bottom-left, right of the zoom controls; outside the viewport, so never in an export (the PDF writes its own).
+              <Panel position="bottom-left" style={{ marginLeft: 56 }}>
+                <Stack data-testid="diagram-legend" direction="row" spacing={1.5} useFlexGap sx={{ flexWrap: 'wrap', alignItems: 'center', px: 1, py: 0.5, bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 1, maxWidth: 'calc(100vw - 120px)' }}>
+                  {legend.map((l) => (
+                    <Stack key={l.label} direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+                      <Box aria-hidden sx={{ width: 12, height: 12, borderRadius: 0.5, bgcolor: l.color }} />
+                      <Typography variant="caption" color="text.secondary">{l.label}</Typography>
+                    </Stack>
+                  ))}
+                </Stack>
+              </Panel>
+            ) : null}
             <HandleScale target={container} />
           </ReactFlow>
           </ForceDetail.Provider>

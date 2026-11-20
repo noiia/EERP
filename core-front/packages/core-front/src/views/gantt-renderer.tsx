@@ -31,6 +31,7 @@ import { colorStripes } from './color-tags'
 import { ErrorAlert } from './error-alert'
 import { ImportWizard } from './exchange/import-wizard'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
+import { ExportMenu, ToolButton } from './diagram/toolbar'
 import { kanbanColumnsGuard } from './kanban-columns'
 import { orderedFields, orderLabel } from './layout-fields'
 import { useRelationOps } from './relation-ops'
@@ -857,7 +858,6 @@ export function GanttRenderer<T extends HasId>({
       cancelled = true
     }
   }, [exchange?.canImport, exchangePin, relationOps])
-  const [exportAnchor, setExportAnchor] = useState<HTMLElement | null>(null)
   const [importAnchor, setImportAnchor] = useState<HTMLElement | null>(null)
   const [importFormat, setImportFormat] = useState<ExchangeFormat | null>(null)
   const exchangeUrl = (key: string, action: string) =>
@@ -1039,26 +1039,22 @@ export function GanttRenderer<T extends HasId>({
                 <FontAwesomeIcon icon={byPrefixAndName.fas['chevron-left']} />
               </IconButton>
             ) : (
-              <Button size="small" aria-label={t('Previous period')} onClick={() => setAnchor((a) => shiftAnchor(zoom, a, -1))}>
+              <Button size="small" aria-label={t('Previous period')} startIcon={<FontAwesomeIcon icon={byPrefixAndName.fas['chevron-left']} />} onClick={() => setAnchor((a) => shiftAnchor(zoom, a, -1))}>
                 {t('Previous')}
               </Button>
             )}
-            <Button size="small" sx={{ minHeight: phone ? 40 : undefined }} onClick={() => setAnchor(alignAnchor(zoom, new Date()))}>
-              {t('Today')}
-            </Button>
+            <ToolButton icon="calendar-check" label={t('Today')} onClick={() => setAnchor(alignAnchor(zoom, new Date()))} />
             {phone ? (
               <IconButton aria-label={t('Next period')} sx={{ width: 40, height: 40, p: 0 }} onClick={() => setAnchor((a) => shiftAnchor(zoom, a, 1, phone))}>
                 <FontAwesomeIcon icon={byPrefixAndName.fas['chevron-right']} />
               </IconButton>
             ) : (
-              <Button size="small" aria-label={t('Next period')} onClick={() => setAnchor((a) => shiftAnchor(zoom, a, 1))}>
+              <Button size="small" aria-label={t('Next period')} endIcon={<FontAwesomeIcon icon={byPrefixAndName.fas['chevron-right']} />} onClick={() => setAnchor((a) => shiftAnchor(zoom, a, 1))}>
                 {t('Next')}
               </Button>
             )}
             {!phone && schedulePin ? (
-              <Button size="small" aria-pressed={criticalOn} onClick={onCriticalToggle}>
-                {t('Critical path')}
-              </Button>
+              <ToolButton icon="route" label={t('Critical path')} aria-pressed={criticalOn} onClick={onCriticalToggle} />
             ) : null}
             {!phone && baselinePin ? (
               <Select size="small" aria-label={t('Baseline')} value={pickedBaseline} displayEmpty onChange={(e) => setPickedBaseline(e.target.value)}>
@@ -1071,27 +1067,28 @@ export function GanttRenderer<T extends HasId>({
               </Select>
             ) : null}
             {parentIds.length || collapsed.length ? (
-              <Button size="small" sx={{ minHeight: phone ? 40 : undefined }} onClick={toggleAll}>
-                {collapsed.length ? t('Expand all') : t('Collapse all')}
-              </Button>
+              <ToolButton icon={collapsed.length ? 'chevron-down' : 'chevron-up'} label={collapsed.length ? t('Expand all') : t('Collapse all')} onClick={toggleAll} />
             ) : null}
-            {!phone ? (
-              <>
-                <Button size="small" onClick={() => void exportImage('png')}>{t('Export PNG')}</Button>
-                <Button size="small" onClick={() => void exportImage('pdf')}>{t('Export PDF')}</Button>
-              </>
-            ) : null}
-            {!phone && exchangePin ? (
-              <Button size="small" onClick={(e) => setExportAnchor(e.currentTarget)}>
-                {t('Export')}
-              </Button>
-            ) : null}
+            {/* The plan files are plain downloads: the BFF relays Go's Content-Disposition, so the
+                browser names the file after the project. */}
+            <ExportMenu
+              options={[
+                { key: 'png', label: t('Export PNG'), icon: 'file-image', onClick: () => void exportImage('png') },
+                { key: 'pdf', label: t('Export PDF'), icon: 'file-pdf', onClick: () => void exportImage('pdf') },
+                ...(exchange && exchangePin
+                  ? exchange.formats.map((f) => ({
+                      key: `plan-${f.key}`,
+                      label: t(f.label),
+                      icon: 'file-export',
+                      href: exchangeUrl(f.key, 'export') + (collapsed.length ? `?collapsed=${encodeURIComponent(collapsed.join(','))}` : ''),
+                    }))
+                  : []),
+              ]}
+            />
             {!phone && exchangePin && canImport ? (
-              <Button size="small" onClick={(e) => setImportAnchor(e.currentTarget)}>
-                {t('Import')}
-              </Button>
+              <ToolButton icon="upload" label={t('Import')} aria-haspopup="menu" onClick={(e) => setImportAnchor(e.currentTarget)} />
             ) : null}
-            {phone ? (
+            {phone && (schedulePin || baselinePin || (exchangePin && canImport)) ? (
               <IconButton aria-label={t('More')} sx={{ minWidth: 40, minHeight: 40 }} onClick={(e) => setMoreAnchor(e.currentTarget)}>
                 <FontAwesomeIcon icon={byPrefixAndName.fas['ellipsis-vertical']} />
               </IconButton>
@@ -1395,8 +1392,6 @@ export function GanttRenderer<T extends HasId>({
 
       {phone ? (
         <Menu open={!!moreAnchor} anchorEl={moreAnchor} onClose={() => setMoreAnchor(null)}>
-          <MenuItem onClick={() => { setMoreAnchor(null); void exportImage('png') }}>{t('Export PNG')}</MenuItem>
-          <MenuItem onClick={() => { setMoreAnchor(null); void exportImage('pdf') }}>{t('Export PDF')}</MenuItem>
           {schedulePin ? (
             <MenuItem selected={criticalOn} onClick={() => { setMoreAnchor(null); onCriticalToggle() }}>
               {t('Critical path')}
@@ -1414,11 +1409,6 @@ export function GanttRenderer<T extends HasId>({
               ))}
             </>
           ) : null}
-          {exchangePin ? (
-            <MenuItem onClick={() => { const el = moreAnchor; setMoreAnchor(null); setExportAnchor(el) }}>
-              {t('Export')}
-            </MenuItem>
-          ) : null}
           {exchangePin && canImport ? (
             <MenuItem onClick={() => { const el = moreAnchor; setMoreAnchor(null); setImportAnchor(el) }}>
               {t('Import')}
@@ -1429,21 +1419,6 @@ export function GanttRenderer<T extends HasId>({
 
       {exchange && exchangePin ? (
         <>
-          {/* Export is a plain download: the BFF relays Go's Content-Disposition, so the
-              browser names the file after the project. No fetch, no client-side blob. */}
-          <Menu open={!!exportAnchor} anchorEl={exportAnchor} onClose={() => setExportAnchor(null)}>
-            {exchange.formats.map((f) => (
-              <MenuItem
-                key={f.key}
-                component="a"
-                href={exchangeUrl(f.key, 'export') + (collapsed.length ? `?collapsed=${encodeURIComponent(collapsed.join(','))}` : '')}
-                download
-                onClick={() => setExportAnchor(null)}
-              >
-                {t(f.label)}
-              </MenuItem>
-            ))}
-          </Menu>
           <Menu open={!!importAnchor} anchorEl={importAnchor} onClose={() => setImportAnchor(null)}>
             {exchange.formats.map((f) => (
               <MenuItem key={f.key} onClick={() => { setImportAnchor(null); setImportFormat(f) }}>

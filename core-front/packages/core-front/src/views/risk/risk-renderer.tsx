@@ -3,9 +3,6 @@ import { useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
-import Menu from '@mui/material/Menu'
-import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
 import Tab from '@mui/material/Tab'
 import Tabs from '@mui/material/Tabs'
@@ -20,6 +17,7 @@ import { useT } from '../../i18n/translate'
 import { erpPath } from '../../navigation'
 import { ErrorAlert } from '../error-alert'
 import { DiagramLoading } from '../diagram/diagram-canvas'
+import { ExportMenu, ToolButton } from '../diagram/toolbar'
 import { useFillHeight, usePhone } from '../use-phone'
 import { useRelationOps } from '../relation-ops'
 import { RelationCreateWizard } from '../relation-widgets'
@@ -52,7 +50,6 @@ export function RiskRenderer({ config, projectId }: RiskRendererProps) {
   const [categories, setCategories] = useState<Category[]>([])
   const [project, setProject] = useState('')
   const [error, setError] = useState<SerializedError | null>(null)
-  const [menu, setMenu] = useState<HTMLElement | null>(null)
   const [creating, setCreating] = useState(false)
   const [reload, setReload] = useState(0)
   const area = useRef<HTMLDivElement>(null)
@@ -103,14 +100,12 @@ export function RiskRenderer({ config, projectId }: RiskRendererProps) {
   const open = (id: string) => router.push(erpPath(config.formPath.replace(':id', id)))
   const responsible = (r: RiskRow) => userLabel('responsible_id', r.responsible_id)
   const exportRegister = (kind: 'csv' | 'xlsx' | 'pdf') => {
-    setMenu(null)
     const table = registerTable(rows, categories, responsible, t)
     import('./register-export')
       .then((m) => m.downloadRegister(kind, table, `${project} — ${t('Risk register')}`, `register-${projectId}`, t('Risk register')))
       .catch((e: unknown) => setError(serializeError(toApiError(e))))
   }
   const doExport = (kind: 'png' | 'pdf') => {
-    setMenu(null)
     if (tab === 'matrix') flushSync(() => setExportingBoth(true))
     const el = tab === 'matrix' ? both.current : area.current
     if (!el) return setExportingBoth(false)
@@ -136,27 +131,28 @@ export function RiskRenderer({ config, projectId }: RiskRendererProps) {
           <Tab value="register" label={t('Register')} />
         </Tabs>
         <Stack direction="row" spacing={1} sx={phone ? { py: 1, flexWrap: 'wrap', '& .MuiButton-root, & .MuiToggleButton-root': { minHeight: 40, minWidth: 40 } } : undefined}>
-          {canCreate && ops && <Button size="small" variant="contained" onClick={() => setCreating(true)}>{t('New risk')}</Button>}
+          {canCreate && ops && <ToolButton icon="plus" label={t('New risk')} variant="contained" onClick={() => setCreating(true)} />}
           {tab === 'matrix' && (
             <ToggleButtonGroup size="small" exclusive value={residual ? 'after' : 'now'} onChange={(_, v: string | null) => v && setResidual(v === 'after')}>
               <ToggleButton value="now">{phone ? t('Now') : t('Current')}</ToggleButton>
               <ToggleButton value="after">{phone ? t('After') : t('After remediation')}</ToggleButton>
             </ToggleButtonGroup>
           )}
-          <Button size="small" onClick={(e) => setMenu(e.currentTarget)}>{t('Export')}</Button>
+          <ExportMenu
+            options={
+              tab === 'register'
+                ? [
+                    { key: 'xlsx', label: t('Export XLSX'), icon: 'file-excel', onClick: () => exportRegister('xlsx') },
+                    { key: 'csv', label: t('Export CSV'), icon: 'file-csv', onClick: () => exportRegister('csv') },
+                    { key: 'pdf', label: t('Export PDF'), icon: 'file-pdf', onClick: () => exportRegister('pdf') },
+                  ]
+                : [
+                    { key: 'png', label: t('Export PNG'), icon: 'file-image', onClick: () => doExport('png') },
+                    { key: 'pdf', label: t('Export PDF'), icon: 'file-pdf', onClick: () => doExport('pdf') },
+                  ]
+            }
+          />
         </Stack>
-        <Menu open={!!menu} anchorEl={menu} onClose={() => setMenu(null)}>
-          {tab === 'register'
-            ? [
-                <MenuItem key="xlsx" onClick={() => exportRegister('xlsx')}>{t('Export XLSX')}</MenuItem>,
-                <MenuItem key="csv" onClick={() => exportRegister('csv')}>{t('Export CSV')}</MenuItem>,
-                <MenuItem key="pdf" onClick={() => exportRegister('pdf')}>{t('Export PDF')}</MenuItem>,
-              ]
-            : [
-                <MenuItem key="png" onClick={() => doExport('png')}>{t('Export PNG')}</MenuItem>,
-                <MenuItem key="pdf" onClick={() => doExport('pdf')}>{t('Export PDF')}</MenuItem>,
-              ]}
-        </Menu>
       </Stack>
       <Box sx={{ pt: 2, overflow: 'auto' }}>
         {/* The diagrams fill the view (centred, scaled to fit) instead of floating small in an empty zone. */}

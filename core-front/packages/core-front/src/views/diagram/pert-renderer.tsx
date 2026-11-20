@@ -1,7 +1,6 @@
 'use client'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
 import Chip from '@mui/material/Chip'
 import ListItemText from '@mui/material/ListItemText'
@@ -27,11 +26,10 @@ import { useRelationLabels } from '../use-relation-labels'
 import type { EntityActions, HasId } from '../stores'
 import { layoutPert, layoutRectangle } from './auto-layout'
 import { DiagramCanvas, DiagramCapNotice, DiagramLoading, useDiagramRecords } from './diagram-canvas'
+import { ToolButton } from './toolbar'
 import { useUndoHistory } from './history'
 import { computePert, offsetToDate } from './pert'
 import { colorTagsFieldOf, useRecordColors } from '../use-record-colors'
-import { byPrefixAndName, FontAwesomeIcon } from '../icons'
-import { usePhone } from '../use-phone'
 import { boxFieldOf, TASK_BOX_SIZE, type TaskBoxData } from './task-box'
 import { compareOrder } from './wbs'
 
@@ -110,7 +108,6 @@ export function PertRenderer<T extends HasId>({
   // The critical-path view, made for its export: only the critical boxes, read-only, folded
   // into a rectangle (layoutRectangle) from the first step top-left to the last bottom-right.
   const [criticalOnly, setCriticalOnly] = useState(false)
-  const phone = usePhone()
 
   // Dependency rows touching the shown records, read like gantt-renderer's but from
   // both ends (in[toField] and in[fromField], so a link to a hidden record is counted
@@ -329,9 +326,7 @@ export function PertRenderer<T extends HasId>({
           readOnly
           legend={[{ color: red, label: t('Critical path') }]}
           toolbarExtra={
-            <Button size="small" aria-pressed onClick={() => setCriticalOnly(false)}>
-              {t('Critical path only')}
-            </Button>
+            <ToolButton icon="route" label={t('Critical path only')} aria-pressed onClick={() => setCriticalOnly(false)} />
           }
         />
       ) : (
@@ -358,9 +353,9 @@ export function PertRenderer<T extends HasId>({
         ]}
         toolbarExtra={
           <>
-            <Button
-              size="small"
-              startIcon={<FontAwesomeIcon icon={byPrefixAndName.fas['plus']} />}
+            <ToolButton
+              icon="plus"
+              label={t('Add task')}
               disabled={!missing.length}
               aria-haspopup="menu"
               // The ids listed stay those missing when it opened: unticking one takes it back off.
@@ -368,12 +363,8 @@ export function PertRenderer<T extends HasId>({
                 setQuery('')
                 setPicker({ anchor: e.currentTarget, ids: missing.map((r) => r.id) })
               }}
-            >
-              {t('Add task')}
-            </Button>
-            <Button size="small" aria-pressed={false} disabled={!criticalIds.length} onClick={() => setCriticalOnly(true)}>
-              {t('Critical path only')}
-            </Button>
+            />
+            <ToolButton icon="route" label={t('Critical path only')} aria-pressed={false} disabled={!criticalIds.length} onClick={() => setCriticalOnly(true)} />
             {pert.hiddenLinks > 0 ? <Chip size="small" label={pert.hiddenLinks === 1 ? t('1 hidden link') : t('{n} hidden links').replace('{n}', String(pert.hiddenLinks))} /> : null}
           </>
         }
@@ -382,10 +373,7 @@ export function PertRenderer<T extends HasId>({
       <Menu
         open={!!picker}
         onClose={() => setPicker(null)}
-        // On a phone the button lives in the toolbar's More menu, gone once it closes: centered instead.
-        {...(phone
-          ? { anchorReference: 'anchorPosition' as const, anchorPosition: { top: window.innerHeight / 2, left: window.innerWidth / 2 }, transformOrigin: { vertical: 'center' as const, horizontal: 'center' as const } }
-          : { anchorEl: picker?.anchor })}
+        anchorEl={picker?.anchor}
         autoFocus={false}
         slotProps={{ paper: { sx: { maxHeight: 420, width: 320 } } }}
         data-testid="pert-add-task-menu"

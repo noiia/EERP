@@ -17,13 +17,13 @@ import type { ObsConfig } from '../../api/view-fields'
 import { useT } from '../../i18n/translate'
 import { BannerScope, BannerSlot } from '../banner'
 import { ErrorAlert } from '../error-alert'
-import { byPrefixAndName, FontAwesomeIcon } from '../icons'
 import { kanbanColumnsGuard } from '../kanban-columns'
 import { useRelationOps, type RelationOps, type RelationRecord } from '../relation-ops'
 import { RelationCreateWizard } from '../relation-widgets'
 import { layoutTreeGrid, treeGridEdges } from './auto-layout'
 import type { Point } from './collide'
 import { DiagramCanvas, DiagramLoading } from './diagram-canvas'
+import { ToolButton } from './toolbar'
 import { useUndoHistory } from './history'
 import { OBS_BOX_SIZE, type ObsBoxData, type ObsRow } from './obs-box'
 import { buildWbs } from './wbs'
@@ -269,9 +269,7 @@ export function ObsRenderer({ config, projectId }: ObsRendererProps) {
   const addButtons = (centerSpot: (size: { w: number; h: number }) => Point) => (
     <>
       {([['contact', 'address-book', t('Add contact')], ['user', 'user', t('Add user')], ['text', 'font', t('Add text')]] as const).map(([kind, icon, label]) => (
-        <Button key={kind} size="small" startIcon={<FontAwesomeIcon icon={byPrefixAndName.fas[icon]} />} onClick={() => setDraft({ kind, spot: centerSpot(OBS_BOX_SIZE) })}>
-          {label}
-        </Button>
+        <ToolButton key={kind} icon={icon} label={label} onClick={() => setDraft({ kind, spot: centerSpot(OBS_BOX_SIZE) })} />
       ))}
     </>
   )

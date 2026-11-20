@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useState, type ReactNode } from 'react'
 import type { Node, NodeProps } from '@xyflow/react'
 
@@ -90,6 +90,7 @@ vi.mock('@xyflow/react', () => ({
   },
   Background: () => null,
   Controls: () => null,
+  Panel: ({ children }: { children?: React.ReactNode }) => children,
   Handle: () => null,
   useStore: (select: (s: { transform: [number, number, number] }) => unknown) => select({ transform: [0, 0, rf.zoom] }),
   Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
@@ -193,7 +194,8 @@ describe('DiagramCanvas', () => {
     setup()
     await flush()
     expect(exportLoads.n).toBe(0)
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export PNG' })))
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Export' })) })
+    await act(async () => fireEvent.click(screen.getByRole('menuitem', { name: 'Export PNG' })))
     await exportFrames()
     expect(exportLoads.n).toBe(1)
   })
@@ -286,7 +288,8 @@ describe('DiagramCanvas', () => {
     exportPdf.mockRejectedValueOnce(new Error('canvas too big'))
     setup()
     await flush()
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export PDF' })))
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Export' })) })
+    await act(async () => fireEvent.click(screen.getByRole('menuitem', { name: 'Export PDF' })))
     await exportFrames()
     expect(screen.getByText('canvas too big')).toBeInTheDocument()
   })
@@ -549,10 +552,12 @@ describe('DiagramCanvas', () => {
     act(() => rf.props.onInit!({ fitView, getNodes: () => [] }))
     fireEvent.click(screen.getByRole('button', { name: 'Fit view' }))
     expect(fitView).toHaveBeenCalled()
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export PNG' })))
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Export' })) })
+    await act(async () => fireEvent.click(screen.getByRole('menuitem', { name: 'Export PNG' })))
     await exportFrames()
     expect(exportPng).toHaveBeenCalledWith(expect.any(HTMLElement), { x: 0, y: 0, width: 100, height: 50 }, 'Plan', '#fff')
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export PDF' })))
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Export' })) })
+    await act(async () => fireEvent.click(screen.getByRole('menuitem', { name: 'Export PDF' })))
     await exportFrames()
     expect(exportPdf).toHaveBeenCalledWith(expect.any(HTMLElement), { x: 0, y: 0, width: 100, height: 50 }, { title: 'Plan', date: expect.any(Date), legend: [{ color: '#ff0000', label: 'Critical' }], background: '#fff' }, 'Plan')
   })
@@ -572,7 +577,8 @@ describe('DiagramCanvas', () => {
       { positions: {}, folded: [], notes: [{ id: 'n1', text: '', links: ['a', 'gone'] }] },
     )
     await flush()
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export PNG' })))
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Export' })) })
+    await act(async () => fireEvent.click(screen.getByRole('menuitem', { name: 'Export PNG' })))
     await exportFrames()
     const el = (vi.mocked(exportPng).mock.calls.at(-1) as unknown as [HTMLElement])[0]
     const paths = Array.from(el.querySelectorAll<SVGElement>('.react-flow__edge path'))
@@ -830,7 +836,7 @@ describe('DiagramCanvas full screen and phone toolbar', () => {
     expect(screen.getByTestId('react-flow').parentElement!).toHaveStyle({ height: `${window.innerHeight - 8}px` })
   })
 
-  it('shows Fit, Undo, Redo, Full screen and a More menu on phone', async () => {
+  it('shows every tool as an icon button on phone, the legend in the canvas', async () => {
     setViewportWidth(390)
     const ops = { list: vi.fn(), get: vi.fn(), create: vi.fn(), remove: vi.fn(), getViewLayout: async () => ({ positions: {}, folded: [] }), saveViewLayout: vi.fn(async () => {}) }
     function WithHistory() {
@@ -842,17 +848,19 @@ describe('DiagramCanvas full screen and phone toolbar', () => {
     }
     render(<RelationOpsProvider ops={ops}><WithHistory /></RelationOpsProvider>)
     await flush()
-    for (const name of ['Fit view', 'Undo', 'Redo', 'Full screen', 'More']) expect(screen.getByRole('button', { name })).toBeInTheDocument()
-    for (const name of ['Re-arrange', 'Export PNG', 'Export PDF', 'Add note', 'How to use this diagram']) expect(screen.queryByRole('button', { name })).toBeNull()
-    expect(screen.queryByText('Critical')).toBeNull()
-    expect(screen.getByRole('button', { name: 'More' })).toHaveStyle({ minWidth: '40px', minHeight: '40px' })
-    act(() => fireEvent.click(screen.getByRole('button', { name: 'More' })))
-    for (const name of ['Re-arrange', 'Export PNG', 'Export PDF', 'Add note']) expect(screen.getByRole('menuitem', { name })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'How to use this diagram' })).toBeInTheDocument()
-    expect(screen.getByText('Critical')).toBeInTheDocument()
-    act(() => fireEvent.click(screen.getByRole('menuitem', { name: 'Add note' })))
+    for (const name of ['How to use this diagram', 'Re-arrange', 'Export', 'Fit view', 'Undo', 'Redo', 'Full screen', 'Add note']) {
+      const button = screen.getByRole('button', { name })
+      // Icon only: the label is the accessible name, not visible text.
+      expect(button).not.toHaveTextContent(name)
+      expect(button).toHaveStyle({ minWidth: '40px', minHeight: '40px' })
+    }
+    expect(screen.queryByRole('button', { name: 'More' })).toBeNull()
+    expect(within(screen.getByTestId('diagram-legend')).getByText('Critical')).toBeInTheDocument()
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Export' })))
+    for (const name of ['Export PNG', 'Export PDF']) expect(screen.getByRole('menuitem', { name })).toBeInTheDocument()
+    act(() => fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' }))
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Add note' })))
     expect(rf.props.nodes.some((n) => n.type === 'note')).toBe(true)
-    expect(screen.queryByRole('menu')).toBeNull()
   })
 
   it('keeps notes and positions when toggling full screen', async () => {
@@ -872,8 +880,7 @@ describe('DiagramCanvas full screen and phone toolbar', () => {
     setViewportWidth(390)
     setup({ mode: 'pert', notes: true })
     await flush()
-    act(() => fireEvent.click(screen.getByRole('button', { name: 'More' })))
-    act(() => fireEvent.click(screen.getByRole('menuitem', { name: 'Add note' })))
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Add note' })))
     const flow = screen.getByTestId('react-flow')
     act(() => setViewportWidth(1280))
     expect(screen.getByTestId('react-flow')).toBe(flow)

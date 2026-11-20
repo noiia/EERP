@@ -160,7 +160,8 @@ adds a `formats` entry and nothing else. The engine's Gantt toolbar shows **Expo
 of the formats, a plain `<a download>` through the BFF, so the browser names the file after
 the project, with the rows folded in the Gantt passed as `?collapsed=` so the file opens
 folded the same way — a display hint only: every task is still in the file, so a round trip
-never proposes removals) and **Import** while one project is pinned, both in the More menu on a phone;
+never proposes removals) and **Import** while one project is pinned — the formats as entries of the Gantt's single Export menu,
+beside its PNG/PDF image exports, Import in the More menu on a phone;
 Import appears only when the `canImport` guard (`project.canEditStages`, an async server
 check) passes. The wizard is a three-step dialog (file, review, result) whose fetches keep
 the status code, because the status code *is* the control flow: 413 explains the size, 409

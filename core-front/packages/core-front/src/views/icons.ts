@@ -66,6 +66,16 @@ import {
   faUpload,
   faUser,
   faXmark,
+  faBoxOpen,
+  faFileCsv,
+  faFileExcel,
+  faFileExport,
+  faFileImage,
+  faFilePdf,
+  faMaximize,
+  faNoteSticky,
+  faRoute,
+  faWandMagicSparkles,
 } from '@fortawesome/free-solid-svg-icons'
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core'
 
@@ -148,6 +158,16 @@ const BUILT_IN: IconDefinition[] = [
   faUpload,
   faUser,
   faXmark,
+  faBoxOpen,
+  faFileCsv,
+  faFileExcel,
+  faFileExport,
+  faFileImage,
+  faFilePdf,
+  faMaximize,
+  faNoteSticky,
+  faRoute,
+  faWandMagicSparkles,
 ]
 
 export const byPrefixAndName = {

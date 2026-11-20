@@ -24,11 +24,13 @@ vi.mock('@xyflow/react', () => ({
           const C = props.nodeTypes[n.type]
           return <div key={n.id} data-testid={`node-${n.id}`}><C id={n.id} data={n.data} /></div>
         })}
+        {props.children}
       </div>
     )
   },
   Background: () => null,
   Controls: () => null,
+  Panel: ({ children }: { children?: React.ReactNode }) => children,
   Handle: () => null,
   useStore: (select: (s: { transform: [number, number, number] }) => unknown) => select({ transform: [0, 0, rf.zoom] }),
   Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
@@ -217,8 +219,8 @@ describe('PertRenderer', () => {
 
   it('shows no-estimate badge', async () => {
     setup({ tasks: [...diamond(), { id: 'E', name: 'Idle', planned_hours: null, date_start: null, deadline: null }] })
-    expect(await screen.findByText('No estimate')).toBeInTheDocument()
-    expect(screen.getAllByText('No estimate')).toHaveLength(2) // the badge and the legend
+    // The badge and the legend.
+    await waitFor(() => expect(screen.getAllByText('No estimate')).toHaveLength(2))
   })
 
   it('shows hidden links count', async () => {

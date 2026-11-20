@@ -45,6 +45,7 @@ vi.mock('@xyflow/react', async () => {
     },
     Background: () => null,
     Controls: () => null,
+    Panel: ({ children }: { children?: React.ReactNode }) => children,
     Handle: () => null,
     useStore: (select: (s: { transform: [number, number, number]; width: number; height: number }) => unknown) =>
       useSyncExternalStore(
@@ -366,7 +367,8 @@ describe('WbsRenderer', () => {
       // 5px connector dots in the image (the canvas' [data-exporting] rule).
       smallHandlesDuringExport = document.querySelector('[data-exporting]') != null
     })
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export PNG' })))
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Export' })) })
+    await act(async () => fireEvent.click(screen.getByRole('menuitem', { name: 'Export PNG' })))
     await waitFor(() => expect(inputsDuringExport).toBe(4))
     expect(smallHandlesDuringExport).toBe(true)
     expect(document.querySelector('[data-exporting]')).toBeNull()

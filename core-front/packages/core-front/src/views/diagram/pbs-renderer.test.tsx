@@ -33,6 +33,7 @@ vi.mock('@xyflow/react', () => ({
   },
   Background: () => null,
   Controls: () => null,
+  Panel: ({ children }: { children?: React.ReactNode }) => children,
   Handle: () => null,
   useStore: (select: (s: { transform: [number, number, number] }) => unknown) => select({ transform: [0, 0, 1] }),
   Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
@@ -313,9 +314,8 @@ describe('PbsRenderer', () => {
     setViewportWidth(390)
     const { ops } = setup()
     await ready()
-    // The toolbar extras live in the More menu on a phone.
-    fireEvent.click(screen.getByRole('button', { name: 'More' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Add item' }))
+    // Icon only on a phone, the label as its name.
+    fireEvent.click(screen.getByRole('button', { name: 'Add item' }))
     expect(screen.getByLabelText('Parent')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     fireEvent.doubleClick(screen.getByTestId('node-i2').querySelector('[data-testid="pbs-box"]')!)
@@ -326,9 +326,11 @@ describe('PbsRenderer', () => {
   it('exports PNG and PDF like OBS', async () => {
     setup()
     await ready()
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export PNG' })))
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Export' })) })
+    await act(async () => fireEvent.click(screen.getByRole('menuitem', { name: 'Export PNG' })))
     await waitFor(() => expect(exportPng).toHaveBeenCalledWith(expect.any(HTMLElement), { x: 0, y: 0, width: 100, height: 50 }, 'PBS', expect.any(String)))
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export PDF' })))
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Export' })) })
+    await act(async () => fireEvent.click(screen.getByRole('menuitem', { name: 'Export PDF' })))
     await waitFor(() => expect(exportPdf).toHaveBeenCalledWith(expect.any(HTMLElement), { x: 0, y: 0, width: 100, height: 50 }, expect.objectContaining({ title: 'PBS' }), 'PBS'))
   })
 })

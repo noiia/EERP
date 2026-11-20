@@ -1,7 +1,6 @@
 'use client'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
 import ListItemText from '@mui/material/ListItemText'
 import Menu from '@mui/material/Menu'
@@ -21,10 +20,10 @@ import { useNumberFormat } from '../format-store'
 import type { EntityActions, HasId } from '../stores'
 import { useRelationLabels } from '../use-relation-labels'
 import { useRelationOps } from '../relation-ops'
-import { usePhone } from '../use-phone'
 import { layoutWbs } from './auto-layout'
 import { DELIVERABLE_BOX_SIZE, type DeliverableBoxData } from './deliverable-box'
 import { DiagramCanvas, DiagramCapNotice, DiagramLoading, useDiagramRecords } from './diagram-canvas'
+import { ToolButton } from './toolbar'
 import { useUndoHistory } from './history'
 import type { Point } from './collide'
 import { colorTagsFieldOf, useRecordColors } from '../use-record-colors'
@@ -151,7 +150,6 @@ export function WbsRenderer<T extends HasId>({
   // ticking it unfolds every box above it. The folds are the canvas's own, so the export
   // and the saved layout follow.
   const [layersAnchor, setLayersAnchor] = useState<HTMLElement | null>(null)
-  const phone = usePhone()
   const parentsAt = (level: number) => Object.keys(nodes).filter((id) => nodes[id].children.length && levelOf(id) === level)
   const maxLevel = Math.max(0, ...Object.keys(nodes).map(levelOf))
   const layers = Array.from({ length: maxLevel }, (_, i) => {
@@ -454,19 +452,14 @@ export function WbsRenderer<T extends HasId>({
         legend={[{ color: FOLDED_COLOR, label: t('Folded branch') }]}
         toolbarExtra={
           layers.length ? (
-            <Button size="small" aria-haspopup="menu" onClick={(e) => setLayersAnchor(e.currentTarget)}>
-              {t('Layers')}
-            </Button>
+            <ToolButton icon="layer-group" label={t('Layers')} aria-haspopup="menu" onClick={(e) => setLayersAnchor(e.currentTarget)} />
           ) : undefined
         }
       />
       <Menu
         open={!!layersAnchor}
         onClose={() => setLayersAnchor(null)}
-        // On a phone the button lives in the toolbar's More menu, gone once it closes: centered instead.
-        {...(phone
-          ? { anchorReference: 'anchorPosition' as const, anchorPosition: { top: window.innerHeight / 2, left: window.innerWidth / 2 }, transformOrigin: { vertical: 'center' as const, horizontal: 'center' as const } }
-          : { anchorEl: layersAnchor })}
+        anchorEl={layersAnchor}
         data-testid="wbs-layers-menu"
       >
         {layers.map((l) => (

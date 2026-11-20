@@ -31,6 +31,7 @@ vi.mock('@xyflow/react', () => ({
   },
   Background: () => null,
   Controls: () => null,
+  Panel: ({ children }: { children?: React.ReactNode }) => children,
   Handle: () => null,
   useStore: (select: (s: { transform: [number, number, number] }) => unknown) => select({ transform: [0, 0, rf.zoom] }),
   Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },

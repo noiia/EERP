@@ -18,12 +18,12 @@ import type { PbsConfig } from '../../api/view-fields'
 import { useT } from '../../i18n/translate'
 import { BannerScope, BannerSlot } from '../banner'
 import { ErrorAlert } from '../error-alert'
-import { byPrefixAndName, FontAwesomeIcon } from '../icons'
 import { kanbanColumnsGuard } from '../kanban-columns'
 import { useRelationOps, type RelationRecord } from '../relation-ops'
 import { layoutTreeGrid, treeGridEdges } from './auto-layout'
 import type { Point } from './collide'
 import { DIAGRAM_RECORD_CAP, DiagramCapNotice, DiagramCanvas, DiagramLoading } from './diagram-canvas'
+import { ToolButton } from './toolbar'
 import { useUndoHistory } from './history'
 import { PBS_BOX_SIZE, type PbsBoxData, type PbsRow } from './pbs-box'
 import { buildWbs } from './wbs'
@@ -358,9 +358,7 @@ export function PbsRenderer({ config, projectId }: PbsRendererProps) {
   }
 
   const addButtons = (centerSpot: (size: { w: number; h: number }) => Point) => (
-    <Button size="small" startIcon={<FontAwesomeIcon icon={byPrefixAndName.fas['box-open']} />} onClick={() => setDraft({ spot: centerSpot(PBS_BOX_SIZE) })}>
-      {t('Add item')}
-    </Button>
+    <ToolButton icon="box-open" label={t('Add item')} onClick={() => setDraft({ spot: centerSpot(PBS_BOX_SIZE) })} />
   )
 
   return (
