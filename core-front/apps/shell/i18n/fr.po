@@ -3380,3 +3380,21 @@ msgstr "Connectée le"
 
 msgid "Last used"
 msgstr "Dernière utilisation"
+
+msgid "Expand all"
+msgstr "Tout déplier"
+
+msgid "Collapse all"
+msgstr "Tout replier"
+
+msgid "Layers"
+msgstr "Niveaux"
+
+msgid "Layer {n}"
+msgstr "Niveau {n}"
+
+msgid "Critical path only"
+msgstr "Chemin critique seul"
+
+msgid "PERT - critical path"
+msgstr "PERT - chemin critique"

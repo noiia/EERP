@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
@@ -25,7 +25,7 @@ import { formatDatePattern, useFormatStore, useNumberFormat } from '../format-st
 import { useRelationOps } from '../relation-ops'
 import { useRelationLabels } from '../use-relation-labels'
 import type { EntityActions, HasId } from '../stores'
-import { layoutPert } from './auto-layout'
+import { layoutPert, layoutRectangle } from './auto-layout'
 import { DiagramCanvas, DiagramCapNotice, DiagramLoading, useDiagramRecords } from './diagram-canvas'
 import { useUndoHistory } from './history'
 import { computePert, offsetToDate } from './pert'
@@ -33,6 +33,7 @@ import { colorTagsFieldOf, useRecordColors } from '../use-record-colors'
 import { byPrefixAndName, FontAwesomeIcon } from '../icons'
 import { usePhone } from '../use-phone'
 import { boxFieldOf, TASK_BOX_SIZE, type TaskBoxData } from './task-box'
+import { compareOrder } from './wbs'
 
 // PERT display mode: one box per record, an arrow per dependency row (blocker →
 // dependent), each box showing its ES/EF/LS/LF dates and slack, the critical path in
@@ -106,6 +107,9 @@ export function PertRenderer<T extends HasId>({
   const [removed, setRemoved] = useState<string[]>([])
   const [picker, setPicker] = useState<{ anchor: HTMLElement; ids: string[] } | null>(null)
   const [query, setQuery] = useState('')
+  // The critical-path view, made for its export: only the critical boxes, read-only, folded
+  // into a rectangle (layoutRectangle) from the first step top-left to the last bottom-right.
+  const [criticalOnly, setCriticalOnly] = useState(false)
   const phone = usePhone()
 
   // Dependency rows touching the shown records, read like gantt-renderer's but from
@@ -178,6 +182,15 @@ export function PertRenderer<T extends HasId>({
     links,
   )
   const orderById = new Map(rows.map((r) => [r.id, orderField ? str(values(r)[orderField]) : null]))
+  const criticalIds = pert.cycle
+    ? []
+    : drawnRows
+        .map((r) => r.id)
+        .filter((id) => pert.nodes[id].critical)
+        .sort((a, b) => pert.nodes[a].es - pert.nodes[b].es || pert.nodes[a].ef - pert.nodes[b].ef || compareOrder(orderById.get(a), orderById.get(b)))
+  const criticalKey = criticalIds.join(',')
+  const criticalPositions = useMemo(() => layoutRectangle(criticalKey ? criticalKey.split(',') : [], TASK_BOX_SIZE), [criticalKey])
+  const showCritical = criticalOnly && criticalIds.length > 0
   const orderOf = orderField ? (id: string) => orderById.get(id) ?? null : undefined
   const date = (days: number) => formatDatePattern(offsetToDate(pert.origin, days), dateFormat)
 
@@ -300,7 +313,30 @@ export function PertRenderer<T extends HasId>({
     <>
       <ErrorAlert error={error ?? (loaded.error ? { code: 'INTERNAL_ERROR', message: loaded.error } : null)} />
       <ViewBanner open={!!pert.cycle} status="warning">{t('Dependency cycle: critical path not computed')}</ViewBanner>
+      {showCritical ? (
+        <DiagramCanvas
+          // Its own canvas: the user's PERT layout is neither read nor saved from here.
+          key="critical"
+          entity={entity}
+          mode="pert"
+          title={t('PERT - critical path')}
+          nodes={rfNodes
+            .filter((n) => criticalPositions[n.id])
+            .map((n) => ({ ...n, data: { ...(n.data as TaskBoxData), editable: false, onRemove: undefined } }))}
+          edges={edges.filter((e) => e.className === 'critical' && criticalPositions[e.source] && criticalPositions[e.target])}
+          autoLayout={() => criticalPositions}
+          positions={criticalPositions}
+          readOnly
+          legend={[{ color: red, label: t('Critical path') }]}
+          toolbarExtra={
+            <Button size="small" aria-pressed onClick={() => setCriticalOnly(false)}>
+              {t('Critical path only')}
+            </Button>
+          }
+        />
+      ) : (
       <DiagramCanvas
+        key="full"
         entity={entity}
         mode="pert"
         title={t('PERT')}
@@ -335,10 +371,14 @@ export function PertRenderer<T extends HasId>({
             >
               {t('Add task')}
             </Button>
+            <Button size="small" aria-pressed={false} disabled={!criticalIds.length} onClick={() => setCriticalOnly(true)}>
+              {t('Critical path only')}
+            </Button>
             {pert.hiddenLinks > 0 ? <Chip size="small" label={pert.hiddenLinks === 1 ? t('1 hidden link') : t('{n} hidden links').replace('{n}', String(pert.hiddenLinks))} /> : null}
           </>
         }
       />
+      )}
       <Menu
         open={!!picker}
         onClose={() => setPicker(null)}

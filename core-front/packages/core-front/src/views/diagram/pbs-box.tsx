@@ -44,7 +44,7 @@ export interface PbsBoxData extends Record<string, unknown> {
   onOpenTasks: () => void
 }
 
-export const PbsBox = memo(function PbsBox({ data, positionAbsoluteX, positionAbsoluteY }: NodeProps<Node<PbsBoxData>>) {
+export const PbsBox = memo(function PbsBox({ data, positionAbsoluteX, positionAbsoluteY, targetPosition }: NodeProps<Node<PbsBoxData>>) {
   const t = useT()
   const theme = useTheme()
   const palette = useGraphPalette()
@@ -79,7 +79,7 @@ export const PbsBox = memo(function PbsBox({ data, positionAbsoluteX, positionAb
       sx={{ width: PBS_BOX_SIZE.w, height: PBS_BOX_SIZE.h, boxSizing: 'border-box', overflow: 'hidden', position: 'relative', p: 1, pr: editable ? 4 : 1 }}
       style={{ backgroundColor: bg, color: fg }}
     >
-      <Handle type="target" position={Position.Top} />
+      <Handle type="target" position={targetPosition ?? Position.Top} />
       {detailed ? (
         <>
           <Typography variant="subtitle2" sx={{ fontWeight: 700 }} noWrap>{row.name}</Typography>

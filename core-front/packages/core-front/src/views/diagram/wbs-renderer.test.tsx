@@ -192,6 +192,27 @@ describe('WbsRenderer', () => {
     expect(screen.getByText('+3 tasks · 4.33 h')).toBeInTheDocument()
   })
 
+  it('the Layers menu folds and unfolds whole levels, which the saved layout keeps', async () => {
+    const { saveViewLayout } = setup(undefined, true, {
+      initialData: [...rows(), { id: 'E', name: 'Wireframes', parent_id: 'B', project_id: 'p1', planned_hours: 1 }],
+    })
+    await waitFor(() => expect(rf.props.nodes.map((n) => n.id)).toContain('E'))
+    fireEvent.click(screen.getByRole('button', { name: 'Layers' }))
+    const menu = screen.getByTestId('wbs-layers-menu')
+    const item = (name: string) => within(menu).getByRole('menuitem', { name })
+    expect(within(menu).getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Layer X', 'Layer X.Y', 'Layer X.Y.Z'])
+    fireEvent.click(item('Layer X.Y'))
+    expect(screen.queryByTestId('node-B')).toBeNull()
+    expect(screen.getByTestId('node-A')).toBeInTheDocument()
+    expect(within(item('Layer X.Y.Z')).getByRole('checkbox')).not.toBeChecked()
+    await waitFor(() => expect(saveViewLayout).toHaveBeenCalledWith('project_task', 'wbs', expect.objectContaining({ folded: ['A'] })), { timeout: 2000 })
+    fireEvent.click(item('Layer X.Y.Z'))
+    expect(screen.getByTestId('node-E')).toBeInTheDocument()
+    fireEvent.click(item('Layer X'))
+    expect(screen.queryByTestId('node-A')).toBeNull()
+    expect(screen.queryByTestId('node-C')).toBeNull()
+  })
+
   it('edits a field in the box', async () => {
     const { actions, onRecordsChange } = setup()
     await screen.findByTestId('node-A')

@@ -103,6 +103,20 @@ values print by label (read once for the whole diagram), dates and numbers in th
 image is rendered at 3× when the browsers' canvas limits allow (16 000 px a side, 150 M pixels), else 2×,
 else 1×.
 
+Folds decide what an export holds: the WBS exports the boxes on screen, so a folded branch is
+left out. The WBS **Layers** menu folds whole levels at once: one checkbox per task level, named
+by its shape ("Layer X", "Layer X.Y", "Layer X.Y.Z"…); unticking level *k* folds every box of
+level *k − 1* that has children (level 0 = the group roots, so "Layer X" is disabled without
+groups), ticking it unfolds every box above it, and a level partly folded by hand shows as
+indeterminate. These are the canvas's own folds, saved with the user's layout.
+
+PERT's **Critical path only** button switches to a read-only canvas of the critical boxes and the
+critical arrows alone, made to be exported: the chain, in earliest-start order, is folded into a
+landscape rectangle (`layoutRectangle`) read line by line, first step top-left, last bottom-right
+(a short last line is right-aligned). Up to 4 boxes stay one line; more take ⌈√(4n/3)⌉ columns
+(12 boxes: 4 × 3). That canvas never reads or saves the user's PERT layout; the button again
+returns to the full diagram. It is disabled on a dependency cycle (no critical path).
+
 ### Removing tasks from the PERT
 
 A PERT box's trash button (full and zoomed-out box) takes the task off this diagram only: the record and
@@ -195,13 +209,16 @@ company field, a `canEdit` guard).
   back) and never reads or saves a per-user layout in this mode; boxes never placed are laid out like WBS.
 - *Balanced families.* An org chart grows sideways (many people per manager), which leaves the
   screen's height empty and shrinks every box once fitted. The OBS auto-layout (*Re-arrange*, and
-  never-placed boxes) is `layoutTreeGrid`: a parent with up to 3 children has them side by side
-  under it; with more, they go in a grid of ⌈√n⌉ columns (each cell holding the child's whole
-  subtree), so every large family is about as tall as it is wide, at every level. Deep levels
-  are no longer hung as one vertical column. A grid child is entered from the left by a bus line
-  (`BusEdge`: down from the parent, along the gap above the grid, down the gap left of the child's
-  subtree, into the child), chosen from the tree's shape (more than 3 siblings), not the saved
-  positions, so it holds after a reload or a hand move.
+  never-placed boxes) is `layoutTreeGrid`. Levels 1 and 2 each share one horizontal line (amended
+  2026-11-20): the roots sit side by side on the top row and every root's children side by side on
+  the row below, however many, so the chart's first two levels read as two ranks. From level 3 on,
+  a parent with up to 3 children has them side by side under it; with more, they go in a grid of
+  ⌈√n⌉ columns (each cell holding the child's whole subtree), so a large deep family stays about
+  as tall as it is wide instead of hanging as one vertical column. A grid child is entered from the
+  left by a bus line (`BusEdge`: down from the parent, along the gap above the grid, down the gap
+  left of the child's subtree, into the child), chosen from the tree's shape (`treeGridEdges`: more
+  than 3 siblings under a non-root parent), not the saved positions, so it holds after a reload or
+  a hand move. PBS uses the same layout and lines.
 - *Colors.* A box has a free `#rrggbb` color; the text color is derived for contrast.
 - *Deleting.* Deleting a box clears its children's `parent_id` in the same transaction, so the
   children become roots instead of disappearing.

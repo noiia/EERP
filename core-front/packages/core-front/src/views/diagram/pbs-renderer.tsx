@@ -11,7 +11,7 @@ import Select from '@mui/material/Select'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import { usePathname, useRouter } from 'next/navigation'
-import type { Connection, Edge, Node } from '@xyflow/react'
+import { Position, type Connection, type Edge, type Node } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { serializeError, toApiError, type SerializedError } from '../../api/errors'
 import type { PbsConfig } from '../../api/view-fields'
@@ -21,7 +21,7 @@ import { ErrorAlert } from '../error-alert'
 import { byPrefixAndName, FontAwesomeIcon } from '../icons'
 import { kanbanColumnsGuard } from '../kanban-columns'
 import { useRelationOps, type RelationRecord } from '../relation-ops'
-import { layoutWbs } from './auto-layout'
+import { layoutTreeGrid, treeGridEdges } from './auto-layout'
 import type { Point } from './collide'
 import { DIAGRAM_RECORD_CAP, DiagramCapNotice, DiagramCanvas, DiagramLoading } from './diagram-canvas'
 import { useUndoHistory } from './history'
@@ -253,9 +253,11 @@ export function PbsRenderer({ config, projectId }: PbsRendererProps) {
     router.push(`${pathname}?${q.toString()}`)
   }
 
+  const lines = treeGridEdges(rows, positions)
   const nodes: Node[] = rows.map((row) => ({
     id: row.id,
     type: 'pbs',
+    targetPosition: lines.inGrid(row.id) ? Position.Left : Position.Top,
     position: { x: 0, y: 0 },
     width: PBS_BOX_SIZE.w,
     height: PBS_BOX_SIZE.h,
@@ -276,11 +278,11 @@ export function PbsRenderer({ config, projectId }: PbsRendererProps) {
   }))
   const edges: Edge[] = rows
     .filter((r) => r.parent_id && ids.has(r.parent_id))
-    .map((r) => ({ id: `${r.parent_id}->${r.id}`, source: r.parent_id!, target: r.id, type: 'smoothstep', deletable: editable }))
+    .map((r) => ({ id: `${r.parent_id}->${r.id}`, source: r.parent_id!, target: r.id, deletable: editable, ...lines.edge(r.id) }))
 
   const autoLayout = () => {
     const tree = buildWbs(rows.map((r) => ({ id: r.id, parentId: r.parent_id && ids.has(r.parent_id) ? r.parent_id : null })), new Set())
-    return layoutWbs(tree.nodes, tree.roots, tree.visible, PBS_BOX_SIZE)
+    return layoutTreeGrid(tree.nodes, tree.roots, tree.visible, PBS_BOX_SIZE)
   }
 
   const onConnect = ({ source, target }: Connection) => {

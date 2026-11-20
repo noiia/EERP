@@ -21,7 +21,7 @@ import { byPrefixAndName, FontAwesomeIcon } from '../icons'
 import { kanbanColumnsGuard } from '../kanban-columns'
 import { useRelationOps, type RelationOps, type RelationRecord } from '../relation-ops'
 import { RelationCreateWizard } from '../relation-widgets'
-import { GRID_MAX_ROW, GRID_TRUNK_GAP, layoutTreeGrid } from './auto-layout'
+import { layoutTreeGrid, treeGridEdges } from './auto-layout'
 import type { Point } from './collide'
 import { DiagramCanvas, DiagramLoading } from './diagram-canvas'
 import { useUndoHistory } from './history'
@@ -161,27 +161,11 @@ export function ObsRenderer({ config, projectId }: ObsRendererProps) {
     return history.perform(() => patch(id, body), () => patch(id, old))
   }
 
-  // A box among more than GRID_MAX_ROW siblings sits in a grid (layoutTreeGrid): entered from
-  // the left by a bus line whose trunk runs in the gap left of its subtree's leftmost box.
-  const kidsOf = new Map<string, string[]>()
-  for (const r of rows) if (r.parent_id && ids.has(r.parent_id)) kidsOf.set(r.parent_id, [...(kidsOf.get(r.parent_id) ?? []), r.id])
-  const inGrid = (row: ObsRow) => !!row.parent_id && (kidsOf.get(row.parent_id)?.length ?? 0) > GRID_MAX_ROW
-  const trunk = (id: string) => {
-    let left = positions[id]?.x ?? 0
-    const seen = new Set<string>()
-    const walk = (k: string) => {
-      if (seen.has(k)) return
-      seen.add(k)
-      left = Math.min(left, positions[k]?.x ?? left)
-      ;(kidsOf.get(k) ?? []).forEach(walk)
-    }
-    walk(id)
-    return (positions[id]?.x ?? 0) - left + GRID_TRUNK_GAP
-  }
+  const lines = treeGridEdges(rows, positions)
   const nodes: Node[] = rows.map((row) => ({
     id: row.id,
     type: 'obs',
-    targetPosition: inGrid(row) ? Position.Left : Position.Top,
+    targetPosition: lines.inGrid(row.id) ? Position.Left : Position.Top,
     position: { x: 0, y: 0 },
     width: OBS_BOX_SIZE.w,
     height: OBS_BOX_SIZE.h,
@@ -202,7 +186,7 @@ export function ObsRenderer({ config, projectId }: ObsRendererProps) {
     .filter((r) => r.parent_id && ids.has(r.parent_id))
     .map((r) => ({
       id: `${r.parent_id}->${r.id}`, source: r.parent_id!, target: r.id, deletable: editable,
-      ...(inGrid(r) ? { type: 'bus', data: { trunk: trunk(r.id) } } : { type: 'smoothstep' }),
+      ...lines.edge(r.id),
     }))
 
   const autoLayout = () => {

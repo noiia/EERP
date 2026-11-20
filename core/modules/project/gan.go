@@ -752,6 +752,9 @@ func ganTaskElement(task PlanTask, id string, deps []ganDepEl) *ganTaskEl {
 		Expand:   "true",
 		Deps:     deps,
 	}
+	if task.Collapsed {
+		el.Expand = "false"
+	}
 	if task.Ref != "" {
 		el.Props = append(el.Props, ganCustomEl{TaskPropertyID: ganEERPIDProp, Value: task.Ref})
 	}

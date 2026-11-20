@@ -151,6 +151,7 @@ func (h *Handler) ExportExchange(c *echo.Context) error {
 	if err != nil {
 		return err
 	}
+	markCollapsed(plan.Tasks, c.QueryParam("collapsed"))
 	var buf bytes.Buffer
 	if err := r.format.Encode(&buf, plan); err != nil {
 		return err
@@ -158,6 +159,24 @@ func (h *Handler) ExportExchange(c *echo.Context) error {
 	name := exchangeFilename(plan.Name) + r.format.Ext()
 	c.Response().Header().Set("Content-Disposition", exchangeDisposition(name))
 	return c.Stream(http.StatusOK, exchangeContentType, bytes.NewReader(buf.Bytes()))
+}
+
+// markCollapsed flags the tasks named in `collapsed` (comma-separated task uuids,
+// the rows folded in the user's Gantt) so the file opens with them folded too.
+// Unknown ids are ignored: it is a display hint, not a selection.
+func markCollapsed(tasks []PlanTask, collapsed string) {
+	if collapsed == "" {
+		return
+	}
+	ids := map[string]bool{}
+	for _, id := range strings.Split(collapsed, ",") {
+		ids[strings.TrimSpace(id)] = true
+	}
+	for i := range tasks {
+		if !tasks[i].Milestone && ids[tasks[i].Ref] {
+			tasks[i].Collapsed = true
+		}
+	}
 }
 
 // PreviewExchange handles POST /api/v1/project/:id/exchange/:format/preview: the

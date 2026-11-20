@@ -64,6 +64,9 @@ type PlanTask struct {
 	// HasChildren marks a summary task, whose dates a planner derives from its
 	// children; the diff ignores a summary task's dates and completion.
 	HasChildren bool
+	// Collapsed is an export-only display hint (the Gantt's folded rows): the
+	// format shows the task folded. Never decoded, never diffed.
+	Collapsed bool
 }
 
 // Key is the task's identity inside a Plan, used by Parent, PlanDep and

@@ -90,6 +90,36 @@ describe('GanttRenderer', () => {
     )
   }
 
+  describe('subtasks', () => {
+    const tree: ViewDescriptor<Task> = { ...descriptor, viewModeDefaults: { wbsParentField: 'parent_id' } }
+    const parent = { ...alpha, id: 'p', name: 'Parent' }
+    const child = { ...alpha, id: 'c', name: 'Child', parent_id: 'p' } as Task
+    const grandchild = { ...alpha, id: 'g', name: 'Grandchild', parent_id: 'c' } as Task
+
+    it('folds a row\'s subtasks with its chevron, and Collapse all / Expand all toggle every parent', () => {
+      renderGantt([grandchild, child, parent], tree)
+      expect(screen.getByTestId('gantt-row-g')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Collapse Child' }))
+      expect(screen.queryByTestId('gantt-row-g')).toBeNull()
+      expect(screen.getByTestId('gantt-row-c')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Expand all' }))
+      expect(screen.getByTestId('gantt-row-g')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Collapse all' }))
+      expect(screen.queryByTestId('gantt-row-c')).toBeNull()
+      expect(screen.getByRole('button', { name: 'Expand Parent' })).toHaveAttribute('aria-expanded', 'false')
+      // Kept for the session, like the zoom.
+      cleanup()
+      renderGantt([grandchild, child, parent], tree)
+      expect(screen.queryByTestId('gantt-row-c')).toBeNull()
+    })
+
+    it('shows no chevron or toggle without a parent field', () => {
+      renderGantt([child, parent])
+      expect(screen.queryByRole('button', { name: 'Collapse all' })).toBeNull()
+      expect(screen.getByTestId('gantt-row-c')).toBeInTheDocument()
+    })
+  })
+
   it('keeps the chosen zoom per entity for the session', () => {
     renderGantt()
     expect(screen.getByRole('button', { name: 'Week' })).toHaveAttribute('aria-pressed', 'true')
@@ -1190,6 +1220,17 @@ describe('GanttRenderer', () => {
       expect(screen.getByRole('menuitem', { name: 'MS Project (MSPDI)' })).toHaveAttribute(
         'href',
         '/api/exchange/project/p1/mppdi/export',
+      )
+    })
+
+    it('Export folds in the file the rows folded on screen', async () => {
+      sessionStorage.setItem('eerp.gantt.collapsed.task', JSON.stringify(['t1', 't2']))
+      registerKanbanColumnsGuard('test.exchange', async () => false)
+      renderExchange(PINNED, exchangeCfg)
+      fireEvent.click(await screen.findByRole('button', { name: 'Export' }))
+      expect(await screen.findByRole('menuitem', { name: 'GanttProject (.gan)' })).toHaveAttribute(
+        'href',
+        '/api/exchange/project/p1/gan/export?collapsed=t1%2Ct2',
       )
     })
 

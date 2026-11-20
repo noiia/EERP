@@ -3249,3 +3249,21 @@ msgstr ""
 
 msgid "Last used"
 msgstr ""
+
+msgid "Expand all"
+msgstr ""
+
+msgid "Collapse all"
+msgstr ""
+
+msgid "Layers"
+msgstr ""
+
+msgid "Layer {n}"
+msgstr ""
+
+msgid "Critical path only"
+msgstr ""
+
+msgid "PERT - critical path"
+msgstr ""

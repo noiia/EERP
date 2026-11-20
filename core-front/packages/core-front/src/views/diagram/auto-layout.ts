@@ -70,11 +70,13 @@ export const GRID_BUS_DROP = WBS_GAP_Y / 2
 /** How far left of a grid cell its trunk line runs: half the gap between grid columns. */
 export const GRID_TRUNK_GAP = WBS_GAP_X / 2
 
-/** Tidy tree for an org chart. A parent with up to GRID_MAX_ROW visible children has them side
- * by side below it, centered under it. With more, they go in a grid of ceil(√n) columns, so the
- * family is about as tall as it is wide: each cell holds a child's whole subtree (left-aligned),
- * the parent is centered over the grid, and the lines run as a bus — down from the parent, along
- * the gap above the grid, down the gap left of each column, into the child's left side (BusEdge). */
+/** Tidy tree for an org chart (OBS, PBS). The roots (level 1) share the top row and their
+ * children (level 2) all share the row below, side by side however many there are. Deeper, a
+ * parent with up to GRID_MAX_ROW visible children has them side by side below it, centered
+ * under it; with more, they go in a grid of ceil(√n) columns, so the family stays about as tall
+ * as it is wide: each cell holds a child's whole subtree (left-aligned), the parent is centered
+ * over the grid, and the lines run as a bus — down from the parent, along the gap above the
+ * grid, down the gap left of each column, into the child's left side (BusEdge, treeGridEdges). */
 export function layoutTreeGrid(
   nodes: Record<string, WbsNode>,
   roots: string[],
@@ -89,12 +91,12 @@ export function layoutTreeGrid(
     for (const [k, p] of Object.entries(b.pos)) out[k] = { x: p.x + dx, y: p.y + dy }
   }
   // `id`'s subtree with its top-left at (0, 0).
-  const block = (id: string): Block => {
-    const kids = nodes[id].children.filter((c) => vis.has(c)).map(block)
+  const block = (id: string, root: boolean): Block => {
+    const kids = nodes[id].children.filter((c) => vis.has(c)).map((c) => block(c, false))
     if (!kids.length) return { pos: { [id]: { x: 0, y: 0 } }, w: size.w, h: size.h }
     const pos: Record<string, Point> = {}
     const top = size.h + WBS_GAP_Y
-    if (kids.length <= GRID_MAX_ROW) {
+    if (kids.length <= GRID_MAX_ROW || root) {
       let x = 0
       for (const k of kids) {
         put(pos, k, x, top)
@@ -127,11 +129,62 @@ export function layoutTreeGrid(
   const pos: Record<string, Point> = {}
   let x = 0
   for (const r of roots.filter((r) => vis.has(r))) {
-    const b = block(r)
+    const b = block(r, true)
     put(pos, b, x, 0)
     x += b.w + WBS_GAP_X
   }
   return finish(pos, size)
+}
+
+/** A chain this short stays on one line in layoutRectangle. */
+export const RECT_LINE_MAX = 4
+
+/** A chain of boxes (in order) folded into a landscape rectangle, read line by line: the
+ * first box top-left, the last bottom-right (a short last line is right-aligned). Up to
+ * RECT_LINE_MAX boxes stay one line; more take ceil(√(4n/3)) columns (12 boxes: 4 × 3). */
+export function layoutRectangle(ids: string[], size: BoxSize): Record<string, Point> {
+  const n = ids.length
+  const cols = n <= RECT_LINE_MAX ? n : Math.ceil(Math.sqrt((n * 4) / 3))
+  const lines = cols ? Math.ceil(n / cols) : 0
+  const lastLine = (lines - 1) * cols
+  const shift = lines * cols - n
+  return Object.fromEntries(
+    ids.map((id, i) => [
+      id,
+      { x: ((i % cols) + (i >= lastLine ? shift : 0)) * (size.w + PERT_GAP_X), y: Math.floor(i / cols) * (size.h + PERT_GAP_Y) },
+    ]),
+  )
+}
+
+/** How layoutTreeGrid's lines run: a box among more than GRID_MAX_ROW siblings under a
+ * non-root parent sits in a grid, entered from the left by a bus line whose trunk runs in the
+ * gap left of its subtree's leftmost box (`trunk`, px left of the box); any other box is
+ * entered from the top. */
+export function treeGridEdges(rows: { id: string; parent_id: string | null }[], positions: Record<string, Point>) {
+  const ids = new Set(rows.map((r) => r.id))
+  const parentOf = new Map(rows.map((r) => [r.id, r.parent_id && ids.has(r.parent_id) ? r.parent_id : null]))
+  const kidsOf = new Map<string, string[]>()
+  for (const r of rows) {
+    const p = parentOf.get(r.id)
+    if (p) kidsOf.set(p, [...(kidsOf.get(p) ?? []), r.id])
+  }
+  const inGrid = (id: string) => {
+    const p = parentOf.get(id)
+    return !!p && !!parentOf.get(p) && (kidsOf.get(p)?.length ?? 0) > GRID_MAX_ROW
+  }
+  const trunk = (id: string) => {
+    let left = positions[id]?.x ?? 0
+    const seen = new Set<string>()
+    const walk = (k: string) => {
+      if (seen.has(k)) return
+      seen.add(k)
+      left = Math.min(left, positions[k]?.x ?? left)
+      ;(kidsOf.get(k) ?? []).forEach(walk)
+    }
+    walk(id)
+    return (positions[id]?.x ?? 0) - left + GRID_TRUNK_GAP
+  }
+  return { inGrid, edge: (id: string) => (inGrid(id) ? { type: 'bus', data: { trunk: trunk(id) } } : { type: 'smoothstep' }) }
 }
 
 /** Two parts, left to right. Linked records: each connected group of links is its own small

@@ -23,6 +23,7 @@ import { serializeError, toApiError, type SerializedError } from '../api/errors'
 import { mergeListOptions, type EntityListOptions } from '../api/list-options'
 import { pinnedId, type ExchangeFormat, type GanttBaselineConfig, type GanttDependenciesConfig, type GanttExchangeConfig, type GanttMilestonesConfig, type GanttScheduleConfig } from '../api/view-fields'
 import { useT } from '../i18n/translate'
+import { ganttTree } from './gantt-tree'
 import { useUndoToastStore } from './undo-toast'
 import type { ViewDescriptor } from './descriptor'
 import { BannerScope, BannerSlot } from './banner'
@@ -90,6 +91,25 @@ function readCritical(entity: string): boolean {
 function writeCritical(entity: string, on: boolean) {
   try {
     sessionStorage.setItem(criticalKey(entity), on ? '1' : '0')
+  } catch {
+    // not persisted, still applied
+  }
+}
+
+// The rows the user folded (their subtasks hidden), kept per entity for the tab's
+// session like the zoom. The plan export folds the same rows in its file.
+const collapsedKey = (entity: string) => `eerp.gantt.collapsed.${entity}`
+function readCollapsed(entity: string): string[] {
+  try {
+    const v: unknown = JSON.parse(sessionStorage.getItem(collapsedKey(entity)) ?? '[]')
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+function writeCollapsed(entity: string, ids: string[]) {
+  try {
+    sessionStorage.setItem(collapsedKey(entity), JSON.stringify(ids))
   } catch {
     // not persisted, still applied
   }
@@ -401,7 +421,7 @@ export function GanttRenderer<T extends HasId>({
   }
 
   // Each record's [start, end] as day indexes from the range start.
-  const rows: { record: T; s: number; e: number }[] = []
+  const allRows: { record: T; s: number; e: number }[] = []
   const unscheduled: T[] = []
   for (const record of records) {
     const values = record as Record<string, unknown>
@@ -413,12 +433,30 @@ export function GanttRenderer<T extends HasId>({
     }
     const si = dayDiff(s, range.start)
     const ei = Math.max(si, dayDiff(e, range.start))
-    if (si < totalDays && ei >= 0) rows.push({ record, s: si, e: ei })
+    if (si < totalDays && ei >= 0) allRows.push({ record, s: si, e: ei })
   }
-  rows.sort((a, b) => a.s - b.s || a.e - b.e)
+  allRows.sort((a, b) => a.s - b.s || a.e - b.e)
+  // With a parent field (the WBS one), subtasks sit under their parent and fold with its chevron.
+  const parentField = descriptor.viewModeDefaults?.wbsParentField
+  const [collapsed, setCollapsedState] = useState<string[]>(() => readCollapsed(descriptor.entity))
+  const setCollapsed = (ids: string[]) => {
+    setCollapsedState(ids)
+    writeCollapsed(descriptor.entity, ids)
+  }
+  const parentOf = (r: { record: T }) => {
+    const p = parentField ? (r.record as Record<string, unknown>)[parentField] : null
+    return typeof p === 'string' && p !== '' ? p : null
+  }
+  const tree = ganttTree(allRows, (r) => r.record.id, parentOf, new Set(collapsed))
+  const rows = tree.map((n) => n.row)
+  const allIds = new Set(allRows.map((r) => r.record.id))
+  const parentIds = [...new Set(allRows.map(parentOf).filter((p): p is string => !!p && allIds.has(p)))]
+  const toggleRow = (id: string) => setCollapsed(collapsed.includes(id) ? collapsed.filter((x) => x !== id) : [...collapsed, id])
+  // Anything folded: unfold everything; else fold every parent on screen.
+  const toggleAll = () => setCollapsed(collapsed.length ? [] : parentIds)
 
   const colorsField = colorTagsFieldOf(descriptor as ViewDescriptor, colorTagsField)
-  const { colors, reload: reloadColors } = useRecordColors(descriptor.entity, colorsField, rows.map((r) => r.record.id))
+  const { colors, reload: reloadColors } = useRecordColors(descriptor.entity, colorsField, allRows.map((r) => r.record.id))
   const [colorPicker, setColorPicker] = useState<{ record: T; anchor: HTMLElement } | null>(null)
   // The phone toolbar's More menu: the pinned-scope controls (Critical path, Baseline)
   // don't fit the 390px row, so they sit in it (the diagram canvas' pattern).
@@ -580,7 +618,7 @@ export function GanttRenderer<T extends HasId>({
   // id set (not the date order): a move never changes the links, arrows follow `rows`.
   const [links, setLinks] = useState<Record<string, unknown>[]>([])
   const depKey = dependencies && relationOps?.listPage ? JSON.stringify(dependencies) : null
-  const rowIdsKey = rows
+  const rowIdsKey = allRows
     .map((r) => r.record.id)
     .sort()
     .join(',')
@@ -1014,6 +1052,11 @@ export function GanttRenderer<T extends HasId>({
                 ))}
               </Select>
             ) : null}
+            {parentIds.length || collapsed.length ? (
+              <Button size="small" sx={{ minHeight: phone ? 40 : undefined }} onClick={toggleAll}>
+                {collapsed.length ? t('Expand all') : t('Collapse all')}
+              </Button>
+            ) : null}
             {!phone && exchangePin ? (
               <Button size="small" onClick={(e) => setExportAnchor(e.currentTarget)}>
                 {t('Export')}
@@ -1127,7 +1170,22 @@ export function GanttRenderer<T extends HasId>({
             ) : null}
             {rows.map((row, i) => (
               <Box key={row.record.id} data-testid={`gantt-row-${row.record.id}`} sx={{ display: 'contents' }}>
-                <Box sx={{ gridColumn: 1, gridRow: i + 2 + msRow, display: 'flex', alignItems: 'center', minWidth: 0 }}>
+                <Box sx={{ gridColumn: 1, gridRow: i + 2 + msRow, display: 'flex', alignItems: 'center', minWidth: 0, pl: tree[i].depth * (phone ? 0.75 : 1.5) }}>
+                  {parentIds.length ? (
+                    tree[i].hasChildren ? (
+                      <IconButton
+                        size="small"
+                        aria-label={`${collapsed.includes(row.record.id) ? t('Expand') : t('Collapse')} ${label(row.record)}`}
+                        aria-expanded={!collapsed.includes(row.record.id)}
+                        onClick={() => toggleRow(row.record.id)}
+                        sx={{ width: 24, height: 24, flexShrink: 0 }}
+                      >
+                        <FontAwesomeIcon icon={byPrefixAndName.fas[collapsed.includes(row.record.id) ? 'chevron-right' : 'chevron-down']} size="xs" />
+                      </IconButton>
+                    ) : (
+                      <Box sx={{ width: 24, flexShrink: 0 }} />
+                    )
+                  ) : null}
                   <Button
                     size="small"
                     onClick={() => openForm(row.record)}
@@ -1352,7 +1410,7 @@ export function GanttRenderer<T extends HasId>({
               <MenuItem
                 key={f.key}
                 component="a"
-                href={exchangeUrl(f.key, 'export')}
+                href={exchangeUrl(f.key, 'export') + (collapsed.length ? `?collapsed=${encodeURIComponent(collapsed.join(','))}` : '')}
                 download
                 onClick={() => setExportAnchor(null)}
               >

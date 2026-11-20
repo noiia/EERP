@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { GRID_TRUNK_GAP, layoutPert, layoutTreeGrid, layoutWbs, PERT_UNLINKED_ROWS } from './auto-layout'
+import { GRID_TRUNK_GAP, layoutPert, layoutTreeGrid, layoutWbs, PERT_UNLINKED_ROWS, layoutRectangle, treeGridEdges } from './auto-layout'
 import { bezierPoint, overlaps } from './collide'
 import { buildWbs } from './wbs'
 
@@ -216,9 +216,9 @@ describe('layoutTreeGrid', () => {
     noOverlap(pos)
   })
 
-  it('more than 3 children go in a balanced grid of ceil(sqrt(n)) columns, the parent centered over it', () => {
+  it('below level 2, more than 3 children go in a balanced grid of ceil(sqrt(n)) columns, the parent centered over it', () => {
     const kids = Array.from({ length: 7 }, (_, i) => `k${i}`)
-    const { nodes, roots, visible } = tree([['p', null], ...kids.map((k): [string, string] => [k, 'p'])])
+    const { nodes, roots, visible } = tree([['r', null], ['p', 'r'], ...kids.map((k): [string, string] => [k, 'p'])])
     const pos = layoutTreeGrid(nodes, roots, visible, size)
     const xs = [...new Set(kids.map((k) => pos[k].x))]
     const ys = [...new Set(kids.map((k) => pos[k].y))]
@@ -234,18 +234,21 @@ describe('layoutTreeGrid', () => {
     noOverlap(pos)
   })
 
-  it('a grid cell holds the whole subtree of its child, deep levels laid out the same way', () => {
-    const rows: [string, string | null][] = [['ceo', null]]
+  it('levels 1 and 2 each share one row, however many boxes; deeper families stay in grids', () => {
+    const rows: [string, string | null][] = [['ceo', null], ['coo', null]]
     for (let m = 0; m < 5; m++) {
-      rows.push([`m${m}`, 'ceo'])
-      for (let p = 0; p < 5; p++) rows.push([`p${m}.${p}`, `m${m}`])
+      rows.push([`m${m}`, m < 4 ? 'ceo' : 'coo'])
+      for (let p = 0; p < (m === 2 ? 1 : 5); p++) rows.push([`p${m}.${p}`, `m${m}`])
     }
     const { nodes, roots, visible } = tree(rows)
     const pos = layoutTreeGrid(nodes, roots, visible, size)
+    expect(pos.coo.y).toBe(pos.ceo.y)
+    expect(new Set([0, 1, 2, 3, 4].map((m) => pos[`m${m}`].y)).size).toBe(1)
+    // The managers side by side, in order.
+    for (let m = 1; m < 5; m++) expect(pos[`m${m}`].x).toBeGreaterThan(pos[`m${m - 1}`].x)
     // People are a 3-column grid under their manager, not one vertical column.
     expect(new Set([0, 1, 2, 3, 4].map((p) => pos[`p0.${p}`].x)).size).toBe(3)
-    // m3 (second grid row) starts below m0's whole subtree.
-    expect(pos.m3.y).toBeGreaterThan(Math.max(...[0, 1, 2, 3, 4].map((p) => pos[`p0.${p}`].y)) + size.h)
+    expect(new Set([0, 1, 2, 3, 4].map((p) => pos[`p0.${p}`].y)).size).toBe(2)
     noOverlap(pos)
   })
 
@@ -254,5 +257,46 @@ describe('layoutTreeGrid', () => {
     const pos = layoutTreeGrid(nodes, roots, visible, size)
     expect(pos.r2.y).toBe(pos.r1.y)
     expect(pos.r2.x).toBeGreaterThanOrEqual(pos.r1.x + size.w)
+  })
+})
+
+describe('treeGridEdges', () => {
+  it('enters a grid child from the left by a bus whose trunk clears its subtree; root children and small families from the top', () => {
+    const rows = [
+      { id: 'r', parent_id: null }, { id: 'p', parent_id: 'r' }, { id: 'q', parent_id: 'r' }, { id: 'x', parent_id: 'r' }, { id: 'y', parent_id: 'r' },
+      ...[0, 1, 2, 3].map((i) => ({ id: `k${i}`, parent_id: 'p' })), { id: 'g', parent_id: 'k0' },
+    ]
+    const lines = treeGridEdges(rows, { k0: { x: 100, y: 0 }, g: { x: 60, y: 0 } })
+    expect(lines.edge('p')).toEqual({ type: 'smoothstep' })
+    expect(lines.edge('g')).toEqual({ type: 'smoothstep' })
+    expect(lines.edge('k0')).toEqual({ type: 'bus', data: { trunk: 40 + GRID_TRUNK_GAP } })
+    expect(lines.inGrid('k3')).toBe(true)
+  })
+})
+
+describe('layoutRectangle', () => {
+  const ids = (n: number) => Array.from({ length: n }, (_, i) => `t${i}`)
+  const grid = (n: number) => {
+    const pos = layoutRectangle(ids(n), size)
+    return { pos, cols: new Set(Object.values(pos).map((p) => p.x)).size, lines: new Set(Object.values(pos).map((p) => p.y)).size }
+  }
+  it('keeps a short chain on one line', () => {
+    expect(grid(3)).toMatchObject({ cols: 3, lines: 1 })
+    expect(grid(0).pos).toEqual({})
+  })
+  it('folds 12 boxes into 4 columns of 3 lines, first top-left, last bottom-right', () => {
+    const { pos, cols, lines } = grid(12)
+    expect([cols, lines]).toEqual([4, 3])
+    const xs = Object.values(pos).map((p) => p.x)
+    const ys = Object.values(pos).map((p) => p.y)
+    expect(pos.t0).toEqual({ x: Math.min(...xs), y: Math.min(...ys) })
+    expect(pos.t11).toEqual({ x: Math.max(...xs), y: Math.max(...ys) })
+    expect(pos.t4.y).toBeGreaterThan(pos.t3.y)
+    noOverlap(pos)
+  })
+  it('right-aligns a short last line so the last box still ends bottom-right', () => {
+    const { pos } = grid(9) // 4 columns: 4, 4, 1
+    expect(pos.t8.x).toBe(pos.t7.x)
+    expect(pos.t8.y).toBeGreaterThan(pos.t7.y)
   })
 })

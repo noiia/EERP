@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -1317,5 +1318,29 @@ func TestGanEncode_NestedDependency(t *testing.T) {
 	}
 	if len(got.Deps) != 2 || !hasGanDep(got, PlanDep{Pred: leaf, Succ: other, Type: DepFS}) || !hasGanDep(got, PlanDep{Pred: other, Succ: mid, Type: DepFS}) {
 		t.Errorf("deps = %+v, want only the two links between unrelated tasks", got.Deps)
+	}
+}
+
+// TestGanEncode_Collapsed: the export's `collapsed` ids fold those rows in the
+// file (expand="false"), every other row stays open, and a milestone is never folded.
+func TestGanEncode_Collapsed(t *testing.T) {
+	p := Plan{Name: "P", Weekend: DefaultWeekend, Tasks: []PlanTask{
+		{Ref: "a", Name: "A", Start: time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC), Duration: 1},
+		{Ref: "b", Name: "B", Start: time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC), Duration: 1},
+		{Ref: "milestone:m", Name: "M", Start: time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC), Milestone: true},
+	}}
+	markCollapsed(p.Tasks, "a, milestone:m,unknown")
+	var buf bytes.Buffer
+	if err := (ganFormat{}).Encode(&buf, p); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(buf.String(), `expand="false"`); got != 1 {
+		t.Fatalf("%d folded rows, want 1:\n%s", got, buf.String())
+	}
+	if !strings.Contains(buf.String(), `name="A"`) || !regexp.MustCompile(`name="A"[^>]*expand="false"`).MatchString(buf.String()) {
+		t.Errorf("A is not the folded row:\n%s", buf.String())
+	}
+	if back, _, err := (ganFormat{}).Decode(&buf); err != nil || back.Tasks[0].Collapsed {
+		t.Errorf("decode: %v, Collapsed must never be decoded", err)
 	}
 }

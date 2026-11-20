@@ -59,7 +59,7 @@ degraded, the import is never blocked by a warning.
 
 | Route | Who | Answer |
 |---|---|---|
-| `GET /api/v1/project/:id/exchange/:format/export` | anyone who sees the project, else 404 | the file as `application/xml`, `Content-Disposition: attachment; filename="<project name>.gan"` |
+| `GET /api/v1/project/:id/exchange/:format/export[?collapsed=<ids>]` | anyone who sees the project, else 404 | the file as `application/xml`, `Content-Disposition: attachment; filename="<project name>.gan"`; the comma-separated task ids in `collapsed` are written folded (`expand="false"`) |
 | `POST …/exchange/:format/preview` (multipart `file`) | the project's manager or an admin; invisible 404, others 403 | `{base, changes, warnings}` |
 | `POST …/exchange/:format/apply` (multipart `file`, `base`, repeated `keys`) | manager or admin | 200 `{applied}`, 409 `PROJECT_CHANGED` on a stale `base`, 422 with `fields` = the refused change keys |
 
@@ -158,7 +158,9 @@ The project module declares the exchange the way it declares every other Gantt o
 `viewModeDefaults.ganttExchange = { scopeField, scopeEntity, formats, canImport }`. Plan 2
 adds a `formats` entry and nothing else. The engine's Gantt toolbar shows **Export** (a menu
 of the formats, a plain `<a download>` through the BFF, so the browser names the file after
-the project) and **Import** while one project is pinned, both in the More menu on a phone;
+the project, with the rows folded in the Gantt passed as `?collapsed=` so the file opens
+folded the same way — a display hint only: every task is still in the file, so a round trip
+never proposes removals) and **Import** while one project is pinned, both in the More menu on a phone;
 Import appears only when the `canImport` guard (`project.canEditStages`, an async server
 check) passes. The wizard is a three-step dialog (file, review, result) whose fetches keep
 the status code, because the status code *is* the control flow: 413 explains the size, 409

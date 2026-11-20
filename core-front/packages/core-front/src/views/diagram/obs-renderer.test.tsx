@@ -210,9 +210,10 @@ describe('ObsRenderer', () => {
     expect(ops.get.mock.calls.filter(([e, id]) => e === 'contact' && id === 'c1')).toHaveLength(1)
   })
 
-  it('a box among more than 3 siblings is entered from the left by a bus line', async () => {
+  it('a box among more than 3 siblings below level 2 is entered from the left by a bus line', async () => {
     setup({ rows: [
-      box('b1', { x: 100, y: 0 }),
+      box('b0', { x: 100, y: -200 }),
+      box('b1', { parent_id: 'b0', x: 100, y: 0 }),
       box('b2', { parent_id: 'b1', x: 0, y: 200 }),
       box('b3', { parent_id: 'b1', x: 300, y: 200 }),
       box('b4', { parent_id: 'b1', x: 0, y: 400 }),
@@ -221,6 +222,7 @@ describe('ObsRenderer', () => {
     ] })
     await screen.findByTestId('node-b2')
     expect(rf.props.edges.map((e) => [e.target, e.type, e.data?.trunk])).toEqual([
+      ['b1', 'smoothstep', undefined],
       ['b2', 'bus', 20],
       ['b3', 'bus', 20],
       ['b4', 'bus', 20],

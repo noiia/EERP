@@ -1,6 +1,11 @@
 'use client'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Button from '@mui/material/Button'
+import Checkbox from '@mui/material/Checkbox'
+import ListItemText from '@mui/material/ListItemText'
+import Menu from '@mui/material/Menu'
+import MenuItem from '@mui/material/MenuItem'
 import Typography from '@mui/material/Typography'
 import { MarkerType, Position, type Connection, type Edge, type Node } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
@@ -16,6 +21,7 @@ import { useNumberFormat } from '../format-store'
 import type { EntityActions, HasId } from '../stores'
 import { useRelationLabels } from '../use-relation-labels'
 import { useRelationOps } from '../relation-ops'
+import { usePhone } from '../use-phone'
 import { layoutWbs } from './auto-layout'
 import { DELIVERABLE_BOX_SIZE, type DeliverableBoxData } from './deliverable-box'
 import { DiagramCanvas, DiagramCapNotice, DiagramLoading, useDiagramRecords } from './diagram-canvas'
@@ -45,6 +51,9 @@ const DELIVERABLE_CHUNK = 100
 /** From this task level on (1 = a top task, so `1.1.1`), children stack vertically under their
  * parent, each joined by an elbow from the parent's left side. */
 const STACK_LEVEL = 3
+/** The Layers menu's names for levels 1, 2, 3…: "Layer X", "Layer X.Y", "Layer X.Y.Z". */
+const LAYER_LETTERS = 'XYZWVUTS'
+export const layerName = (level: number) => Array.from({ length: level }, (_, i) => LAYER_LETTERS[i % LAYER_LETTERS.length]).join('.')
 
 export interface WbsRendererProps<T extends HasId> {
   descriptor: ViewDescriptor
@@ -136,6 +145,24 @@ export function WbsRenderer<T extends HasId>({
     return levels.get(id)!
   }
   const stacked = (id: string) => levelOf(id) >= STACK_LEVEL
+
+  // ---- Layers menu: one checkbox per task level. Level k shows while every box of level
+  // k-1 (0 = the group roots) that has children is unfolded; unticking it folds them all,
+  // ticking it unfolds every box above it. The folds are the canvas's own, so the export
+  // and the saved layout follow.
+  const [layersAnchor, setLayersAnchor] = useState<HTMLElement | null>(null)
+  const phone = usePhone()
+  const parentsAt = (level: number) => Object.keys(nodes).filter((id) => nodes[id].children.length && levelOf(id) === level)
+  const maxLevel = Math.max(0, ...Object.keys(nodes).map(levelOf))
+  const layers = Array.from({ length: maxLevel }, (_, i) => {
+    const level = i + 1
+    const above = Object.keys(nodes).filter((id) => nodes[id].children.length && levelOf(id) < level)
+    const own = parentsAt(level - 1)
+    const shut = above.filter((id) => foldedSet.has(id)).length
+    return { level, checked: shut === 0, indeterminate: shut > 0 && own.some((id) => !foldedSet.has(id)), disabled: own.length === 0, own, above }
+  })
+  const toggleLayer = (l: (typeof layers)[number]) =>
+    setFolded((f) => (l.checked ? [...new Set([...f, ...l.own])] : f.filter((id) => !l.above.includes(id))))
   const groupIds = roots.filter((id) => id.startsWith(GROUP))
   const labelOf = useRelationLabels(
     groupDescriptor ? [groupDescriptor] : [],
@@ -425,7 +452,30 @@ export function WbsRenderer<T extends HasId>({
         canInsert={canInsert}
         history={history}
         legend={[{ color: FOLDED_COLOR, label: t('Folded branch') }]}
+        toolbarExtra={
+          layers.length ? (
+            <Button size="small" aria-haspopup="menu" onClick={(e) => setLayersAnchor(e.currentTarget)}>
+              {t('Layers')}
+            </Button>
+          ) : undefined
+        }
       />
+      <Menu
+        open={!!layersAnchor}
+        onClose={() => setLayersAnchor(null)}
+        // On a phone the button lives in the toolbar's More menu, gone once it closes: centered instead.
+        {...(phone
+          ? { anchorReference: 'anchorPosition' as const, anchorPosition: { top: window.innerHeight / 2, left: window.innerWidth / 2 }, transformOrigin: { vertical: 'center' as const, horizontal: 'center' as const } }
+          : { anchorEl: layersAnchor })}
+        data-testid="wbs-layers-menu"
+      >
+        {layers.map((l) => (
+          <MenuItem key={l.level} dense disabled={l.disabled} onClick={() => toggleLayer(l)}>
+            <Checkbox size="small" checked={l.checked} indeterminate={!l.checked && l.indeterminate} tabIndex={-1} sx={{ p: 0.5, mr: 1 }} />
+            <ListItemText primary={t('Layer {n}').replace('{n}', layerName(l.level))} />
+          </MenuItem>
+        ))}
+      </Menu>
     </>
   )
 }

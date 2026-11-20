@@ -11,6 +11,7 @@ type RfProps = {
   nodeTypes: Record<string, ComponentType<{ id: string; data: unknown }>>
   onConnect?: (c: { source: string; target: string }) => void
   onEdgesDelete?: (e: RfEdge[]) => void
+  nodesDraggable?: boolean
   children?: ReactNode
 }
 const rf = vi.hoisted(() => ({ props: null as unknown as RfProps, zoom: 1 }))
@@ -195,6 +196,23 @@ describe('PertRenderer', () => {
     expect(screen.getAllByText(/^Slack/).length).toBe(4)
     fireEvent.doubleClick(screen.getByTestId('node-A').firstElementChild!)
     expect(push).toHaveBeenCalledWith(expect.stringContaining('/project/tasks/A'))
+  })
+
+  it('Critical path only shows the critical chain alone, read-only, laid out from the first step', async () => {
+    const { ops } = setup()
+    await waitFor(() => expect(rf.props.edges).toHaveLength(4))
+    fireEvent.click(screen.getByRole('button', { name: 'Critical path only' }))
+    expect(rf.props.nodes.map((n) => n.id)).toEqual(['A', 'B', 'D'])
+    expect(rf.props.edges.map((e) => e.id)).toEqual(['l1', 'l3'])
+    // 3 boxes stay one line, in order.
+    expect(node('A').position.y).toBe(node('D').position.y)
+    expect(node('A').position.x).toBeLessThan(node('B').position.x)
+    expect(node('B').position.x).toBeLessThan(node('D').position.x)
+    expect(rf.props.nodesDraggable).toBe(false)
+    expect(screen.queryByRole('button', { name: 'Add task' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Critical path only' }))
+    await waitFor(() => expect(rf.props.nodes.map((n) => n.id)).toEqual(['A', 'B', 'C', 'D']))
+    expect(ops.saveViewLayout).not.toHaveBeenCalled()
   })
 
   it('shows no-estimate badge', async () => {
