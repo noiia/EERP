@@ -72,6 +72,14 @@ describe('FilesPane', () => {
     useSessionStore.setState({ identity: { userId: 'me' } } as never)
   })
 
+  it('reads the folder once, not on every render (a new listing must not refetch it)', async () => {
+    const onFolderName = vi.fn()
+    render(<FilesPane teamId="t1" folderId="f1" role="owner" onFolderName={onFolderName} />)
+    await waitFor(() => expect(onFolderName).toHaveBeenCalledWith('Docs'))
+    await new Promise((r) => setTimeout(r, 100))
+    expect(c.listFiles).toHaveBeenCalledTimes(1)
+  })
+
   it('shows the breadcrumb, folder links and download links', async () => {
     render(<FilesPane teamId="t1" folderId="f1" role="owner" />)
     expect(await screen.findByRole('link', { name: 'Docs' })).toHaveAttribute(

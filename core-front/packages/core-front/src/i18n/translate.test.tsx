@@ -47,3 +47,20 @@ describe('translate / useT', () => {
     expect(localeDisplayName('not a tag !')).toBe('not a tag !')
   })
 })
+
+describe('useT identity', () => {
+  it('is the same function across renders until the language changes', () => {
+    useI18nStore.setState({ locale: 'xx' })
+    const seen: Array<(text: string) => string> = []
+    const Probe = () => {
+      seen.push(useT())
+      return null
+    }
+    const { rerender } = render(<Probe />)
+    rerender(<Probe />)
+    expect(seen[1]).toBe(seen[0])
+    act(() => useI18nStore.setState({ locale: 'en' }))
+    expect(seen.at(-1)).not.toBe(seen[0])
+    expect(seen.at(-1)!('Settings')).toBe('Settings')
+  })
+})

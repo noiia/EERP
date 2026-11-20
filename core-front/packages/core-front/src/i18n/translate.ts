@@ -1,3 +1,4 @@
+import { useCallback } from 'react'
 import { translationRegistry } from './registry'
 import { useI18nStore } from './i18n-store'
 
@@ -19,7 +20,9 @@ export function translate(locale: string | null, text: string): string {
  */
 export function useT(): (text: string) => string {
   const locale = useI18nStore((s) => s.locale)
-  return (text: string) => translate(locale, text)
+  // The same function until the language changes: callers list `t` in effect and callback
+  // dependencies, and a new one per render re-ran them on every render (a fetch loop).
+  return useCallback((text: string) => translate(locale, text), [locale])
 }
 
 /**
