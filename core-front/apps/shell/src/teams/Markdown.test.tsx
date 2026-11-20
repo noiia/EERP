@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { Markdown } from './Markdown'
 
 describe('Markdown', () => {
@@ -24,5 +24,14 @@ describe('Markdown', () => {
     expect(container.querySelector('b')).toBeNull()
     expect(screen.queryByRole('link')).toBeNull()
     expect(container).toHaveTextContent('<b>hi</b> [x](javascript:alert(1)) a*b')
+  })
+
+  it('links bare URLs, opened only with Ctrl/Cmd+click', () => {
+    render(<Markdown text={'see https://example.com/a?b=1. and `http://not.linked`'} />)
+    const link = screen.getByRole('link', { name: 'https://example.com/a?b=1' })
+    expect(link).toHaveAttribute('href', 'https://example.com/a?b=1')
+    expect(fireEvent.click(link)).toBe(false) // default prevented
+    expect(fireEvent.click(link, { ctrlKey: true })).toBe(true)
+    expect(screen.getAllByRole('link')).toHaveLength(1)
   })
 })

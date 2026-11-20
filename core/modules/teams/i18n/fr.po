@@ -370,3 +370,21 @@ msgstr "Options du dossier"
 
 msgid "New subfolder"
 msgstr "Nouveau sous-dossier"
+
+msgid "Reply"
+msgstr "Répondre"
+
+msgid "Replying to"
+msgstr "En réponse à"
+
+msgid "Cancel reply"
+msgstr "Annuler la réponse"
+
+msgid "Go to the answered message"
+msgstr "Aller au message d'origine"
+
+msgid "Deleted message"
+msgstr "Message supprimé"
+
+msgid "Ctrl+click to open"
+msgstr "Ctrl+clic pour ouvrir"

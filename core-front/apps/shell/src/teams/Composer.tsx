@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type Ke
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
+import IconButton from '@mui/material/IconButton'
 import List from '@mui/material/List'
 import ListItemButton from '@mui/material/ListItemButton'
 import Paper from '@mui/material/Paper'
@@ -10,6 +11,7 @@ import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { T, useT } from '@eerp/core-front'
+import type { Message } from './client'
 
 export interface MentionCandidate {
   user_id: string
@@ -59,6 +61,8 @@ export function Composer({
   readOnly = false,
   onSend,
   dropped,
+  replyTo,
+  onCancelReply,
 }: {
   members: MentionCandidate[]
   canAttach: boolean
@@ -66,6 +70,9 @@ export function Composer({
   onSend: (body: string, mentions: string[], files: File[]) => Promise<void>
   /** Files dropped on the conversation: added to the pending ones, sent with the next message. */
   dropped?: File[]
+  /** The message the next one answers: shown above the input, cancelled with ✕ or Escape. */
+  replyTo?: Message | null
+  onCancelReply?: () => void
 }) {
   const t = useT()
   const [text, setText] = useState('')
@@ -84,6 +91,10 @@ export function Composer({
     setFiles((cur) => [...cur, ...dropped])
     input.current?.focus()
   }, [dropped])
+
+  useEffect(() => {
+    if (replyTo) input.current?.focus()
+  }, [replyTo])
 
   // Restores the selection a pattern asked for once React has written the new text.
   useLayoutEffect(() => {
@@ -145,6 +156,11 @@ export function Composer({
   }
 
   const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'Escape' && replyTo) {
+      e.preventDefault()
+      onCancelReply?.()
+      return
+    }
     // With the formatting panel open, Enter is a new line and Ctrl/Cmd+Enter sends.
     if (e.key === 'Enter' && (formatting ? e.ctrlKey || e.metaKey : !e.shiftKey)) {
       e.preventDefault()
@@ -164,6 +180,14 @@ export function Composer({
             ))}
           </List>
         </Paper>
+      )}
+      {replyTo && (
+        <Stack direction="row" spacing={1} sx={{ mb: 1, alignItems: 'center', borderLeft: 3, borderColor: 'primary.main', pl: 1 }}>
+          <Typography variant="body2" color="text.secondary" noWrap sx={{ flex: 1, minWidth: 0 }}>
+            <T text="Replying to" /> <strong>{replyTo.author_name}</strong> {replyTo.body}
+          </Typography>
+          <IconButton size="small" aria-label={t('Cancel reply')} onClick={onCancelReply}>✕</IconButton>
+        </Stack>
       )}
       {files.length > 0 && (
         <Stack direction="row" spacing={1} sx={{ mb: 1, flexWrap: 'wrap' }}>

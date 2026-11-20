@@ -87,7 +87,7 @@ describe('ChatPane', () => {
     await screen.findAllByRole('article')
     fireEvent.change(screen.getByRole('textbox', { name: /message/i }), { target: { value: 'hello' } })
     fireEvent.keyDown(screen.getByRole('textbox', { name: /message/i }), { key: 'Enter' })
-    await waitFor(() => expect(postMessage).toHaveBeenCalledWith('c1', 'hello', [], []))
+    await waitFor(() => expect(postMessage).toHaveBeenCalledWith('c1', 'hello', [], [], undefined))
     expect(await screen.findByText('body m3')).toBeInTheDocument()
   })
 
@@ -101,7 +101,7 @@ describe('ChatPane', () => {
     expect(await screen.findByText('drop.png')).toBeInTheDocument()
     expect(postMessage).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Send' }))
-    await waitFor(() => expect(postMessage).toHaveBeenCalledWith('c1', '', [], [file]))
+    await waitFor(() => expect(postMessage).toHaveBeenCalledWith('c1', '', [], [file], undefined))
     await waitFor(() => expect(onFolderChanged).toHaveBeenCalled())
   })
 
@@ -223,5 +223,29 @@ describe('ChatPane', () => {
     listMessages.mockResolvedValueOnce([msg('old', '2026-01-01T00:00:00Z')])
     fireEvent.scroll(screen.getAllByRole('article')[0].parentElement!, { target: { scrollTop: 0 } })
     expect(await screen.findByText('body old')).toBeInTheDocument()
+  })
+
+  it('replies to a message: quoted in the composer, sent with reply_to, shown above the reply', async () => {
+    postMessage.mockResolvedValue(msg('m3', '2026-01-03T10:00:00Z', { reply_to: { id: 'm1', author_name: 'Alice', body: 'body m1', deleted: false } }))
+    renderPane()
+    const first = (await screen.findAllByRole('article'))[0]
+    fireEvent.click(within(first).getByRole('button', { name: 'Reply' }))
+    expect(screen.getByText(/Replying to/)).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('textbox', { name: /message/i }), { target: { value: 'yes' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+    await waitFor(() => expect(postMessage).toHaveBeenCalledWith('c1', 'yes', [], [], 'm1'))
+    await waitFor(() => expect(screen.queryByText(/Replying to/)).toBeNull())
+    const reply = (await screen.findAllByRole('article'))[2]
+    expect(within(reply).getByRole('button', { name: 'Go to the answered message' })).toHaveTextContent('Alice body m1')
+  })
+
+  it('cancels a reply with Escape and quotes a deleted message as such', async () => {
+    listMessages.mockResolvedValue([msg('m2', '2026-01-02T10:00:00Z', { reply_to: { id: 'gone', author_name: '', body: '', deleted: true } })])
+    renderPane()
+    const item = await screen.findByRole('article')
+    expect(within(item).getByRole('button', { name: 'Go to the answered message' })).toHaveTextContent('Deleted message')
+    fireEvent.click(within(item).getByRole('button', { name: 'Reply' }))
+    fireEvent.keyDown(screen.getByRole('textbox', { name: /message/i }), { key: 'Escape' })
+    expect(screen.queryByText(/Replying to/)).toBeNull()
   })
 })

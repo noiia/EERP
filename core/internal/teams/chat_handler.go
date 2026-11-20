@@ -69,6 +69,25 @@ type messageJSON struct {
 	EditedAt        *time.Time       `json:"edited_at"`
 	Attachments     []attachmentJSON `json:"attachments"`
 	Reactions       []reactionJSON   `json:"reactions"`
+	ReplyTo         *replyJSON       `json:"reply_to"`
+}
+
+// replyJSON quotes the message a reply answers; a deleted one keeps only its id.
+type replyJSON struct {
+	ID         uuid.UUID `json:"id"`
+	AuthorName string    `json:"author_name"`
+	Body       string    `json:"body"`
+	Deleted    bool      `json:"deleted"`
+}
+
+// replyExcerpt is how much of the answered body a reply quotes.
+const replyExcerpt = 200
+
+func excerpt(body string) string {
+	if r := []rune(body); len(r) > replyExcerpt {
+		return string(r[:replyExcerpt]) + "…"
+	}
+	return body
 }
 
 type messageFrame struct {
@@ -191,6 +210,16 @@ func (h *Handler) wire(ctx context.Context, tenant, viewer uuid.UUID, msgs []Mes
 	if err != nil {
 		return nil, err
 	}
+	var replyIDs []uuid.UUID
+	for _, m := range msgs {
+		if m.ReplyToID != nil {
+			replyIDs = append(replyIDs, *m.ReplyToID)
+		}
+	}
+	answered, err := h.repo.MessagesByID(ctx, tenant, replyIDs)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]messageJSON, len(msgs))
 	for i, m := range msgs {
 		w := messageJSON{ID: m.ID, ChannelID: m.ChannelID, AuthorID: m.AuthorID, AuthorName: displayName(users[m.AuthorID]), AuthorHasAvatar: hasAvatar(users[m.AuthorID]),
@@ -207,6 +236,12 @@ func (h *Handler) wire(ctx context.Context, tenant, viewer uuid.UUID, msgs []Mes
 		}
 		for _, r := range reacts[m.ID] {
 			w.Reactions = append(w.Reactions, reactionJSON(r))
+		}
+		if m.ReplyToID != nil {
+			w.ReplyTo = &replyJSON{ID: *m.ReplyToID, Deleted: true}
+			if a, ok := answered[*m.ReplyToID]; ok && a.DeletedAt == nil {
+				w.ReplyTo = &replyJSON{ID: a.ID, AuthorName: displayName(users[a.AuthorID]), Body: excerpt(a.Body)}
+			}
 		}
 		out[i] = w
 	}
@@ -340,10 +375,12 @@ func (h *Handler) ListMessages(c *echo.Context) error {
 type postBody struct {
 	Body     string      `json:"body"`
 	Mentions []uuid.UUID `json:"mentions"`
+	ReplyTo  *uuid.UUID  `json:"reply_to"`
 }
 
-// PostMessage serves POST /channels/:channel/messages, JSON {body, mentions} or
-// multipart (body, repeated mentions, repeated files).
+// PostMessage serves POST /channels/:channel/messages, JSON {body, mentions, reply_to} or
+// multipart (body, repeated mentions, reply_to, repeated files). reply_to must be a live
+// message of the same channel (else 422).
 func (h *Handler) PostMessage(c *echo.Context) error {
 	ch, role, audience, err := h.paramAccess(c)
 	if role == "" {
@@ -364,6 +401,13 @@ func (h *Handler) PostMessage(c *echo.Context) error {
 		}
 		if v := form.Value["body"]; len(v) > 0 {
 			b.Body = v[0]
+		}
+		if v := form.Value["reply_to"]; len(v) > 0 && v[0] != "" {
+			u, err := uuid.Parse(v[0])
+			if err != nil {
+				return errorJSON(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "reply_to is not a message of this conversation.")
+			}
+			b.ReplyTo = &u
 		}
 		for _, s := range form.Value["mentions"] {
 			if u, err := uuid.Parse(s); err == nil {
@@ -392,6 +436,15 @@ func (h *Handler) PostMessage(c *echo.Context) error {
 
 	ctx := c.Request().Context()
 	id := auth.MustIdentity(ctx)
+	if b.ReplyTo != nil {
+		answered, err := h.repo.FindMessage(ctx, id.TenantID, *b.ReplyTo)
+		if errors.Is(err, orm.ErrNotFound) || (err == nil && answered.ChannelID != ch.ID) {
+			return errorJSON(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "reply_to is not a message of this conversation.")
+		}
+		if err != nil {
+			return err
+		}
+	}
 	stored, err := h.storeFiles(ctx, id.TenantID, files)
 	if err != nil {
 		return err
@@ -400,7 +453,7 @@ func (h *Handler) PostMessage(c *echo.Context) error {
 	for i, a := range stored {
 		keys[i] = a.ObjectKey
 	}
-	m := Message{TenantID: id.TenantID, ChannelID: ch.ID, AuthorID: id.UserID, Body: b.Body}
+	m := Message{TenantID: id.TenantID, ChannelID: ch.ID, AuthorID: id.UserID, Body: b.Body, ReplyToID: b.ReplyTo}
 	if ch.TeamID != nil && len(stored) > 0 {
 		m, err = h.repo.CreateFileMessage(ctx, m, *ch.TeamID, stored)
 	} else {

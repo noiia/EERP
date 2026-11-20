@@ -723,6 +723,22 @@ func (r *Repository) FindMessage(ctx context.Context, tenant, id uuid.UUID) (Mes
 	return rows[0], nil
 }
 
+// MessagesByID returns the tenant's messages with these ids, soft-deleted ones included, by id.
+func (r *Repository) MessagesByID(ctx context.Context, tenant uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]Message, error) {
+	out := map[uuid.UUID]Message{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	rows, err := r.messages.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.In("id", ids))
+	if err != nil {
+		return nil, fmt.Errorf("teams: messages by id: %w", err)
+	}
+	for _, m := range rows {
+		out[m.ID] = m
+	}
+	return out, nil
+}
+
 func (r *Repository) FindAttachment(ctx context.Context, tenant, id uuid.UUID) (Attachment, error) {
 	rows, err := r.atts.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("id = $1", id))
 	if err != nil {

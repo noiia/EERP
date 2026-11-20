@@ -11,7 +11,6 @@ vi.mock('@eerp/core-front/server', () => ({
   apiRequest: (...a: unknown[]) => apiRequest(...a),
   erpPath: (p: string) => `/app${p}`,
 }))
-vi.mock('@/teams/TeamsWorkspace', () => ({ TeamsWorkspace: () => null }))
 
 import TeamPage from './[id]/page'
 import DirectPage from './direct/page'
@@ -41,7 +40,7 @@ describe('teams pages', () => {
     apiRequest.mockResolvedValue({ data: [{ id: 'd1' }] })
     await expect(DirectPage()).rejects.toThrow('REDIRECT /app/teams/direct/d1')
     apiRequest.mockResolvedValue({ data: [] })
-    await expect(DirectPage()).resolves.toBeTruthy()
+    await expect(DirectPage()).resolves.toBeNull()
   })
 
   it('chat pages are a 404 while the module is inactive', async () => {
@@ -50,9 +49,9 @@ describe('teams pages', () => {
     await expect(DirectChannelPage({ params: Promise.resolve({ channel: 'd1' }) })).rejects.toThrow('NOT_FOUND')
     active.mockResolvedValue(new Set(['teams']))
     apiRequest.mockResolvedValue({ data: [{ id: 'c1' }] })
-    await expect(TeamChannelPage({ params: Promise.resolve({ id: 't1', channel: 'c1' }) })).resolves.toBeTruthy()
+    await expect(TeamChannelPage({ params: Promise.resolve({ id: 't1', channel: 'c1' }) })).resolves.toBeNull()
     expect(apiRequest).toHaveBeenCalledWith('GET', '/teams/t1/channels')
-    await expect(DirectChannelPage({ params: Promise.resolve({ channel: 'd1' }) })).resolves.toBeTruthy()
+    await expect(DirectChannelPage({ params: Promise.resolve({ channel: 'd1' }) })).resolves.toBeNull()
   })
 
   it('a channel page is a 404 for a non-member or a deleted channel', async () => {
@@ -64,16 +63,16 @@ describe('teams pages', () => {
 
   it('the files page is a 404 for a non-member', async () => {
     apiRequest.mockRejectedValue(new Error('nope'))
-    await expect(FilesPage({ params: Promise.resolve({ id: 't1' }), searchParams: Promise.resolve({}) })).rejects.toThrow('NOT_FOUND')
+    await expect(FilesPage({ params: Promise.resolve({ id: 't1' }) })).rejects.toThrow('NOT_FOUND')
     expect(apiRequest).toHaveBeenCalledWith('GET', '/teams/t1')
   })
 
   it('files and shares pages are a 404 while the module is inactive', async () => {
     apiRequest.mockResolvedValue({})
-    await expect(FilesPage({ params: Promise.resolve({ id: 't1' }), searchParams: Promise.resolve({ folder: 'f1' }) })).resolves.toBeTruthy()
-    await expect(SharedPage()).resolves.toBeTruthy()
+    await expect(FilesPage({ params: Promise.resolve({ id: 't1' }) })).resolves.toBeNull()
+    await expect(SharedPage()).resolves.toBeNull()
     active.mockResolvedValue(new Set())
-    await expect(FilesPage({ params: Promise.resolve({ id: 't1' }), searchParams: Promise.resolve({}) })).rejects.toThrow('NOT_FOUND')
+    await expect(FilesPage({ params: Promise.resolve({ id: 't1' }) })).rejects.toThrow('NOT_FOUND')
     await expect(SharedPage()).rejects.toThrow('NOT_FOUND')
   })
 })

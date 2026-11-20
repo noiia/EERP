@@ -3,12 +3,25 @@ import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import Link from '@mui/material/Link'
 import Typography from '@mui/material/Typography'
+import { useT } from '@eerp/core-front'
 
 // The subset the composer's formatting panel writes: never raw HTML, so a message can't inject markup.
-const INLINE = /`([^`\n]+)`|\*\*(.+?)\*\*|~~(.+?)~~|\*([^*\s](?:[^*\n]*?[^*\s])?)\*|\[([^\]\n]+)\]\(([^)\s]+)\)/
+// A bare http(s) URL is a link too, its trailing punctuation left out.
+const INLINE = /`([^`\n]+)`|\*\*(.+?)\*\*|~~(.+?)~~|\*([^*\s](?:[^*\n]*?[^*\s])?)\*|\[([^\]\n]+)\]\(([^)\s]+)\)|(https?:\/\/[^\s<>]*[^\s<>.,;:!?'")\]])/i
 const SAFE_URL = /^(https?:\/\/|mailto:)/i
 
 const codeSx = { fontFamily: 'monospace', bgcolor: 'action.hover', borderRadius: 0.5, px: 0.5 }
+
+/** A URL typed in a message: Ctrl/Cmd+click opens it, so a plain click can still select its text. */
+function BareLink({ url }: { url: string }) {
+  const t = useT()
+  return (
+    <Link href={url} target="_blank" rel="noopener noreferrer" title={t('Ctrl+click to open')}
+      onClick={(e) => { if (!e.ctrlKey && !e.metaKey) e.preventDefault() }}>
+      {url}
+    </Link>
+  )
+}
 
 export function renderInline(text: string): ReactNode[] {
   const out: ReactNode[] = []
@@ -20,11 +33,12 @@ export function renderInline(text: string): ReactNode[] {
       break
     }
     if (m.index > 0) out.push(rest.slice(0, m.index))
-    const [all, code, bold, strike, italic, label, url] = m
+    const [all, code, bold, strike, italic, label, url, bare] = m
     if (code !== undefined) out.push(<Box component="code" key={k} sx={codeSx}>{code}</Box>)
     else if (bold !== undefined) out.push(<strong key={k}>{renderInline(bold)}</strong>)
     else if (strike !== undefined) out.push(<s key={k}>{renderInline(strike)}</s>)
     else if (italic !== undefined) out.push(<em key={k}>{renderInline(italic)}</em>)
+    else if (bare !== undefined) out.push(<BareLink key={k} url={bare} />)
     else if (SAFE_URL.test(url)) out.push(<Link key={k} href={url} target="_blank" rel="noopener noreferrer">{label}</Link>)
     else out.push(all)
     rest = rest.slice(m.index + all.length)

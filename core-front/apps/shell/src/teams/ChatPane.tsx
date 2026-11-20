@@ -14,7 +14,7 @@ import Typography from '@mui/material/Typography'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import { useTheme } from '@mui/material/styles'
 import { faFaceSmile } from '@fortawesome/free-regular-svg-icons'
-import { faEllipsis } from '@fortawesome/free-solid-svg-icons'
+import { faEllipsis, faReply } from '@fortawesome/free-solid-svg-icons'
 import { AvatarWithPresence, avatarUrl, FontAwesomeIcon, T, useSessionStore, useT } from '@eerp/core-front'
 import { deleteMessage, editMessage, postMessage, toggleReaction, type Message, type Role } from './client'
 import { useChatStore } from './chat-store'
@@ -80,6 +80,32 @@ function MessageEditor({ initial, onSave, onCancel }: { initial: string; onSave:
   )
 }
 
+/** The answered message above a reply; a click scrolls to it when it is loaded. */
+function ReplyQuote({ reply }: { reply: NonNullable<Message['reply_to']> }) {
+  const t = useT()
+  const jump = () => {
+    const el = document.getElementById(`message-${reply.id}`)
+    el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    el?.focus({ preventScroll: true })
+  }
+  return (
+    <Box
+      component="button"
+      type="button"
+      onClick={jump}
+      disabled={reply.deleted}
+      aria-label={t('Go to the answered message')}
+      sx={{
+        display: 'block', maxWidth: '100%', textAlign: 'left', font: 'inherit', fontSize: '0.85rem', color: 'text.secondary',
+        bgcolor: 'transparent', border: 0, borderLeft: 3, borderColor: 'divider', pl: 1, py: 0, my: 0.25,
+        cursor: reply.deleted ? 'default' : 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+      }}
+    >
+      ↪ {reply.deleted ? t('Deleted message') : <><strong>{reply.author_name}</strong> {reply.body}</>}
+    </Box>
+  )
+}
+
 const GUTTER = 72 // px: the avatar column, as on Discord
 const QUICK_REACTIONS = REACTIONS.slice(0, 3)
 const hm = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -94,7 +120,7 @@ const toolbarSx = {
 /** One message, Discord style: a full-width row highlighted on hover, the avatar in a left gutter, and a
  * floating toolbar (quick reactions, the reaction picker, the options menu) on its top-right corner,
  * shown on hover, keyboard focus, or a tap (the row is click-focusable). */
-function MessageItem({ m, stacked = false, onReact, onEdit, onDelete }: { m: Message; stacked?: boolean; onReact: (emoji: string) => void; onEdit?: (body: string) => Promise<void>; onDelete?: () => void }) {
+function MessageItem({ m, stacked = false, onReact, onReply, onEdit, onDelete }: { m: Message; stacked?: boolean; onReact: (emoji: string) => void; onReply?: () => void; onEdit?: (body: string) => Promise<void>; onDelete?: () => void }) {
   const t = useT()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const [menu, setMenu] = useState<HTMLElement | null>(null)
@@ -106,6 +132,7 @@ function MessageItem({ m, stacked = false, onReact, onEdit, onDelete }: { m: Mes
   return (
     <Box
       component="article"
+      id={`message-${m.id}`}
       tabIndex={-1}
       data-stacked={stacked || undefined}
       title={stacked ? sentAt : undefined}
@@ -131,6 +158,7 @@ function MessageItem({ m, stacked = false, onReact, onEdit, onDelete }: { m: Mes
           </Stack>
         </>
       )}
+      {m.reply_to && <ReplyQuote reply={m.reply_to} />}
       {editing && onEdit ? (
         <MessageEditor initial={m.body} onCancel={() => setEditing(false)} onSave={(body) => onEdit(body).then(() => setEditing(false))} />
       ) : (
@@ -162,6 +190,11 @@ function MessageItem({ m, stacked = false, onReact, onEdit, onDelete }: { m: Mes
         <IconButton sx={iconSx} aria-label={t('Add reaction')} onClick={(e) => setAnchor(e.currentTarget)}>
           <FontAwesomeIcon icon={faFaceSmile} />
         </IconButton>
+        {onReply && (
+          <IconButton sx={iconSx} aria-label={t('Reply')} title={t('Reply')} onClick={onReply}>
+            <FontAwesomeIcon icon={faReply} />
+          </IconButton>
+        )}
         {(onEdit || onDelete) && (
           <IconButton sx={iconSx} aria-label={t('Message options')} aria-haspopup="menu" aria-expanded={menu !== null} onClick={(e) => setMenu(e.currentTarget)}>
             <FontAwesomeIcon icon={faEllipsis} />
@@ -220,6 +253,7 @@ export function ChatPane({
   const [actionError, setActionError] = useState('')
   // Files dropped on the pane wait in the composer; a new array per drop.
   const [dropped, setDropped] = useState<File[]>([])
+  const [replyTo, setReplyTo] = useState<Message | null>(null)
   const me = useSessionStore((s) => s.identity?.userId)
   const messages = useChatStore((s) => s.messages[channelId] ?? NO_MESSAGES)
   const hasMore = useChatStore((s) => s.hasMore[channelId] ?? false)
@@ -280,7 +314,8 @@ export function ChatPane({
   }
 
   const send = async (body: string, mentions: string[], files: File[]) => {
-    const m = await postMessage(channelId, body, mentions, files)
+    const m = await postMessage(channelId, body, mentions, files, replyTo?.id)
+    setReplyTo(null)
     atBottom.current = true
     useChatStore.getState().receive({ type: 'chat_message', channel_id: channelId, message: m })
     if (teamId && files.length > 0) onFolderChanged?.()
@@ -329,8 +364,9 @@ export function ChatPane({
             <MessageItem
               key={m.id}
               m={m}
-              stacked={stacksOnPrevious(messages[i - 1], m)}
+              stacked={!m.reply_to && stacksOnPrevious(messages[i - 1], m)}
               onReact={(e) => react(m.id, e)}
+              onReply={readOnly ? undefined : () => setReplyTo(m)}
               // Go's rule: only its author (not a guest) rewrites a message.
               onEdit={!readOnly && m.author_id === me ? (body) => edit(m.id, body) : undefined}
               // Go's rule: the author (not a guest) or a team owner.
@@ -339,7 +375,7 @@ export function ChatPane({
           ))}
         </Box>
         {actionError && <Typography color="error" variant="body2" sx={{ px: 2 }}>{actionError}</Typography>}
-        <Composer members={members} canAttach={canAttach} readOnly={readOnly} onSend={send} dropped={dropped} />
+        <Composer members={members} canAttach={canAttach} readOnly={readOnly} onSend={send} dropped={dropped} replyTo={replyTo} onCancelReply={() => setReplyTo(null)} />
       </Box>
       {folderPanel && (narrow
         ? <Drawer anchor="right" open onClose={() => setPanel(false)} slotProps={{ paper: { sx: { width: `min(${PANEL_WIDTH}px, 100vw)` } } }}>{folderPanel}</Drawer>

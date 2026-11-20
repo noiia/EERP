@@ -78,6 +78,8 @@ export interface Message {
   edited_at?: string | null
   attachments: Attachment[]
   reactions: Reaction[]
+  /** The message this one answers (same channel); deleted = only its id is left. */
+  reply_to?: { id: string; author_name: string; body: string; deleted: boolean } | null
 }
 export interface Folder {
   id: string
@@ -182,10 +184,11 @@ export const muteChannel = (channel: string, muted: boolean) => call<{ muted: bo
 // Messages (newest first; `before` is an RFC3339 timestamp)
 export const listMessages = (channel: string, before?: string, limit?: number) =>
   list<Message>(`/channels/${channel}/messages${q({ before, limit })}`)
-export function postMessage(channel: string, body: string, mentions: string[] = [], files: File[] = []): Promise<Message> {
-  if (files.length === 0) return call<Message>('POST', `/channels/${channel}/messages`, { body, mentions })
+export function postMessage(channel: string, body: string, mentions: string[] = [], files: File[] = [], replyTo?: string): Promise<Message> {
+  if (files.length === 0) return call<Message>('POST', `/channels/${channel}/messages`, { body, mentions, ...(replyTo && { reply_to: replyTo }) })
   const form = new FormData()
   form.append('body', body)
+  if (replyTo) form.append('reply_to', replyTo)
   for (const m of mentions) form.append('mentions', m)
   for (const f of files) form.append('files', f)
   return call<Message>('POST', `/channels/${channel}/messages`, form)

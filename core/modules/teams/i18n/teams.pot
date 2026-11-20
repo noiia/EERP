@@ -369,3 +369,21 @@ msgstr ""
 
 msgid "New subfolder"
 msgstr ""
+
+msgid "Reply"
+msgstr ""
+
+msgid "Replying to"
+msgstr ""
+
+msgid "Cancel reply"
+msgstr ""
+
+msgid "Go to the answered message"
+msgstr ""
+
+msgid "Deleted message"
+msgstr ""
+
+msgid "Ctrl+click to open"
+msgstr ""

@@ -616,3 +616,49 @@ func TestListMessages_BeforePagination(t *testing.T) {
 		t.Fatalf("bad before: %d", rec.Code)
 	}
 }
+
+func TestPostMessage_Reply(t *testing.T) {
+	f := newChatFixture(t, false)
+	orig := f.post(t, f.owner, f.general, `{"body":"question?"}`)
+	reply := f.post(t, f.member, f.general, `{"body":"answer","reply_to":"`+orig["id"].(string)+`"}`)
+	rt, _ := reply["reply_to"].(map[string]any)
+	if rt["id"] != orig["id"] || rt["body"] != "question?" || rt["author_name"] != f.owner.String()+"@t.test" || rt["deleted"] != false {
+		t.Fatalf("reply_to: %v", reply["reply_to"])
+	}
+	if plain := f.post(t, f.member, f.general, `{"body":"x"}`); plain["reply_to"] != nil {
+		t.Fatalf("plain message reply_to: %v", plain["reply_to"])
+	}
+
+	// a message of another channel, an unknown id: 422
+	other, err := f.repo.CreateChannel(context.Background(), f.tenant, f.team, "other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{orig["id"].(string), uuid.NewString()} {
+		p := map[string]string{"channel": other.ID.String()}
+		if rec := serve(t, f.h.PostMessage, "POST", `{"body":"y","reply_to":"`+id+`"}`, f.as(f.member), p); rec.Code != 422 {
+			t.Fatalf("foreign reply_to: %d %s", rec.Code, rec.Body)
+		}
+	}
+
+	// the answered message deleted: the reply keeps only its id
+	if rec := serve(t, f.h.DeleteMessage, "DELETE", "", f.as(f.owner), map[string]string{"message": orig["id"].(string)}); rec.Code != 204 {
+		t.Fatalf("delete: %d", rec.Code)
+	}
+	var out struct {
+		Data []struct {
+			ID      string
+			ReplyTo *struct {
+				ID      string
+				Body    string
+				Deleted bool
+			} `json:"reply_to"`
+		}
+	}
+	_ = jsonDecode(serve(t, f.h.ListMessages, "GET", "", f.as(f.member), map[string]string{"channel": f.general.String()}), &out)
+	for _, m := range out.Data {
+		if m.ID == reply["id"] && (m.ReplyTo == nil || !m.ReplyTo.Deleted || m.ReplyTo.Body != "" || m.ReplyTo.ID != orig["id"]) {
+			t.Fatalf("deleted reply_to: %+v", m.ReplyTo)
+		}
+	}
+}

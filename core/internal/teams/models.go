@@ -69,7 +69,8 @@ type Message struct {
 	ChannelID uuid.UUID  `db:"channel_id,index"`
 	AuthorID  uuid.UUID  `db:"author_id"`
 	Body      string     `db:"body"`
-	EditedAt  *time.Time `db:"edited_at"` // last edit of the body by its author; nil = never edited
+	EditedAt  *time.Time `db:"edited_at"`   // last edit of the body by its author; nil = never edited
+	ReplyToID *uuid.UUID `db:"reply_to_id"` // the message of the same channel this one answers; nil = none
 }
 
 type Attachment struct {
