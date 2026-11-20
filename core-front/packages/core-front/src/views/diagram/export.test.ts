@@ -9,7 +9,7 @@ vi.mock('jspdf', () => ({
 }))
 
 import { toPng } from 'html-to-image'
-import { diagramToPng, elementToPng, exportPdf, exportPng, pdfColor, pdfFormat, type DiagramBounds } from './export'
+import { diagramToPng, elementToPng, pixelRatioFor, exportPdf, exportPng, pdfColor, pdfFormat, type DiagramBounds } from './export'
 
 const bounds = { x: 10, y: 20, width: 800, height: 400 }
 
@@ -24,10 +24,16 @@ describe('pdfFormat', () => {
 })
 
 describe('diagramToPng', () => {
-  it('renders the viewport at pixelRatio 2', async () => {
+  it('renders the viewport at pixelRatio 3', async () => {
     const el = document.createElement('div')
     expect(await diagramToPng(el, bounds)).toBe('data:image/png;base64,AAA')
-    expect(vi.mocked(toPng).mock.calls[0][1]).toMatchObject({ pixelRatio: 2 })
+    expect(vi.mocked(toPng).mock.calls[0][1]).toMatchObject({ pixelRatio: 3 })
+  })
+
+  it('steps down to 2 when 3 would pass the side or area limit', () => {
+    expect(pixelRatioFor(6000, 400)).toBe(2)
+    expect(pixelRatioFor(5000, 5000)).toBe(2)
+    expect(pixelRatioFor(7000, 7000)).toBe(1)
   })
 
   it('drops to pixelRatio 1 past the canvas size limit', async () => {
@@ -45,7 +51,7 @@ describe('elementToPng', () => {
     Object.defineProperty(el, 'scrollHeight', { value: 120 })
     await elementToPng(el, '#000')
     const o = vi.mocked(toPng).mock.calls[0][1]!
-    expect(o).toMatchObject({ width: 300, height: 120, pixelRatio: 2, backgroundColor: '#000' })
+    expect(o).toMatchObject({ width: 300, height: 120, pixelRatio: 3, backgroundColor: '#000' })
     expect(o.style).toBeUndefined()
   })
 })

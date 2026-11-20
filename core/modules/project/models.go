@@ -71,7 +71,7 @@ type ProjectTask struct {
 	SubtaskCount     int        `db:"subtask_count" json:"subtask_count"`
 	SubtaskDoneCount int        `db:"subtask_done_count" json:"subtask_done_count"`
 	Blocked          bool       `db:"blocked,index" json:"blocked"`
-	Closed           bool       `db:"closed" json:"closed"` // mirror of its stage's
+	Closed           bool       `db:"closed" json:"closed"`       // mirror of its stage's
 	ClosedAt         *time.Time `db:"closed_at" json:"closed_at"` // when it moved into a closed stage (migrate.go)
 }
 
@@ -244,14 +244,14 @@ type ProjectTaskStage struct {
 // model.BaseModel (no soft delete: a day's row is overwritten, never hidden);
 // excluded from the HTTP surface.
 type ProjectRiskHistory struct {
-	ID                uuid.UUID  `db:"id,pk"`
-	TenantID          uuid.UUID  `db:"tenant_id,index"`
-	RiskID            uuid.UUID  `db:"risk_id"`
-	ProjectID         uuid.UUID  `db:"project_id,index"`
-	RecordedOn        time.Time  `db:"recorded_on"` // DATE in the database (Migrate narrows the type)
-	Criticity         *int       `db:"criticity"`
-	ResidualCriticity *int       `db:"residual_criticity"`
-	Deleted           bool       `db:"deleted"`
+	ID                uuid.UUID `db:"id,pk"`
+	TenantID          uuid.UUID `db:"tenant_id,index"`
+	RiskID            uuid.UUID `db:"risk_id"`
+	ProjectID         uuid.UUID `db:"project_id,index"`
+	RecordedOn        time.Time `db:"recorded_on"` // DATE in the database (Migrate narrows the type)
+	Criticity         *int      `db:"criticity"`
+	ResidualCriticity *int      `db:"residual_criticity"`
+	Deleted           bool      `db:"deleted"`
 }
 
 // ProjectBaseline is a named snapshot of a project's tasks: its live tasks'
@@ -281,9 +281,9 @@ type ProjectBaselineTask struct {
 }
 
 // ProjectTaskRaci gives a staff user one R/A/C/I role on a task (the RACI
-// matrix). project_id is the task's, set server-side like project_task_user.
-// Unique live (task_id, user_id) and one accountable per task (the partial
-// unique live (task_id) WHERE role = 'A') are hand-written in migrate.go.
+// matrix); a user holding several roles has one row per role. project_id is
+// the task's, set server-side like project_task_user. Unique live
+// (task_id, user_id, role) is hand-written in migrate.go.
 type ProjectTaskRaci struct {
 	model.BaseModel
 	TenantID  uuid.UUID `db:"tenant_id"`
@@ -301,6 +301,7 @@ type ProjectCapacity struct {
 	UserID       uuid.UUID `db:"user_id,index" json:"user_id"`
 	HoursPerWeek float64   `db:"hours_per_week" json:"hours_per_week"`
 }
+
 // ProjectPbsItem is one box of a project's PBS (project breakdown
 // structure) chart: a deliverable, under an optional parent item of the
 // same project, produced by the tasks linked to it (project_task.pbs_item_id).

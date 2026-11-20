@@ -11,7 +11,8 @@ import (
 )
 
 func TestApp_MCPMount(t *testing.T) {
-	c := buildAppWith(t, func(cfg *types.Config) { cfg.MCPEnabled = true })
+	// MCPAllowWrites pinned: the local config may enable it, and this test asserts the read-only tool set.
+	c := buildAppWith(t, func(cfg *types.Config) { cfg.MCPEnabled, cfg.MCPAllowWrites = true, false })
 	code, body := c.do("POST", "/api/v1/mcp", map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
 	// Missing MCP Accept is rejected by the SDK, demonstrating that the route
 	// reached the MCP handler through the fully built application's JWT layer.

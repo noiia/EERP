@@ -433,7 +433,6 @@ msgstr ""
 msgid "shown"
 msgstr ""
 
-
 msgid "ERP"
 msgstr ""
 
@@ -977,7 +976,6 @@ msgstr ""
 
 msgid "Maximum number of events"
 msgstr ""
-
 
 msgid "Event page"
 msgstr ""
@@ -1668,6 +1666,9 @@ msgid "Running now"
 msgstr ""
 
 msgid "Mark all as read"
+msgstr ""
+
+msgid "Enable desktop notifications"
 msgstr ""
 
 msgid "No notifications"
@@ -3064,4 +3065,13 @@ msgid "The diagram editor could not be loaded. Try again."
 msgstr ""
 
 msgid "Loading diagram editor"
+msgstr ""
+
+msgid "Add task"
+msgstr ""
+
+msgid "Remove from diagram"
+msgstr ""
+
+msgid "No match"
 msgstr ""

@@ -174,3 +174,31 @@ describe('layoutPert parts', () => {
     }
   })
 })
+
+describe('layoutWbs with stacked children', () => {
+  // 1 → 1.1 → (1.1.1, 1.1.2 → 1.1.2.1), 1 → 1.2 → 1.2.1: level 3 and below stack.
+  const rows = [
+    { id: '1', parentId: null },
+    { id: '1.1', parentId: '1' },
+    { id: '1.1.1', parentId: '1.1' },
+    { id: '1.1.2', parentId: '1.1' },
+    { id: '1.1.2.1', parentId: '1.1.2' },
+    { id: '1.2', parentId: '1' },
+    { id: '1.2.1', parentId: '1.2' },
+  ]
+  const { nodes, roots, visible } = buildWbs(rows, new Set())
+  const pos = layoutWbs(nodes, roots, visible, size, undefined, (id) => id.split('.').length >= 3)
+  it('stacks them in an indented column under their parent', () => {
+    expect(pos['1.1.1'].x).toBe(pos['1.1'].x + 40)
+    expect(pos['1.1.2'].x).toBe(pos['1.1.1'].x)
+    expect(pos['1.1.2.1'].x).toBe(pos['1.1.2'].x + 40)
+    expect(pos['1.1.1'].y).toBeGreaterThan(pos['1.1'].y + size.h)
+    expect(pos['1.1.2'].y).toBeGreaterThan(pos['1.1.1'].y + size.h)
+    expect(pos['1.1.2.1'].y).toBeGreaterThan(pos['1.1.2'].y + size.h)
+  })
+  it('keeps level 2 in one row, widened for the columns, without overlap', () => {
+    expect(pos['1.2'].y).toBe(pos['1.1'].y)
+    expect(pos['1.2'].x).toBeGreaterThanOrEqual(pos['1.1'].x + size.w + 80)
+    noOverlap(pos)
+  })
+})

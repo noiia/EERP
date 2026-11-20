@@ -5,6 +5,7 @@ import Button from '@mui/material/Button'
 import Typography from '@mui/material/Typography'
 import type { MatrixConfig } from '../../api/view-fields'
 import { useT } from '../../i18n/translate'
+import { useI18nStore } from '../../i18n/i18n-store'
 import { ErrorAlert } from '../error-alert'
 import { usePhone } from '../use-phone'
 import { useRelationOps } from '../relation-ops'
@@ -29,6 +30,19 @@ export function isUrgent(deadline: unknown, urgentDays: number, now: Date): bool
   const d = new Date(deadline)
   if (Number.isNaN(d.getTime())) return false
   return d.getTime() < now.getTime() + urgentDays * DAY_MS
+}
+
+/** A deadline as people say it: "tomorrow · 20 Jun 2026" ("in 3 days", "2 days ago"…),
+ * in calendar days from `now`; the time shows only when the deadline isn't midnight. */
+export function humanDeadline(deadline: string, now: Date, locale?: string): string {
+  const d = new Date(deadline)
+  if (Number.isNaN(d.getTime())) return deadline
+  const day = (x: Date) => Date.UTC(x.getFullYear(), x.getMonth(), x.getDate())
+  const days = Math.round((day(d) - day(now)) / DAY_MS)
+  const relative = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }).format(days, 'day')
+  const midnight = d.getHours() === 0 && d.getMinutes() === 0
+  const date = d.toLocaleString(locale, midnight ? { dateStyle: 'medium' } : { dateStyle: 'medium', timeStyle: 'short' })
+  return `${relative} · ${date}`
 }
 
 /** Do = important + urgent, Schedule = important, Delegate = urgent,
@@ -69,6 +83,7 @@ export function Eisenhower({ tasks, config, canWrite }: EisenhowerProps) {
   const t = useT()
   const ops = useRelationOps()
   const phone = usePhone()
+  const locale = useI18nStore((s) => s.locale) ?? undefined
   const [collapsed, setCollapsed] = useState<Partial<Record<QuadrantId, boolean>>>({})
 
   // The renderer only mounts this tab when RelationOps exists; the
@@ -87,7 +102,8 @@ export function Eisenhower({ tasks, config, canWrite }: EisenhowerProps) {
   const { records, error, moveField } = useOptimisticFieldMove<MatrixTask>(tasks, actions, config.priorityField)
 
   // "Today" is the current date: the urgency horizon slides with it.
-  const quadrants = eisenhowerQuadrants(records, config, new Date())
+  const now = new Date()
+  const quadrants = eisenhowerQuadrants(records, config, now)
 
   return (
     <>
@@ -121,7 +137,7 @@ export function Eisenhower({ tasks, config, canWrite }: EisenhowerProps) {
                         </Typography>
                         {typeof deadline === 'string' && deadline ? (
                           <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                            {deadline}
+                            {humanDeadline(deadline, now, locale)}
                           </Typography>
                         ) : null}
                         {canWrite ? (

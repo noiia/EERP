@@ -6,6 +6,9 @@ export interface BoxSize { w: number; h: number }
 
 const WBS_GAP_X = 40
 const WBS_GAP_Y = 60
+/** A stacked WBS child sits this far right of its parent (past the parent's elbow line, STACK_TRUNK_X). */
+export const WBS_STACK_INDENT = 40
+const WBS_STACK_GAP_Y = 24
 // 5 background dots (React Flow's default 20px grid): the shortest a linked arrow gets.
 const PERT_GAP_X = 100
 const PERT_GAP_Y = 40
@@ -17,26 +20,44 @@ const LINE_PASSES = 3
 
 /** Top-down tidy tree: leaves take consecutive x slots, a parent centers over its visible children.
  * Each depth row is as tall as its tallest box (`heightOf`, default `size.h`), so a short row (WBS
- * group roots) keeps the same gap below it as any other. */
+ * group roots) keeps the same gap below it as any other. A `stacked` child is not in a row: it
+ * hangs in a column under its parent, indented by WBS_STACK_INDENT, one under the other (its own
+ * stacked children under it, indented again), and the parent's slot widens to hold the column. */
 export function layoutWbs(
   nodes: Record<string, WbsNode>,
   roots: string[],
   visible: string[],
   size: BoxSize,
   heightOf: (id: string) => number = () => size.h,
+  stacked: (id: string) => boolean = () => false,
 ): Record<string, Point> {
   const vis = new Set(visible)
+  const kidsOf = (id: string, inStack: boolean) => nodes[id].children.filter((c) => vis.has(c) && stacked(c) === inStack)
   const rowH: number[] = []
-  for (const id of visible) rowH[nodes[id].depth] = Math.max(rowH[nodes[id].depth] ?? 0, heightOf(id))
+  for (const id of visible) if (!stacked(id)) rowH[nodes[id].depth] = Math.max(rowH[nodes[id].depth] ?? 0, heightOf(id))
   const rowY: number[] = []
   for (let d = 0, y = 0; d < rowH.length; d++) { rowY[d] = y; y += (rowH[d] ?? 0) + WBS_GAP_Y }
+  // A box's width with its stacked column.
+  const width = (id: string): number => Math.max(size.w, ...kidsOf(id, true).map((k) => WBS_STACK_INDENT + width(k)))
   const pos: Record<string, Point> = {}
-  let slot = 0
+  // Lays `id`'s stacked children out under it; returns the column's bottom.
+  const stack = (id: string): number => {
+    let y = pos[id].y + heightOf(id)
+    for (const k of kidsOf(id, true)) {
+      pos[k] = { x: pos[id].x + WBS_STACK_INDENT, y: y + WBS_STACK_GAP_Y }
+      y = stack(k)
+    }
+    return y
+  }
+  let cursor = 0
   const place = (id: string): void => {
-    const kids = nodes[id].children.filter((c) => vis.has(c))
+    const kids = kidsOf(id, false)
     kids.forEach(place)
-    const x = kids.length ? (pos[kids[0]].x + pos[kids[kids.length - 1]].x) / 2 : slot++ * (size.w + WBS_GAP_X)
+    let x = cursor
+    if (kids.length) x = (pos[kids[0]].x + pos[kids[kids.length - 1]].x) / 2
+    else cursor += width(id) + WBS_GAP_X
     pos[id] = { x, y: rowY[nodes[id].depth] }
+    stack(id)
   }
   roots.filter((r) => vis.has(r)).forEach(place)
   return finish(pos, size, heightOf)

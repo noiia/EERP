@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { handleNotificationFrame, useNotificationStore, type AppNotification } from './notification-store'
 
 const n = (over: Partial<AppNotification> = {}): AppNotification => ({
@@ -55,5 +55,57 @@ describe('useNotificationStore', () => {
     useNotificationStore.setState({ hasNew: true, unread: 3 })
     useNotificationStore.getState().acknowledge()
     expect(useNotificationStore.getState()).toMatchObject({ hasNew: false, unread: 3 })
+  })
+})
+
+describe('browser notifications', () => {
+  const shown: Array<{ title: string; options: NotificationOptions; onclick: (() => void) | null; close: () => void }> = []
+  function stub(permission: NotificationPermission, focused: boolean) {
+    shown.length = 0
+    vi.stubGlobal(
+      'Notification',
+      Object.assign(
+        function (this: (typeof shown)[number], title: string, options: NotificationOptions) {
+          Object.assign(this, { title, options, onclick: null, close: vi.fn() })
+          shown.push(this)
+        },
+        { permission },
+      ),
+    )
+    vi.spyOn(document, 'hasFocus').mockReturnValue(focused)
+  }
+  const live = (over: Partial<AppNotification> = {}) => (({ read, ...rest }) => (void read, rest))(n({ kind: 'message', status: null, ...over }))
+
+  beforeEach(() => useNotificationStore.setState({ items: [], unread: 0, hasNew: false, loaded: false }))
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  it('pops a new message up once, tagged by id, when the window is not focused', () => {
+    stub('granted', false)
+    handleNotificationFrame({ type: 'notification', notification: live({ id: 'm1', title: 'Ann in #general', body: 'hi' }) })
+    handleNotificationFrame({ type: 'notification', notification: live({ id: 'm1', title: 'Ann in #general', body: 'hi' }) })
+    expect(shown).toHaveLength(1)
+    expect(shown[0]).toMatchObject({ title: 'Ann in #general', options: { body: 'hi', tag: 'm1' } })
+  })
+
+  it('stays quiet when focused, not granted, or for an activity', () => {
+    stub('granted', true)
+    handleNotificationFrame({ type: 'notification', notification: live({ id: 'a' }) })
+    stub('default', false)
+    handleNotificationFrame({ type: 'notification', notification: live({ id: 'b' }) })
+    stub('granted', false)
+    handleNotificationFrame({ type: 'notification', notification: live({ id: 'c', kind: 'activity', status: 'running' }) })
+    expect(shown).toHaveLength(0)
+  })
+
+  it('a click focuses the ERP and opens an ERP link only', () => {
+    stub('granted', false)
+    const focus = vi.spyOn(window, 'focus').mockImplementation(() => {})
+    handleNotificationFrame({ type: 'notification', notification: live({ id: 'x', link: '//evil.example' }) })
+    shown[0]!.onclick!()
+    expect(focus).toHaveBeenCalled()
+    expect(shown[0]!.close).toHaveBeenCalled()
   })
 })

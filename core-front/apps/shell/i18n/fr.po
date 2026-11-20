@@ -642,7 +642,6 @@ msgstr "affichés ce mois-ci"
 msgid "shown"
 msgstr "affichés"
 
-
 msgid "ERP"
 msgstr "ERP"
 
@@ -1186,7 +1185,6 @@ msgstr "Cartes"
 
 msgid "Maximum number of events"
 msgstr "Nombre maximum d'événements"
-
 
 msgid "Event page"
 msgstr "Page d'événement"
@@ -1829,6 +1827,9 @@ msgstr "En cours"
 
 msgid "Mark all as read"
 msgstr "Tout marquer comme lu"
+
+msgid "Enable desktop notifications"
+msgstr "Activer les notifications du bureau"
 
 msgid "No notifications"
 msgstr "Aucune notification"
@@ -3197,3 +3198,12 @@ msgstr "Impossible de charger l’éditeur de diagrammes. Réessayez."
 
 msgid "Loading diagram editor"
 msgstr "Chargement de l’éditeur de diagrammes"
+
+msgid "Add task"
+msgstr "Ajouter une tâche"
+
+msgid "Remove from diagram"
+msgstr "Retirer du diagramme"
+
+msgid "No match"
+msgstr "Aucun résultat"

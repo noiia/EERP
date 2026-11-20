@@ -213,7 +213,7 @@ const taskViewModeDefaults: ViewDescriptor['viewModeDefaults'] = {
   matrix: {
     projectField: 'project_id',
     raciEntity: 'project_task_raci',
-    userLabelField: 'email',
+    userLabelField: 'display_name',
     dependencies: { entity: 'project_task_dependency', fromField: 'depends_on_id', toField: 'task_id' },
     priorityField: 'priority',
     deadlineField: 'deadline',

@@ -66,6 +66,17 @@ describe('NotificationBell', () => {
     expect(push).not.toHaveBeenCalled()
   })
 
+  it('offers to enable desktop notifications until the browser has an answer', async () => {
+    const requestPermission = vi.fn(async () => 'granted' as NotificationPermission)
+    vi.stubGlobal('Notification', Object.assign(function () {}, { permission: 'default', requestPermission }))
+    render(<NotificationBell />)
+    fireEvent.click(screen.getByRole('button', { name: /notifications/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Enable desktop notifications' }))
+    expect(requestPermission).toHaveBeenCalled()
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Enable desktop notifications' })).toBeNull())
+    vi.unstubAllGlobals()
+  })
+
   it('mark all as read', () => {
     useNotificationStore.getState().setFeed([n({ id: 'a' }), n({ id: 'b' })], 2)
     render(<NotificationBell />)

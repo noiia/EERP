@@ -4,26 +4,12 @@ import (
 	"net/http"
 	"testing"
 
-	"core/internal/auth"
-
 	"github.com/google/uuid"
 )
 
-// oneAccountable fails t unless the write answered 422 with code ONE_ACCOUNTABLE.
-func (f *fixture) oneAccountable(t *testing.T, who auth.Identity, method, path string, body any) {
-	t.Helper()
-	code, out := f.do(who, method, path, body)
-	if code != http.StatusUnprocessableEntity {
-		t.Fatalf("%s %s: %d %v, want 422 ONE_ACCOUNTABLE", method, path, code, out)
-	}
-	if e, _ := out["error"].(map[string]any); e["code"] != "ONE_ACCOUNTABLE" {
-		t.Fatalf("422 body %v, want code ONE_ACCOUNTABLE", out)
-	}
-}
-
-// A task has at most one accountable: a second A is a 422 ONE_ACCOUNTABLE, on
-// a create and on an update that turns an existing role into A.
-func TestRaci_OneAccountable(t *testing.T) {
+// A task may have several accountables (the matrix warns, Go accepts), and
+// a user may hold several roles on one task — one row per role.
+func TestRaci_SeveralRoles(t *testing.T) {
 	f := newFixture(t)
 	m := uuid.New()
 	alice, bob := f.user(""), f.user("")
@@ -31,23 +17,19 @@ func TestRaci_OneAccountable(t *testing.T) {
 	p := f.project(m, "everyone")
 	task := f.task(p, nil, nil)
 
-	code, body := f.do(me, http.MethodPost, "project_task_raci", map[string]any{"task_id": task, "user_id": alice, "role": "A"})
-	if code != http.StatusCreated || body["role"] != "A" {
-		t.Fatalf("first accountable: %d %v, want 201", code, body)
+	f.run(t, []writeCase{
+		{"alice accountable", me, http.MethodPost, "project_task_raci", map[string]any{"task_id": task, "user_id": alice, "role": "A"}, 201},
+		{"alice also responsible", me, http.MethodPost, "project_task_raci", map[string]any{"task_id": task, "user_id": alice, "role": "R"}, 201},
+		{"bob accountable too", me, http.MethodPost, "project_task_raci", map[string]any{"task_id": task, "user_id": bob, "role": "A"}, 201},
+	})
+	if n := f.total(me, "project_task_raci?filter[task_id]="+task.String()); n != 3 {
+		t.Errorf("rows on the task: %d, want 3", n)
 	}
-	f.oneAccountable(t, me, http.MethodPost, "project_task_raci", map[string]any{"task_id": task, "user_id": bob, "role": "A"})
-
-	code, body = f.do(me, http.MethodPost, "project_task_raci", map[string]any{"task_id": task, "user_id": bob, "role": "R"})
-	if code != http.StatusCreated {
-		t.Fatalf("bob responder: %d %v, want 201", code, body)
-	}
-	f.oneAccountable(t, me, http.MethodPut, "project_task_raci/"+body["id"].(string), map[string]any{"role": "A"})
 }
 
-// A user holds one role per task: the unique live (task_id, user_id) is a 409,
-// on a create, on an update that retargets the row, and it frees the pair once
-// the row is deleted.
-func TestRaci_OneRolePerUser(t *testing.T) {
+// One live row per (task, user, role): the same role twice is a 409, on a
+// create and on an update, and the triple is free again once deleted.
+func TestRaci_OneRowPerRole(t *testing.T) {
 	f := newFixture(t)
 	m := uuid.New()
 	alice, bob := f.user(""), f.user("")
@@ -60,21 +42,16 @@ func TestRaci_OneRolePerUser(t *testing.T) {
 		t.Fatalf("alice row: %d %v, want 201", code, body)
 	}
 	aliceRow := body["id"].(string)
-	f.run(t, []writeCase{
-		{"same user, second role", me, http.MethodPost, "project_task_raci", map[string]any{"task_id": task, "user_id": alice, "role": "C"}, 409},
-	})
-	code, body = f.do(me, http.MethodPost, "project_task_raci", map[string]any{"task_id": task, "user_id": bob, "role": "C"})
+	code, body = f.do(me, http.MethodPost, "project_task_raci", map[string]any{"task_id": task, "user_id": bob, "role": "R"})
 	if code != http.StatusCreated {
 		t.Fatalf("bob row: %d %v, want 201", code, body)
 	}
 	f.run(t, []writeCase{
+		{"same user, same role", me, http.MethodPost, "project_task_raci", map[string]any{"task_id": task, "user_id": alice, "role": "R"}, 409},
 		{"retarget the row to bob", me, http.MethodPut, "project_task_raci/" + aliceRow, map[string]any{"user_id": bob}, 409},
 		{"delete alice's row", me, http.MethodDelete, "project_task_raci/" + aliceRow, nil, 204},
+		{"triple free after the delete", me, http.MethodPost, "project_task_raci", map[string]any{"task_id": task, "user_id": alice, "role": "R"}, 201},
 	})
-	code, body = f.do(me, http.MethodPost, "project_task_raci", map[string]any{"task_id": task, "user_id": alice, "role": "C"})
-	if code != http.StatusCreated {
-		t.Fatalf("pair free after the delete: %d %v, want 201", code, body)
-	}
 }
 
 // Only staff users (not website visitors) hold a role.

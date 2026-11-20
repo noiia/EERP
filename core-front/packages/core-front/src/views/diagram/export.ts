@@ -6,8 +6,13 @@ export interface DiagramBounds { x: number; y: number; width: number; height: nu
 export interface LegendEntry { color: string; label: string }
 
 const PAD = 40
-// Browsers refuse canvases past about 16384 px a side: a huge diagram exports at 1×.
+// Browsers refuse canvases past about 16384 px a side, or a total area past roughly 2^28
+// pixels (less on some): a bigger diagram exports at a lower ratio, down to 1×.
 const MAX_CANVAS_SIDE = 16000
+const MAX_CANVAS_AREA = 150_000_000
+/** The sharpest whole ratio (3×, 2×, else 1×) an image of w × h CSS pixels fits the canvas limits at. */
+export const pixelRatioFor = (w: number, h: number) =>
+  [3, 2].find((r) => Math.max(w, h) * r <= MAX_CANVAS_SIDE && w * h * r * r <= MAX_CANVAS_AREA) ?? 1
 const WHITE = '#ffffff'
 const size = (b: DiagramBounds) => ({ w: Math.ceil(b.width) + PAD * 2, h: Math.ceil(b.height) + PAD * 2 })
 
@@ -120,7 +125,7 @@ export function prepareEdgesForCapture(node: HTMLElement, bounds: DiagramBounds)
 }
 
 /** PNG data URL of the whole diagram (not just the visible part), via the xyflow export recipe;
- * at 2× unless that would pass the browsers' canvas size limit. */
+ * at the sharpest ratio the browsers' canvas limits allow (pixelRatioFor). */
 export async function diagramToPng(viewport: HTMLElement, bounds: DiagramBounds, background = WHITE): Promise<string> {
   const { w, h } = size(bounds)
   const v = getViewportForBounds(bounds, w, h, 0.1, 4, 0.05)
@@ -130,7 +135,7 @@ export async function diagramToPng(viewport: HTMLElement, bounds: DiagramBounds,
       backgroundColor: background,
       width: w,
       height: h,
-      pixelRatio: Math.max(w, h) * 2 > MAX_CANVAS_SIDE ? 1 : 2,
+      pixelRatio: pixelRatioFor(w, h),
       style: { width: `${w}px`, height: `${h}px`, transform: `translate(${v.x}px, ${v.y}px) scale(${v.zoom})` },
     })
   } finally {
@@ -202,7 +207,7 @@ export async function elementToPng(el: HTMLElement, background = WHITE): Promise
   const height = Math.ceil(el.scrollHeight)
   const restore = prepareEdgesForCapture(el, { x: 0, y: 0, width: el.scrollWidth, height: el.scrollHeight })
   try {
-    return await toPng(el, { backgroundColor: background, width, height, pixelRatio: Math.max(width, height) * 2 > MAX_CANVAS_SIDE ? 1 : 2 })
+    return await toPng(el, { backgroundColor: background, width, height, pixelRatio: pixelRatioFor(width, height) })
   } finally {
     restore()
   }

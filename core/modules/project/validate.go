@@ -21,7 +21,6 @@ import (
 	"core/orm/access"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/labstack/echo/v5"
 )
 
@@ -980,15 +979,8 @@ func milestoneRules(r *request) error {
 // raciRoles are the RACI matrix roles.
 var raciRoles = []string{"R", "A", "C", "I"}
 
-// raciOneAccountableIndex is migrate.go's partial unique index (one
-// accountable per task); its 23505 is a 422 ONE_ACCOUNTABLE, not the generic
-// 409 (ValidateRaciBody).
-const raciOneAccountableIndex = "idx_project_task_raci_one_accountable"
-
 // raciRules: a RACI row hangs off a visible task and takes its project; the
-// user is staff (not a website visitor) and the role is one of R/A/C/I. The
-// second-accountable case is the partial index's, not a pre-check: it would
-// race, and the index is the backstop.
+// user is staff (not a website visitor) and the role is one of R/A/C/I.
 var raciRules = taskLinkRules(func(r *request, _ uuid.UUID) error {
 	if r.op == opDelete {
 		return nil
@@ -1119,24 +1111,9 @@ func (h *Handler) ValidateBaselineTaskBody(next echo.HandlerFunc) echo.HandlerFu
 	return h.guard("project_baseline_task", baselineTaskRules)(next)
 }
 
-// ValidateRaciBody: see raciRules. A 23505 on the one-accountable partial
-// index answers a 422 ONE_ACCOUNTABLE; every other unique violation keeps
-// the generic 409.
+// ValidateRaciBody: see raciRules.
 func (h *Handler) ValidateRaciBody(next echo.HandlerFunc) echo.HandlerFunc {
-	guard := h.guard("project_task_raci", raciRules)
-	return func(c *echo.Context) error {
-		err := guard(next)(c)
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == raciOneAccountableIndex {
-			return respond(c, &rejection{
-				status: http.StatusUnprocessableEntity,
-				code:   "ONE_ACCOUNTABLE",
-				msg:    "a task can have only one accountable",
-				fields: []string{"role"},
-			})
-		}
-		return err
-	}
+	return h.guard("project_task_raci", raciRules)(next)
 }
 
 // ValidateCapacityBody: see capacityRules.
