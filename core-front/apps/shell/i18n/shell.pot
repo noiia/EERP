@@ -2644,6 +2644,15 @@ msgstr ""
 msgid "Export PDF"
 msgstr ""
 
+msgid "Export XLSX"
+msgstr ""
+
+msgid "Export CSV"
+msgstr ""
+
+msgid "Risk register"
+msgstr ""
+
 msgid "Fit view"
 msgstr ""
 

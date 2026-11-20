@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
 vi.mock('../diagram/export', () => ({ exportElementPng: vi.fn(), exportElementPdf: vi.fn() }))
+vi.mock('./register-export', () => ({ downloadRegister: vi.fn() }))
 const push = vi.hoisted(() => vi.fn())
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }))
 const canWrite = vi.hoisted(() => ({ value: true }))
@@ -17,6 +18,7 @@ vi.mock('../relation-widgets', async (orig) => ({
 
 import { RiskRenderer } from './risk-renderer'
 import { exportElementPng as exportPng } from '../diagram/export'
+import { downloadRegister } from './register-export'
 import { RelationOpsProvider, type RelationOps } from '../relation-ops'
 import { ApiError } from '../../api/errors'
 import { setViewportWidth } from '../../test/viewport'
@@ -137,6 +139,20 @@ describe('RiskRenderer', () => {
       fireEvent.click(await screen.findByRole('menuitem', { name: 'Export PNG' }))
     }
     await waitFor(() => expect(exportPng).toHaveBeenCalledTimes(2))
+  })
+
+  it('exports the register as XLSX, CSV and PDF from the same table, names resolved', async () => {
+    setup([risk('Late vendor', { responsible_id: 'u1' })])
+    fireEvent.click(await screen.findByRole('tab', { name: 'Register' }))
+    for (const [item, kind] of [['Export XLSX', 'xlsx'], ['Export CSV', 'csv'], ['Export PDF', 'pdf']]) {
+      fireEvent.click(screen.getByRole('button', { name: 'Export' }))
+      expect(screen.queryByRole('menuitem', { name: 'Export PNG' })).toBeNull()
+      fireEvent.click(await screen.findByRole('menuitem', { name: item }))
+      await waitFor(() => expect(downloadRegister).toHaveBeenLastCalledWith(kind, expect.anything(), 'Apollo — Risk register', 'register-p1', 'Risk register'))
+    }
+    const table = vi.mocked(downloadRegister).mock.calls[0][1]
+    expect(table.heads[0]).toBe('Risk')
+    expect(table.rows[0].slice(0, 3)).toEqual(['Late vendor', 'Internal', 'Delay'])
   })
 
   it('exports the matrix with the current and after-remediation versions in one image', async () => {

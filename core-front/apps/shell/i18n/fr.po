@@ -2776,6 +2776,15 @@ msgstr "Exporter en PNG"
 msgid "Export PDF"
 msgstr "Exporter en PDF"
 
+msgid "Export XLSX"
+msgstr "Exporter en XLSX"
+
+msgid "Export CSV"
+msgstr "Exporter en CSV"
+
+msgid "Risk register"
+msgstr "Registre des risques"
+
 msgid "Fit view"
 msgstr "Ajuster la vue"
 

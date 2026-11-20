@@ -10,6 +10,7 @@ import {
   RISK_SEVERITIES,
   type RiskRow,
 } from '../risk/scoring'
+import { registerTable } from '../risk/register-table'
 import { text, type DiagramData, type DiagramSource, type DiagramSpec } from './model'
 
 type Translate = (s: string) => string
@@ -403,6 +404,56 @@ function fishbone(data: DiagramData, t: Translate) {
   }
 }
 
+// Column widths and characters kept per cell: the free texts (risk, remediation) get the room.
+const REGISTER_COLS = [
+  [220, 30],
+  [120, 16],
+  [90, 12],
+  [80, 10],
+  [80, 14],
+  [95, 12],
+  [75, 10],
+  [220, 30],
+  [120, 16],
+  [95, 12],
+  [85, 10],
+] as const
+
+function register(data: DiagramData, t: Translate) {
+  const rows = [...(data.rows as unknown as (RiskRow & { responsible_name?: string })[])].sort(
+    (a, b) => (b.criticity ?? -1) - (a.criticity ?? -1),
+  )
+  const table = registerTable(rows, data.categories, (r) => (r as { responsible_name?: string }).responsible_name, t)
+  const width = REGISTER_COLS.reduce((a, [w]) => a + w, 0)
+  const x = REGISTER_COLS.map((_, i) => REGISTER_COLS.slice(0, i).reduce((a, [w]) => a + w, 0))
+  const rowH = 30
+  const headH = 44
+  return {
+    width,
+    height: headH + rowH * rows.length,
+    content: (
+      <>
+        <rect width={width} height={headH} rx={4} fill="#f1f5f9" />
+        {/* Headings wrap on two lines rather than lose their end (translations run long). */}
+        {table.heads.map((h, i) => (
+          <g key={i}>{lines(h, REGISTER_COLS[i][1]).slice(0, 2).map((l, j) => <g key={j}>{label(x[i] + 8, 18 + j * 15, l, 12, muted)}</g>)}</g>
+        ))}
+        {table.rows.map((r, i) => {
+          const y = headH + rowH * i
+          return (
+            <g key={rows[i].id}>
+              {i % 2 === 1 && <rect y={y} width={width} height={rowH} fill="#f8fafc" />}
+              <line x1={0} y1={y} x2={width} y2={y} stroke={line} />
+              {r.map((v, j) => <g key={j}>{label(x[j] + 8, y + 20, clip(v == null ? '—' : String(v), REGISTER_COLS[j][1]), 12)}</g>)}
+              <circle cx={x[6] + 64} cy={y + 15} r={5} fill={riskColor(rows[i].criticity)} />
+            </g>
+          )
+        })}
+      </>
+    ),
+  }
+}
+
 export function DiagramPreview({
   data,
   source,
@@ -426,7 +477,9 @@ export function DiagramPreview({
         ? matrix(data, spec.residual, t)
         : spec.kind === 'ishikawa'
           ? fishbone(data, t)
-          : graph(data, source, spec, t)
+          : spec.kind === 'register'
+            ? register(data, t)
+            : graph(data, source, spec, t)
   const width = chart.width + 64,
     height = chart.height + 150
   return (

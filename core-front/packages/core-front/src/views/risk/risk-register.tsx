@@ -11,26 +11,26 @@ import TableRow from '@mui/material/TableRow'
 import { useT } from '../../i18n/translate'
 import type { FieldDescriptor } from '../descriptor'
 import { usePhone } from '../use-phone'
-import { useRelationLabels } from '../use-relation-labels'
 import { band, type RiskRow } from './scoring'
 import { bandMain } from './risk-matrix'
+import { registerTable } from './register-table'
 
-// Only responsible_id is resolved here (categories come from the renderer's own read).
-const USER_FIELD = { name: 'responsible_id', type: 'relation', relation: { entity: 'users', kind: 'many2one', labelField: 'display_name' } } as unknown as FieldDescriptor
+// The responsible user's label: resolved by the renderer (categories come from its own read).
+export const USER_FIELD = { name: 'responsible_id', type: 'relation', relation: { entity: 'users', kind: 'many2one', labelField: 'display_name' } } as unknown as FieldDescriptor
 
 const dash = (v: unknown) => (v == null || v === '' ? '—' : String(v))
 
-export function RiskRegister({ rows, categories, onOpen }: {
+export function RiskRegister({ rows, categories, responsible, onOpen }: {
   rows: RiskRow[]
   categories: { id: string; name: string }[]
+  /** The responsible user's name (the renderer resolves them once, for the exports too). */
+  responsible: (r: RiskRow) => string | undefined
   onOpen: (id: string) => void
 }) {
   const t = useT()
   const phone = usePhone()
-  const label = useRelationLabels([USER_FIELD], rows.map((r) => ['responsible_id', r.responsible_id]))
   const cat = new Map(categories.map((c) => [c.id, c.name]))
-  const impact: Record<string, string> = { delay: t('Delay'), cost: t('Cost'), quality: t('Quality') }
-  const heads = ['Risk', 'Category', 'Impact on', 'Likelihood', 'Severity', 'Detectability', 'Criticity', 'Remediation', 'Responsible', 'Deadline', 'Residual criticity']
+  const table = registerTable(rows, categories, responsible, t)
   if (phone) {
     return (
       <Box component="ul" sx={{ listStyle: 'none', m: 0, p: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
@@ -56,22 +56,12 @@ export function RiskRegister({ rows, categories, onOpen }: {
     <TableContainer>
       <Table size="small">
         <TableHead>
-          <TableRow>{heads.map((h) => <TableCell key={h}>{t(h)}</TableCell>)}</TableRow>
+          <TableRow>{table.heads.map((h) => <TableCell key={h}>{h}</TableCell>)}</TableRow>
         </TableHead>
         <TableBody>
-          {rows.map((r) => (
+          {rows.map((r, i) => (
             <TableRow key={r.id} hover sx={{ cursor: 'pointer' }} onClick={() => onOpen(r.id)}>
-              <TableCell>{r.name}</TableCell>
-              <TableCell>{dash(r.category_id && cat.get(r.category_id))}</TableCell>
-              <TableCell>{impact[r.impact_on] ?? r.impact_on}</TableCell>
-              <TableCell>{dash(r.likelihood)}</TableCell>
-              <TableCell>{r.severity_note && r.severity_effective == null ? t('Not computable') : dash(r.severity_effective)}</TableCell>
-              <TableCell>{dash(r.detectability)}</TableCell>
-              <TableCell>{dash(r.criticity)}</TableCell>
-              <TableCell>{dash(r.remediation)}</TableCell>
-              <TableCell>{dash(r.responsible_id && label('responsible_id', r.responsible_id))}</TableCell>
-              <TableCell>{dash(r.deadline && r.deadline.slice(0, 10))}</TableCell>
-              <TableCell>{dash(r.residual_criticity)}</TableCell>
+              {table.rows[i].map((v, j) => <TableCell key={j}>{dash(v)}</TableCell>)}
             </TableRow>
           ))}
         </TableBody>

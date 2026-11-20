@@ -35,7 +35,8 @@ cannot select another collaborator's identity. Fast co-editing is enabled.
 
 In an editable document, select **Plugins → ERP diagrams** (**Diagrammes ERP** in
 French). Choose a module's task view, project and diagram: Gantt, WBS, PERT, PBS,
-OBS, risk matrix (current or residual) or Ishikawa. Preview, optionally set a title,
+OBS, risk matrix (current or residual), Ishikawa or risk register (the project's AMDEC
+register as a table, most critical first, with category and responsible names). Preview, optionally set a title,
 then insert at the current document position. Double-click an inserted diagram to
 reload the current ERP data, change its settings and update the same object.
 

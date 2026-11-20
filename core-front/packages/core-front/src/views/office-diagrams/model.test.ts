@@ -56,7 +56,7 @@ describe('Office diagram specifications and reads', () => {
   it('discovers only concrete, permitted, project-scoped module views', () => {
     expect(diagramSources(routes, [])).toEqual([])
     expect(diagramSources(new Map([['/tasks/:id', { descriptor }]]), ['*:*:*'])).toEqual([])
-    expect(source.kinds).toEqual(['gantt', 'wbs', 'pert', 'risk', 'ishikawa'])
+    expect(source.kinds).toEqual(['gantt', 'wbs', 'pert', 'risk', 'ishikawa', 'register'])
   })
   it('validates untrusted embedded settings and drops extra fields', () => {
     expect(parseSpec(JSON.stringify({ ...spec, entity: 'users' }))).toEqual(spec)
@@ -137,5 +137,24 @@ describe('Office diagram specifications and reads', () => {
       expect.objectContaining({ in: { id: ['category-a'] } }),
     )
     expect(result.categories).toEqual([{ id: 'category-a', name: 'Technical' }])
+  })
+  it('reads the register with its categories and responsible names', async () => {
+    const api = ops()
+    vi.mocked(api.listPage!).mockImplementation(async (e) => ({
+      records:
+        e === 'risk'
+          ? [
+              { id: 'r', category_id: 'category-a', responsible_id: 'u1' },
+              { id: 's', responsible_id: 'gone' },
+            ]
+          : e === 'users'
+            ? [{ id: 'u1', display_name: 'Alice' }]
+            : [{ id: 'category-a', name: 'Technical' }],
+      total: 1,
+    }))
+    const result = await loadDiagram(api, source, { ...spec, kind: 'register' })
+    expect(api.listPage).toHaveBeenCalledWith('users', expect.objectContaining({ in: { id: ['u1', 'gone'] } }))
+    expect(result.categories).toEqual([{ id: 'category-a', name: 'Technical' }])
+    expect(result.rows.map((r) => r.responsible_name)).toEqual(['Alice', ''])
   })
 })

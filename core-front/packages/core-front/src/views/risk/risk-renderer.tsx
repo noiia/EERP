@@ -25,7 +25,9 @@ import { useRelationOps } from '../relation-ops'
 import { RelationCreateWizard } from '../relation-widgets'
 import { Ishikawa } from './ishikawa'
 import { RiskMatrix } from './risk-matrix'
-import { RiskRegister } from './risk-register'
+import { RiskRegister, USER_FIELD } from './risk-register'
+import { registerTable } from './register-table'
+import { useRelationLabels } from '../use-relation-labels'
 import { type RiskRow } from './scoring'
 
 export interface RiskRendererProps {
@@ -60,6 +62,8 @@ export function RiskRenderer({ config, projectId }: RiskRendererProps) {
   const fill = useFillHeight(area, phone)
   const { entity, projectField, categoryEntity } = config
   const canCreate = usePermission(`${entity}:${entity}:write`)
+  // Responsible names for the Register tab and its exports.
+  const userLabel = useRelationLabels([USER_FIELD], (rows ?? []).map((r) => ['responsible_id', r.responsible_id]))
 
   const listPage = ops?.listPage
   const get = ops?.get
@@ -97,7 +101,14 @@ export function RiskRenderer({ config, projectId }: RiskRendererProps) {
 
   if (!rows) return <DiagramLoading />
   const open = (id: string) => router.push(erpPath(config.formPath.replace(':id', id)))
-  const exportable = tab !== 'register'
+  const responsible = (r: RiskRow) => userLabel('responsible_id', r.responsible_id)
+  const exportRegister = (kind: 'csv' | 'xlsx' | 'pdf') => {
+    setMenu(null)
+    const table = registerTable(rows, categories, responsible, t)
+    import('./register-export')
+      .then((m) => m.downloadRegister(kind, table, `${project} — ${t('Risk register')}`, `register-${projectId}`, t('Risk register')))
+      .catch((e: unknown) => setError(serializeError(toApiError(e))))
+  }
   const doExport = (kind: 'png' | 'pdf') => {
     setMenu(null)
     if (tab === 'matrix') flushSync(() => setExportingBoth(true))
@@ -132,18 +143,26 @@ export function RiskRenderer({ config, projectId }: RiskRendererProps) {
               <ToggleButton value="after">{phone ? t('After') : t('After remediation')}</ToggleButton>
             </ToggleButtonGroup>
           )}
-          {exportable && <Button size="small" onClick={(e) => setMenu(e.currentTarget)}>{t('Export')}</Button>}
+          <Button size="small" onClick={(e) => setMenu(e.currentTarget)}>{t('Export')}</Button>
         </Stack>
         <Menu open={!!menu} anchorEl={menu} onClose={() => setMenu(null)}>
-          <MenuItem onClick={() => doExport('png')}>{t('Export PNG')}</MenuItem>
-          <MenuItem onClick={() => doExport('pdf')}>{t('Export PDF')}</MenuItem>
+          {tab === 'register'
+            ? [
+                <MenuItem key="xlsx" onClick={() => exportRegister('xlsx')}>{t('Export XLSX')}</MenuItem>,
+                <MenuItem key="csv" onClick={() => exportRegister('csv')}>{t('Export CSV')}</MenuItem>,
+                <MenuItem key="pdf" onClick={() => exportRegister('pdf')}>{t('Export PDF')}</MenuItem>,
+              ]
+            : [
+                <MenuItem key="png" onClick={() => doExport('png')}>{t('Export PNG')}</MenuItem>,
+                <MenuItem key="pdf" onClick={() => doExport('pdf')}>{t('Export PDF')}</MenuItem>,
+              ]}
         </Menu>
       </Stack>
       <Box sx={{ pt: 2, overflow: 'auto' }}>
         {/* The diagrams fill the view (centred, scaled to fit) instead of floating small in an empty zone. */}
         {tab === 'matrix' && <Box ref={area} sx={{ width: '100%', height: { xs: fill ?? '70vh', sm: '70vh' } }}><RiskMatrix rows={rows} residual={residual} onOpen={open} /></Box>}
         {tab === 'ishikawa' && <Box ref={area} sx={{ width: '100%', height: { xs: fill ?? '70vh', sm: '70vh' }, bgcolor: 'background.paper' }}><Ishikawa rows={rows} categories={categories} project={project} onOpen={open} /></Box>}
-        {tab === 'register' && <RiskRegister rows={rows} categories={categories} onOpen={open} />}
+        {tab === 'register' && <RiskRegister rows={rows} categories={categories} responsible={responsible} onOpen={open} />}
       </Box>
       {exportingBoth && (
         // Off screen, but laid out at a fixed size; the inner box is the one captured (no offset in the image).

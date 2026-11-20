@@ -4,7 +4,7 @@ import type { EntityListOptions } from '../../api/list-options'
 import type { RelationOps, RelationRecord } from '../relation-ops'
 import { hasPermission } from '../../auth/permissions'
 
-export const diagramKinds = ['gantt', 'wbs', 'pert', 'pbs', 'obs', 'risk', 'ishikawa'] as const
+export const diagramKinds = ['gantt', 'wbs', 'pert', 'pbs', 'obs', 'risk', 'ishikawa', 'register'] as const
 export type DiagramKind = (typeof diagramKinds)[number]
 export const diagramLabels: Record<DiagramKind, string> = {
   gantt: 'Gantt',
@@ -14,6 +14,7 @@ export const diagramLabels: Record<DiagramKind, string> = {
   obs: 'OBS',
   risk: 'Risk matrix',
   ishikawa: 'Ishikawa',
+  register: 'Risk register',
 }
 export interface DiagramSpec {
   version: 1
@@ -156,7 +157,7 @@ export async function loadDiagram(
       ? m.pbs
       : spec.kind === 'obs'
         ? m.obs
-        : spec.kind === 'risk' || spec.kind === 'ishikawa'
+        : spec.kind === 'risk' || spec.kind === 'ishikawa' || spec.kind === 'register'
           ? m.risk
           : null
   const entity = config?.entity ?? source.descriptor.entity
@@ -188,11 +189,21 @@ export async function loadDiagram(
       .filter((l) => known.has(l.from) && known.has(l.to))
     data.truncated ||= found.truncated
   }
-  if (spec.kind === 'ishikawa' && m.risk) {
+  if ((spec.kind === 'ishikawa' || spec.kind === 'register') && m.risk) {
     const categories = [...new Set(result.rows.map((r) => text(r.category_id)).filter(Boolean))]
     if (categories.length) {
       const found = await boundedRows(ops, m.risk.categoryEntity, { in: { id: categories } })
       data.categories = found.rows.map((r) => ({ id: r.id, name: text(r.name) }))
+      data.truncated ||= found.truncated
+    }
+  }
+  // The register names each risk's responsible user (a label only, never the account).
+  if (spec.kind === 'register') {
+    const refs = [...new Set(result.rows.map((r) => text(r.responsible_id)).filter(Boolean))]
+    if (refs.length) {
+      const found = await boundedRows(ops, 'users', { in: { id: refs } })
+      const names = new Map(found.rows.map((r) => [r.id, text(r.display_name) || text(r.email)]))
+      data.rows = result.rows.map((r) => ({ ...r, responsible_name: names.get(text(r.responsible_id)) ?? '' }))
       data.truncated ||= found.truncated
     }
   }

@@ -86,6 +86,23 @@ describe('Embedded Office diagram previews', () => {
     expect(svg).toContain('Current risk')
     expect(draw('risk', data, true)).toContain('Residual risk')
   })
+  it('draws the register as a table, most critical first, with names instead of ids', () => {
+    const svg = draw('register', {
+      ...data,
+      rows: [
+        { id: 'a', name: 'Low one', criticity: 2, impact_on: 'cost' },
+        { id: 'b', name: 'High one', criticity: 18, category_id: 'technical', responsible_id: 'u1', responsible_name: 'Alice', deadline: '2026-12-01T00:00:00Z' },
+      ],
+    })
+    expect(svg).toContain('>Residual</text>')
+    expect(svg).toContain('>criticity</text>')
+    expect(svg.indexOf('High one')).toBeLessThan(svg.indexOf('Low one'))
+    expect(svg).toContain('Technical')
+    expect(svg).toContain('Alice')
+    expect(svg).not.toContain('u1')
+    expect(svg).toContain('2026-12-01')
+    expect(svg).toContain('Cost')
+  })
   it('marks partial data and PERT cycles in the exported image itself', () => {
     expect(
       draw('pert', { ...data, truncated: true, links: [...data.links, { from: 'b', to: 'a' }] }),

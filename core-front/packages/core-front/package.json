@@ -1,7 +1,7 @@
 {
   "name": "@eerp/core-front",
   "version": "0.0.0",
-  "description": "EERP frontend engine \u2014 descriptors, Zustand stores, renderers, server ApiClient, module registry (the frontend ABI).",
+  "description": "EERP frontend engine — descriptors, Zustand stores, renderers, server ApiClient, module registry (the frontend ABI).",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -38,6 +38,7 @@
     "@tiptap/react": "^3.33.1",
     "@tiptap/starter-kit": "^3.33.1",
     "@xyflow/react": "12.12.1",
+    "fflate": "0.8.3",
     "highlight.js": "11.11.1",
     "html-to-image": "1.11.13",
     "jspdf": "4.2.1",
