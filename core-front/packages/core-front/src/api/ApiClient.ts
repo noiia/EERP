@@ -725,6 +725,15 @@ export async function proxyTeams(method: Method, path: string, body?: unknown): 
   return fetchWithRefresh(method, `/teams${path}`, null, body)
 }
 
+/** Authenticated editor configuration only; storage callbacks never use an ERP cookie. */
+export async function officeSession(source: string, id: string, lang: string): Promise<Response> {
+  return fetchWithRefresh(
+    'GET',
+    `/office/${encodeURIComponent(source)}/${encodeURIComponent(id)}/session?${new URLSearchParams({ lang })}`,
+    null,
+  )
+}
+
 /**
  * Project plan exchange BFF passthrough (ADR-042): forwards one call to
  * /api/v1<path> — path is `/<scopeEntity>/<id>/exchange/<format>/<action>` — and

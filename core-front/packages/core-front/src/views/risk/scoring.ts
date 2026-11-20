@@ -1,4 +1,6 @@
 export type Band = 'low' | 'medium' | 'high'
+export const RISK_LIKELIHOODS = [3, 2, 1] as const
+export const RISK_SEVERITIES = [1, 2, 3, 4] as const
 
 export interface RiskRow {
   id: string

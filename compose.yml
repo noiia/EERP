@@ -125,6 +125,37 @@ services:
       core-back:
         condition: service_healthy
 
+  # Euro-Office owns editing/collaboration; EERP owns files and permissions.
+  # Bootstrap generates a dedicated JWT secret and configures both services.
+  euro-office:
+    image: ghcr.io/euro-office/documentserver:${EURO_OFFICE_TAG:-v9.3.1}
+    restart: unless-stopped
+    environment:
+      JWT_ENABLED: "true"
+      JWT_SECRET: ${EERP_EURO_OFFICE_JWT_SECRET:-}
+      JWT_HEADER: Authorization
+      JWT_IN_BODY: "false"
+      ALLOW_PRIVATE_IP_ADDRESS: "true"
+      EXAMPLE_ENABLED: "false"
+      ADMINPANEL_ENABLED: "false"
+    expose:
+      - "80"
+    ports:
+      - "127.0.0.1:8092:80"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - euro-office-data:/var/lib/euro-office/documentserver
+      - euro-office-private:/var/www/euro-office/Data
+      - ./infra/euro-office/plugins/erp-diagrams:/var/www/euro-office/documentserver/sdkjs-plugins/erp-diagrams:ro
+    shm_size: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1/healthcheck | grep -q true"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 90s
+
   # Standalone PDF renderer (docs/adr/ADR-010, docs/roadmaps/pdf-reports.md). Started by
   # default (no profile) so `docker compose up -d --build` alone is enough for report
   # generation to work — was profile-gated ("pdf") until report generation became a
@@ -270,4 +301,6 @@ volumes:
   pgdata:
   garage-meta:
   garage-data:
+  euro-office-data:
+  euro-office-private:
   gateway-certs:

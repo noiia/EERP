@@ -433,7 +433,6 @@ msgstr ""
 msgid "shown"
 msgstr ""
 
-
 msgid "ERP"
 msgstr ""
 
@@ -977,7 +976,6 @@ msgstr ""
 
 msgid "Maximum number of events"
 msgstr ""
-
 
 msgid "Event page"
 msgstr ""
@@ -2871,70 +2869,10 @@ msgstr ""
 msgid "No milestone yet for {name}"
 msgstr ""
 
-msgid "New note"
-msgstr ""
-
-msgid "Invalid note file."
-msgstr ""
-
-msgid "This note contains formatting that this editor does not support."
-msgstr ""
-
-msgid "Discard unsaved changes?"
-msgstr ""
-
 msgid "Strikethrough"
 msgstr ""
 
-msgid "Task list"
-msgstr ""
-
-msgid "Blockquote"
-msgstr ""
-
 msgid "Code block"
-msgstr ""
-
-msgid "Subscript"
-msgstr ""
-
-msgid "Superscript"
-msgstr ""
-
-msgid "This note has changed. Reopen it before saving again."
-msgstr ""
-
-msgid "Only .ocnote files can be edited as notes."
-msgstr ""
-
-msgid "The note is too large."
-msgstr ""
-
-msgid "The note must contain a Tiptap JSON document."
-msgstr ""
-
-msgid "The note version is required."
-msgstr ""
-
-msgid "Align left"
-msgstr ""
-
-msgid "Align center"
-msgstr ""
-
-msgid "Align right"
-msgstr ""
-
-msgid "Insert table"
-msgstr ""
-
-msgid "Insert image"
-msgstr ""
-
-msgid "Image address"
-msgstr ""
-
-msgid "Text color"
 msgstr ""
 
 msgid "Download"
@@ -2943,157 +2881,25 @@ msgstr ""
 msgid "Loading…"
 msgstr ""
 
-msgid "Document tools"
-msgstr ""
-
-msgid "Text style"
-msgstr ""
-
-msgid "Normal text"
-msgstr ""
-
-msgid "Font family"
-msgstr ""
-
-msgid "Font size"
-msgstr ""
-
 msgid "Default"
-msgstr ""
-
-msgid "Line spacing"
-msgstr ""
-
-msgid "Justify"
-msgstr ""
-
-msgid "Custom color"
-msgstr ""
-
-msgid "Reset color"
 msgstr ""
 
 msgid "Table size"
 msgstr ""
 
-msgid "Add row above"
-msgstr ""
-
-msgid "Add row below"
-msgstr ""
-
-msgid "Add column before"
-msgstr ""
-
-msgid "Add column after"
-msgstr ""
-
-msgid "Toggle header row"
-msgstr ""
-
-msgid "Merge cells"
-msgstr ""
-
-msgid "Split cell"
-msgstr ""
-
-msgid "Delete row"
-msgstr ""
-
-msgid "Delete column"
-msgstr ""
-
-msgid "Delete table"
-msgstr ""
-
-msgid "Upload image"
-msgstr ""
-
-msgid "Image from URL"
-msgstr ""
-
-msgid "Remove image"
-msgstr ""
-
-msgid "Horizontal line"
-msgstr ""
-
-msgid "Clear formatting"
-msgstr ""
-
 msgid "Link address"
-msgstr ""
-
-msgid "Link text"
-msgstr ""
-
-msgid "Enter a valid address."
 msgstr ""
 
 msgid "Insert"
 msgstr ""
 
-msgid "Choose an image smaller than 5 MB."
-msgstr ""
-
-msgid "The image could not be loaded."
-msgstr ""
-
-msgid "Find and replace"
-msgstr ""
-
-msgid "Find in document"
-msgstr ""
-
-msgid "Replace with"
-msgstr ""
-
-msgid "Replace all"
-msgstr ""
-
-msgid "Previous result"
-msgstr ""
-
-msgid "Next result"
-msgstr ""
-
-msgid "Match case"
-msgstr ""
-
-msgid "Whole words"
-msgstr ""
-
-msgid "Close search"
-msgstr ""
-
-msgid "Document outline"
-msgstr ""
-
 msgid "Outline"
-msgstr ""
-
-msgid "Close outline"
 msgstr ""
 
 msgid "Headings"
 msgstr ""
 
-msgid "Untitled heading"
-msgstr ""
-
-msgid "Add headings to navigate your document."
-msgstr ""
-
-msgid "Note content"
-msgstr ""
-
-msgid "Code language"
-msgstr ""
-
 msgid "Print"
-msgstr ""
-
-msgid "Allow pop-ups to print this document."
 msgstr ""
 
 msgid "words"
@@ -3108,16 +2914,157 @@ msgstr ""
 msgid "Read only"
 msgstr ""
 
-msgid "Your changes have not been saved yet."
-msgstr ""
-
 msgid "Keep editing"
 msgstr ""
 
-msgid "Discard changes"
+msgid "Records: {n}"
 msgstr ""
 
-msgid "Records: {n}"
+msgid "Diagram"
+msgstr ""
+
+msgid "Refresh"
+msgstr ""
+
+msgid "Source"
+msgstr ""
+
+msgid "Configure"
+msgstr ""
+
+msgid "New document"
+msgstr ""
+
+msgid "Document type"
+msgstr ""
+
+msgid "Document"
+msgstr ""
+
+msgid "Spreadsheet"
+msgstr ""
+
+msgid "Presentation"
+msgstr ""
+
+msgid "Opening document"
+msgstr ""
+
+msgid "Euro-Office is not configured."
+msgstr ""
+
+msgid "The document could not be opened. Try again or download the file."
+msgstr ""
+
+msgid "Euro-Office did not respond. Try again or download the file."
+msgstr ""
+
+msgid "Close document?"
+msgstr ""
+
+msgid "Changes are still being sent to Euro-Office. Keep this document open until synchronization is complete."
+msgstr ""
+
+msgid "Close anyway"
+msgstr ""
+
+msgid "Euro-Office reported an error. Keep the document open or download a copy from its File menu."
+msgstr ""
+
+msgid "Reload document?"
+msgstr ""
+
+msgid "Reload anyway"
+msgstr ""
+
+msgid "Risk matrix"
+msgstr ""
+
+msgid "days"
+msgstr ""
+
+msgid "Slack"
+msgstr ""
+
+msgid "Current risk"
+msgstr ""
+
+msgid "Residual risk"
+msgstr ""
+
+msgid "Snapshot"
+msgstr ""
+
+msgid "Tasks"
+msgstr ""
+
+msgid "No scheduled tasks"
+msgstr ""
+
+msgid "No dates"
+msgstr ""
+
+msgid "No records for this diagram"
+msgstr ""
+
+msgid "Unscored risks"
+msgstr ""
+
+msgid "Dependency cycle: critical path unavailable"
+msgstr ""
+
+msgid "* Estimated duration: 1 day"
+msgstr ""
+
+msgid "Partial diagram: record limit reached"
+msgstr ""
+
+msgid "Insert ERP diagram"
+msgstr ""
+
+msgid "Update ERP diagram"
+msgstr ""
+
+msgid "Insert diagram"
+msgstr ""
+
+msgid "Update diagram"
+msgstr ""
+
+msgid "Search projects…"
+msgstr ""
+
+msgid "Loading diagram"
+msgstr ""
+
+msgid "Select a project to preview its diagram."
+msgstr ""
+
+msgid "The diagram is embedded as a snapshot, including in PDF exports. Double-click it in Euro-Office to refresh its data or change its settings."
+msgstr ""
+
+msgid "The original diagram source is unavailable or access was denied."
+msgstr ""
+
+msgid "The original project is unavailable or access was denied."
+msgstr ""
+
+msgid "Projects could not be loaded."
+msgstr ""
+
+msgid "The diagram could not be loaded. Check your access and try again."
+msgstr ""
+
+msgid "The diagram could not be inserted. Try again."
+msgstr ""
+
+msgid "No diagram source is available for your account. Enable a module with project diagrams and check your permissions."
+msgstr ""
+
+msgid "The diagram editor could not be loaded. Try again."
+msgstr ""
+
+msgid "Loading diagram editor"
 msgstr ""
 
 # ── Plan exchange with GanttProject: the Gantt toolbar menus and the import

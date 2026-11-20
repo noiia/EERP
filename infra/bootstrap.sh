@@ -25,7 +25,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 hex() { od -An -tx1 -N"$1" /dev/urandom | tr -d ' \n'; }
-SECRETS='POSTGRES_PASSWORD|EERP_MASTER_KEY|EERP_S3_ACCESS_KEY|EERP_S3_SECRET_KEY|GARAGE_RPC_SECRET'
+SECRETS='POSTGRES_PASSWORD|EERP_MASTER_KEY|EERP_S3_ACCESS_KEY|EERP_S3_SECRET_KEY|GARAGE_RPC_SECRET|EERP_EURO_OFFICE_JWT_SECRET'
 
 touch .env
 chmod 600 .env
@@ -42,6 +42,7 @@ ensure EERP_MASTER_KEY "$(hex 32)"
 ensure EERP_S3_ACCESS_KEY "GK$(hex 12)"
 ensure EERP_S3_SECRET_KEY "$(hex 32)"
 ensure GARAGE_RPC_SECRET "$(hex 32)"
+ensure EERP_EURO_OFFICE_JWT_SECRET "$(hex 32)"
 set -a
 # shellcheck disable=SC1091
 . ./.env
@@ -58,6 +59,18 @@ for f in eerp-config.json eerp-config.docker.json; do
   set_json "$f" db_password "$POSTGRES_PASSWORD"
   set_json "$f" s3_access_key "$EERP_S3_ACCESS_KEY"
   set_json "$f" s3_secret_key "$EERP_S3_SECRET_KEY"
+  for key in euro_office_url euro_office_internal_url euro_office_storage_url euro_office_jwt_secret; do
+    rg -q "\"$key\"" "$f" || sed -i "1a\\    \"$key\": \"\"," "$f"
+  done
+  set_json "$f" euro_office_jwt_secret "$EERP_EURO_OFFICE_JWT_SECRET"
+  set_json "$f" euro_office_url "https://localhost/euro-office"
+  if [ "$f" = eerp-config.docker.json ]; then
+    set_json "$f" euro_office_internal_url "http://euro-office"
+    set_json "$f" euro_office_storage_url "http://core-back:8080"
+  else
+    set_json "$f" euro_office_internal_url "http://127.0.0.1:8092"
+    set_json "$f" euro_office_storage_url "http://host.docker.internal:8080"
+  fi
   chmod 600 "$f"
 done
 
@@ -92,6 +105,6 @@ docker compose up -d --build --wait --force-recreate --no-deps core-back
 docker compose rm -sf api-gateway >/dev/null
 # Named services only: --wait fails on the one-shot gateway-certs exiting, but still
 # waits on it as a dependency of api-gateway.
-docker compose up -d --build --wait api-gateway pdf-service
+docker compose up -d --build --wait api-gateway pdf-service euro-office
 
 echo "==> up: https://localhost"

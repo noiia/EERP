@@ -1,0 +1,24 @@
+{
+  "name": "ERP diagrams",
+  "nameLocale": { "fr": "Diagrammes ERP" },
+  "guid": "asc.{864F46F0-1927-4A84-A784-E48EE7B38994}",
+  "version": "1.0.0",
+  "variations": [
+    {
+      "description": "ERP diagrams",
+      "descriptionLocale": { "fr": "Diagrammes ERP" },
+      "url": "index.html",
+      "icons": ["icon.svg", "icon.svg"],
+      "EditorsSupport": ["word", "cell", "slide"],
+      "isViewer": false,
+      "isVisual": true,
+      "isModal": true,
+      "isInsideMode": false,
+      "initDataType": "ole",
+      "initData": "",
+      "isUpdateOleOnResize": false,
+      "buttons": [],
+      "size": [400, 140]
+    }
+  ]
+}

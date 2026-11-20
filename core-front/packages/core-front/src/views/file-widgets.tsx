@@ -15,14 +15,14 @@ import { fieldLabel } from './descriptor'
 import { useEntityRefreshStore } from './entity-refresh-store'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { UnsavedRecordHint, WidgetFrame } from './picture-widgets'
-import { NoteFileLink } from './ocnote-file'
+import { OfficeFileLink } from './office-file'
 import type { WidgetProps } from './widgets'
 
 // boolean/file — the non-image sibling of picture-widgets.tsx's
 // BooleanPictureWidget: same "DB column stores only the flag, the service is
 // authoritative, upload happens before the record PUT commits the flag"
 // contract, over internal/attachments instead of internal/pictures. Renders
-// as a filename + download link, with a reader for OpenCloud notes.
+// as a filename + download link, with Euro-Office for supported documents.
 
 const AttachmentClientContext = createContext<AttachmentClient | null>(null)
 
@@ -34,7 +34,9 @@ export function AttachmentClientProvider({
   client: AttachmentClient
   children: ReactNode
 }) {
-  return <AttachmentClientContext.Provider value={client}>{children}</AttachmentClientContext.Provider>
+  return (
+    <AttachmentClientContext.Provider value={client}>{children}</AttachmentClientContext.Provider>
+  )
 }
 
 export function useAttachmentClient(): AttachmentClient {
@@ -129,10 +131,14 @@ export function BooleanFileWidget(props: WidgetProps) {
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
           {meta ? (
             <>
-              <NoteFileLink name={meta.filename} url={client.url(meta.id)}>
+              <OfficeFileLink
+                name={meta.filename}
+                url={client.url(meta.id)}
+                source={{ kind: 'attachment', id: meta.id }}
+              >
                 <FontAwesomeIcon icon={byPrefixAndName.fas['file']} size="sm" />
                 {meta.filename}
-              </NoteFileLink>
+              </OfficeFileLink>
               <Button component="label" size="small" disabled={!interactive}>
                 {t('Replace')}
                 <Box
@@ -143,7 +149,12 @@ export function BooleanFileWidget(props: WidgetProps) {
                   sx={{ display: 'none' }}
                 />
               </Button>
-              <IconButton aria-label={t('Delete')} onClick={onDelete} disabled={!interactive} size="small">
+              <IconButton
+                aria-label={t('Delete')}
+                onClick={onDelete}
+                disabled={!interactive}
+                size="small"
+              >
                 <FontAwesomeIcon icon={byPrefixAndName.fas['xmark']} size="sm" />
               </IconButton>
             </>

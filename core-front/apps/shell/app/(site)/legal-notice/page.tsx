@@ -7,6 +7,8 @@ import { getLegalNotice } from '@/website/public-api'
 import { LegalNoticeView } from '@/website/LegalNoticeView'
 
 export const metadata: Metadata = { title: 'Legal notice' }
+// This content comes from the running site's settings, never from build time.
+export const dynamic = 'force-dynamic'
 
 // The site's legal notice (Settings → Website → Legal notice); 404 until set.
 export default async function LegalNoticePage() {

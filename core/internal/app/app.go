@@ -31,6 +31,7 @@ import (
 	"core/internal/module"
 	"core/internal/notebook"
 	"core/internal/notify"
+	"core/internal/office"
 	"core/internal/payment"
 	"core/internal/pictures"
 	"core/internal/presence"
@@ -721,6 +722,17 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	}
 	teamsHandler := teams.NewHandler(teams.NewRepository(app.DB), userRepo, presenceHub, notifySvc, teamsObjects)
 	teams.Mount(srv.Echo().Group("/api/v1/teams", jwtMw, teams.ActiveGate(moduleRuntime.IsActive)), teamsHandler, uploadLimit)
+	officeService, err := office.New(configContent, teamsObjects, userRepo)
+	if err != nil {
+		return fmt.Errorf("configure Euro-Office: %w", err)
+	}
+	officeService.Register("team-file", teamsHandler.OfficeFiles(moduleRuntime.IsActive))
+	officeService.Register("team-attachment", teamsHandler.OfficeAttachments(moduleRuntime.IsActive))
+	if teamsObjects != nil {
+		attachmentOffice := attachments.NewHandler(attachments.NewRepository(app.DB), teamsObjects).WithRowScope(app.DB)
+		officeService.Register("attachment", attachmentOffice.OfficeSource(permRepo.Has))
+	}
+	officeService.Mount(srv.Echo().Group("/api/v1/office"), jwtMw)
 
 	// ── Presence ──────────────────────────────────────────────────────────────
 	// Live user status (online/absent/offline/busy/do_not_disturb) over a

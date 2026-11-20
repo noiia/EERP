@@ -642,7 +642,6 @@ msgstr "affichés ce mois-ci"
 msgid "shown"
 msgstr "affichés"
 
-
 msgid "ERP"
 msgstr "ERP"
 
@@ -1186,7 +1185,6 @@ msgstr "Cartes"
 
 msgid "Maximum number of events"
 msgstr "Nombre maximum d'événements"
-
 
 msgid "Event page"
 msgstr "Page d'événement"
@@ -3003,71 +3001,11 @@ msgstr "Aucune tâche ne produit ce livrable"
 msgid "No milestone yet for {name}"
 msgstr "Aucun jalon pour l’instant pour {name}"
 
-msgid "New note"
-msgstr "Nouvelle note"
-
-msgid "Invalid note file."
-msgstr "Fichier de note invalide."
-
-msgid "This note contains formatting that this editor does not support."
-msgstr "Cette note contient une mise en forme que cet éditeur ne prend pas en charge."
-
-msgid "Discard unsaved changes?"
-msgstr "Abandonner les modifications non enregistrées ?"
-
 msgid "Strikethrough"
 msgstr "Barré"
 
-msgid "Task list"
-msgstr "Liste de tâches"
-
-msgid "Blockquote"
-msgstr "Citation"
-
 msgid "Code block"
 msgstr "Bloc de code"
-
-msgid "Subscript"
-msgstr "Indice"
-
-msgid "Superscript"
-msgstr "Exposant"
-
-msgid "This note has changed. Reopen it before saving again."
-msgstr "Cette note a été modifiée. Rouvrez-la avant de l’enregistrer à nouveau."
-
-msgid "Only .ocnote files can be edited as notes."
-msgstr "Seuls les fichiers .ocnote peuvent être modifiés comme notes."
-
-msgid "The note is too large."
-msgstr "La note est trop volumineuse."
-
-msgid "The note must contain a Tiptap JSON document."
-msgstr "La note doit contenir un document JSON Tiptap."
-
-msgid "The note version is required."
-msgstr "La version de la note est requise."
-
-msgid "Align left"
-msgstr "Aligner à gauche"
-
-msgid "Align center"
-msgstr "Centrer"
-
-msgid "Align right"
-msgstr "Aligner à droite"
-
-msgid "Insert table"
-msgstr "Insérer un tableau"
-
-msgid "Insert image"
-msgstr "Insérer une image"
-
-msgid "Image address"
-msgstr "Adresse de l’image"
-
-msgid "Text color"
-msgstr "Couleur du texte"
 
 msgid "Download"
 msgstr "Télécharger"
@@ -3075,158 +3013,26 @@ msgstr "Télécharger"
 msgid "Loading…"
 msgstr "Chargement…"
 
-msgid "Document tools"
-msgstr "Outils du document"
-
-msgid "Text style"
-msgstr "Style de texte"
-
-msgid "Normal text"
-msgstr "Texte normal"
-
-msgid "Font family"
-msgstr "Police"
-
-msgid "Font size"
-msgstr "Taille de police"
-
 msgid "Default"
 msgstr "Par défaut"
-
-msgid "Line spacing"
-msgstr "Interligne"
-
-msgid "Justify"
-msgstr "Justifier"
-
-msgid "Custom color"
-msgstr "Couleur personnalisée"
-
-msgid "Reset color"
-msgstr "Réinitialiser la couleur"
 
 msgid "Table size"
 msgstr "Dimensions du tableau"
 
-msgid "Add row above"
-msgstr "Insérer une ligne au-dessus"
-
-msgid "Add row below"
-msgstr "Insérer une ligne en dessous"
-
-msgid "Add column before"
-msgstr "Insérer une colonne avant"
-
-msgid "Add column after"
-msgstr "Insérer une colonne après"
-
-msgid "Toggle header row"
-msgstr "Activer ou désactiver la ligne d’en-tête"
-
-msgid "Merge cells"
-msgstr "Fusionner les cellules"
-
-msgid "Split cell"
-msgstr "Scinder la cellule"
-
-msgid "Delete row"
-msgstr "Supprimer la ligne"
-
-msgid "Delete column"
-msgstr "Supprimer la colonne"
-
-msgid "Delete table"
-msgstr "Supprimer le tableau"
-
-msgid "Upload image"
-msgstr "Importer une image"
-
-msgid "Image from URL"
-msgstr "Image depuis une URL"
-
-msgid "Remove image"
-msgstr "Supprimer l’image"
-
-msgid "Horizontal line"
-msgstr "Ligne horizontale"
-
-msgid "Clear formatting"
-msgstr "Effacer la mise en forme"
-
 msgid "Link address"
 msgstr "Adresse du lien"
-
-msgid "Link text"
-msgstr "Texte du lien"
-
-msgid "Enter a valid address."
-msgstr "Saisissez une adresse valide."
 
 msgid "Insert"
 msgstr "Insérer"
 
-msgid "Choose an image smaller than 5 MB."
-msgstr "Choisissez une image de moins de 5 Mo."
-
-msgid "The image could not be loaded."
-msgstr "Impossible de charger l’image."
-
-msgid "Find and replace"
-msgstr "Rechercher et remplacer"
-
-msgid "Find in document"
-msgstr "Rechercher dans le document"
-
-msgid "Replace with"
-msgstr "Remplacer par"
-
-msgid "Replace all"
-msgstr "Tout remplacer"
-
-msgid "Previous result"
-msgstr "Résultat précédent"
-
-msgid "Next result"
-msgstr "Résultat suivant"
-
-msgid "Match case"
-msgstr "Respecter la casse"
-
-msgid "Whole words"
-msgstr "Mots entiers"
-
-msgid "Close search"
-msgstr "Fermer la recherche"
-
-msgid "Document outline"
-msgstr "Sommaire du document"
-
 msgid "Outline"
 msgstr "Sommaire"
-
-msgid "Close outline"
-msgstr "Fermer le sommaire"
 
 msgid "Headings"
 msgstr "Titres"
 
-msgid "Untitled heading"
-msgstr "Titre sans nom"
-
-msgid "Add headings to navigate your document."
-msgstr "Ajoutez des titres pour naviguer dans votre document."
-
-msgid "Note content"
-msgstr "Contenu de la note"
-
-msgid "Code language"
-msgstr "Langage du code"
-
 msgid "Print"
 msgstr "Imprimer"
-
-msgid "Allow pop-ups to print this document."
-msgstr "Autorisez les fenêtres contextuelles pour imprimer ce document."
 
 msgid "words"
 msgstr "mots"
@@ -3240,17 +3046,158 @@ msgstr "Édition"
 msgid "Read only"
 msgstr "Lecture seule"
 
-msgid "Your changes have not been saved yet."
-msgstr "Vos modifications n’ont pas encore été enregistrées."
-
 msgid "Keep editing"
 msgstr "Continuer l’édition"
 
-msgid "Discard changes"
-msgstr "Abandonner les modifications"
-
 msgid "Records: {n}"
 msgstr "Enregistrements : {n}"
+
+msgid "Diagram"
+msgstr "Diagramme"
+
+msgid "Refresh"
+msgstr "Actualiser"
+
+msgid "Source"
+msgstr "Source"
+
+msgid "Configure"
+msgstr "Configurer"
+
+msgid "New document"
+msgstr "Nouveau document"
+
+msgid "Document type"
+msgstr "Type de document"
+
+msgid "Document"
+msgstr "Document"
+
+msgid "Spreadsheet"
+msgstr "Tableur"
+
+msgid "Presentation"
+msgstr "Présentation"
+
+msgid "Opening document"
+msgstr "Ouverture du document"
+
+msgid "Euro-Office is not configured."
+msgstr "Euro-Office n’est pas configuré."
+
+msgid "The document could not be opened. Try again or download the file."
+msgstr "Impossible d’ouvrir le document. Réessayez ou téléchargez le fichier."
+
+msgid "Euro-Office did not respond. Try again or download the file."
+msgstr "Euro-Office ne répond pas. Réessayez ou téléchargez le fichier."
+
+msgid "Close document?"
+msgstr "Fermer le document ?"
+
+msgid "Changes are still being sent to Euro-Office. Keep this document open until synchronization is complete."
+msgstr "Les modifications sont encore en cours d’envoi à Euro-Office. Gardez le document ouvert jusqu’à la fin de la synchronisation."
+
+msgid "Close anyway"
+msgstr "Fermer quand même"
+
+msgid "Euro-Office reported an error. Keep the document open or download a copy from its File menu."
+msgstr "Euro-Office a signalé une erreur. Gardez le document ouvert ou téléchargez-en une copie depuis son menu Fichier."
+
+msgid "Reload document?"
+msgstr "Recharger le document ?"
+
+msgid "Reload anyway"
+msgstr "Recharger quand même"
+
+msgid "Risk matrix"
+msgstr "Matrice des risques"
+
+msgid "days"
+msgstr "jours"
+
+msgid "Slack"
+msgstr "Marge"
+
+msgid "Current risk"
+msgstr "Risque actuel"
+
+msgid "Residual risk"
+msgstr "Risque résiduel"
+
+msgid "Snapshot"
+msgstr "Instantané"
+
+msgid "Tasks"
+msgstr "Tâches"
+
+msgid "No scheduled tasks"
+msgstr "Aucune tâche planifiée"
+
+msgid "No dates"
+msgstr "Dates manquantes"
+
+msgid "No records for this diagram"
+msgstr "Aucune donnée pour ce diagramme"
+
+msgid "Unscored risks"
+msgstr "Risques non évalués"
+
+msgid "Dependency cycle: critical path unavailable"
+msgstr "Cycle de dépendances : chemin critique indisponible"
+
+msgid "* Estimated duration: 1 day"
+msgstr "* Durée estimée : 1 jour"
+
+msgid "Partial diagram: record limit reached"
+msgstr "Diagramme partiel : limite de données atteinte"
+
+msgid "Insert ERP diagram"
+msgstr "Insérer un diagramme ERP"
+
+msgid "Update ERP diagram"
+msgstr "Actualiser un diagramme ERP"
+
+msgid "Insert diagram"
+msgstr "Insérer le diagramme"
+
+msgid "Update diagram"
+msgstr "Actualiser le diagramme"
+
+msgid "Search projects…"
+msgstr "Rechercher un projet…"
+
+msgid "Loading diagram"
+msgstr "Chargement du diagramme"
+
+msgid "Select a project to preview its diagram."
+msgstr "Sélectionnez un projet pour prévisualiser son diagramme."
+
+msgid "The diagram is embedded as a snapshot, including in PDF exports. Double-click it in Euro-Office to refresh its data or change its settings."
+msgstr "Le diagramme est intégré sous forme d’instantané, y compris dans les exports PDF. Double-cliquez dessus dans Euro-Office pour actualiser ses données ou modifier ses paramètres."
+
+msgid "The original diagram source is unavailable or access was denied."
+msgstr "La source du diagramme d’origine est indisponible ou son accès a été refusé."
+
+msgid "The original project is unavailable or access was denied."
+msgstr "Le projet d’origine est indisponible ou son accès a été refusé."
+
+msgid "Projects could not be loaded."
+msgstr "Impossible de charger les projets."
+
+msgid "The diagram could not be loaded. Check your access and try again."
+msgstr "Impossible de charger le diagramme. Vérifiez vos droits d’accès et réessayez."
+
+msgid "The diagram could not be inserted. Try again."
+msgstr "Impossible d’insérer le diagramme. Réessayez."
+
+msgid "No diagram source is available for your account. Enable a module with project diagrams and check your permissions."
+msgstr "Aucune source de diagrammes n’est disponible pour votre compte. Activez un module proposant des diagrammes de projet et vérifiez vos droits d’accès."
+
+msgid "The diagram editor could not be loaded. Try again."
+msgstr "Impossible de charger l’éditeur de diagrammes. Réessayez."
+
+msgid "Loading diagram editor"
+msgstr "Chargement de l’éditeur de diagrammes"
 
 # ── Plan exchange with GanttProject: the Gantt toolbar menus and the import
 # wizard (docs/adr/ADR-042-project-plan-exchange.md) ─────────────────────────

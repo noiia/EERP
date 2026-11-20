@@ -2,12 +2,21 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), prefetch: vi.fn() }) }))
-const c = { listFiles: vi.fn(), deleteFile: vi.fn(), updateFile: vi.fn(), saveNote: vi.fn(), uploadFile: vi.fn(), createFolder: vi.fn(), updateFolder: vi.fn(), deleteFolder: vi.fn() }
+const c = {
+  listFiles: vi.fn(),
+  deleteFile: vi.fn(),
+  updateFile: vi.fn(),
+  createDocument: vi.fn(),
+  uploadFile: vi.fn(),
+  createFolder: vi.fn(),
+  updateFolder: vi.fn(),
+  deleteFolder: vi.fn(),
+}
 vi.mock('./client', () => ({
   listFiles: (...a: unknown[]) => c.listFiles(...a),
   deleteFile: (...a: unknown[]) => c.deleteFile(...a),
   updateFile: (...a: unknown[]) => c.updateFile(...a),
-  saveNote: (...a: unknown[]) => c.saveNote(...a),
+  createDocument: (...a: unknown[]) => c.createDocument(...a),
   uploadFile: (...a: unknown[]) => c.uploadFile(...a),
   createFolder: (...a: unknown[]) => c.createFolder(...a),
   updateFolder: (...a: unknown[]) => c.updateFolder(...a),
@@ -31,8 +40,28 @@ const listing = {
   path: [{ id: 'f1', name: 'Docs' }],
   folders: [{ id: 'f2', name: 'Specs', parent_id: 'f1', created_by: 'me' }],
   files: [
-    { id: 'a', name: 'mine.pdf', folder_id: 'f1', mime: 'application/pdf', size: 2048, uploaded_by: 'me', uploaded_by_name: 'Me', created_at: '', shared_with: 0 },
-    { id: 'b', name: 'theirs.pdf', folder_id: 'f1', mime: 'application/pdf', size: 10, uploaded_by: 'other', uploaded_by_name: 'Other', created_at: '', shared_with: 0 },
+    {
+      id: 'a',
+      name: 'mine.pdf',
+      folder_id: 'f1',
+      mime: 'application/pdf',
+      size: 2048,
+      uploaded_by: 'me',
+      uploaded_by_name: 'Me',
+      created_at: '',
+      shared_with: 0,
+    },
+    {
+      id: 'b',
+      name: 'theirs.pdf',
+      folder_id: 'f1',
+      mime: 'application/pdf',
+      size: 10,
+      uploaded_by: 'other',
+      uploaded_by_name: 'Other',
+      created_at: '',
+      shared_with: 0,
+    },
   ],
 }
 
@@ -45,15 +74,28 @@ describe('FilesPane', () => {
 
   it('shows the breadcrumb, folder links and download links', async () => {
     render(<FilesPane teamId="t1" folderId="f1" role="owner" />)
-    expect(await screen.findByRole('link', { name: 'Docs' })).toHaveAttribute('href', expect.stringContaining('/teams/t1/files?folder=f1'))
-    expect(screen.getByRole('link', { name: 'Specs' })).toHaveAttribute('href', expect.stringContaining('/teams/t1/files?folder=f2'))
-    expect(screen.getByRole('link', { name: 'mine.pdf' })).toHaveAttribute('href', '/api/teams/files/a/download')
+    expect(await screen.findByRole('link', { name: 'Docs' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('/teams/t1/files?folder=f1'),
+    )
+    expect(screen.getByRole('link', { name: 'Specs' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('/teams/t1/files?folder=f2'),
+    )
+    expect(screen.getByRole('link', { name: 'mine.pdf' })).toHaveAttribute(
+      'href',
+      '/api/teams/files/a/download',
+    )
     expect(c.listFiles).toHaveBeenCalledWith('t1', 'f1')
   })
 
   it('a double-clicked Save creates one folder, and a taken name shows in the dialog', async () => {
     let resolve!: () => void
-    c.createFolder.mockReturnValueOnce(new Promise<void>((r) => { resolve = r }))
+    c.createFolder.mockReturnValueOnce(
+      new Promise<void>((r) => {
+        resolve = r
+      }),
+    )
     render(<FilesPane teamId="t1" folderId="f1" role="member" />)
     fireEvent.click(await screen.findByRole('button', { name: 'New folder' }))
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Specs' } })
@@ -63,15 +105,29 @@ describe('FilesPane', () => {
     expect(c.createFolder).toHaveBeenCalledTimes(1)
     resolve()
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    c.createFolder.mockRejectedValueOnce(new Error('A folder with this name already exists in this folder.'))
+    c.createFolder.mockRejectedValueOnce(
+      new Error('A folder with this name already exists in this folder.'),
+    )
     fireEvent.click(screen.getByRole('button', { name: 'New folder' }))
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Specs' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    expect(await within(screen.getByRole('dialog')).findByText('A folder with this name already exists in this folder.')).toBeInTheDocument()
+    expect(
+      await within(screen.getByRole('dialog')).findByText(
+        'A folder with this name already exists in this folder.',
+      ),
+    ).toBeInTheDocument()
   })
 
   it('starts the breadcrumb at rootFolderId, without All files', async () => {
-    c.listFiles.mockResolvedValue({ ...listing, folder: { id: 'f2', name: 'Specs', parent_id: 'f1' }, path: [{ id: 'f1', name: 'Docs' }, { id: 'f2', name: 'Specs' }], folders: [{ id: 'f3', name: 'Drafts', parent_id: 'f2', created_by: 'me' }] })
+    c.listFiles.mockResolvedValue({
+      ...listing,
+      folder: { id: 'f2', name: 'Specs', parent_id: 'f1' },
+      path: [
+        { id: 'f1', name: 'Docs' },
+        { id: 'f2', name: 'Specs' },
+      ],
+      folders: [{ id: 'f3', name: 'Drafts', parent_id: 'f2', created_by: 'me' }],
+    })
     render(<FilesPane teamId="t1" rootFolderId="f2" role="owner" compact />)
     const crumbs = within(await screen.findByRole('navigation', { name: 'Path' }))
     await crumbs.findByText('Specs')
@@ -129,7 +185,10 @@ describe('FilesPane', () => {
   })
 
   it('moves a folder, hides it from the picker and shows the server refusal', async () => {
-    c.listFiles.mockResolvedValue({ ...listing, folders: [...listing.folders, { id: 'f3', name: 'Other', parent_id: 'f1', created_by: 'me' }] })
+    c.listFiles.mockResolvedValue({
+      ...listing,
+      folders: [...listing.folders, { id: 'f3', name: 'Other', parent_id: 'f1', created_by: 'me' }],
+    })
     c.updateFolder.mockRejectedValue(new Error('cannot move a folder into itself'))
     render(<FilesPane teamId="t1" role="owner" />)
     const row = (await screen.findByText('Specs')).closest('tr') as HTMLElement
@@ -139,7 +198,9 @@ describe('FilesPane', () => {
     expect(within(dialog).queryByText('Specs')).toBeNull()
     fireEvent.click(within(dialog).getByText('Other'))
     fireEvent.click(within(dialog).getByRole('button', { name: 'Move here' }))
-    await waitFor(() => expect(c.updateFolder).toHaveBeenCalledWith('t1', 'f2', { parent_id: 'f3' }))
+    await waitFor(() =>
+      expect(c.updateFolder).toHaveBeenCalledWith('t1', 'f2', { parent_id: 'f3' }),
+    )
     expect(await within(dialog).findByText('cannot move a folder into itself')).toBeInTheDocument()
   })
 
@@ -152,39 +213,40 @@ describe('FilesPane', () => {
     expect(c.uploadFile).toHaveBeenCalledWith('t1', files[0], 'f1')
   })
 
-  it('creates a note in the currently browsed folder', async () => {
+  it('creates an Office document in the currently browsed folder', async () => {
+    c.createDocument.mockResolvedValue({ id: 'doc1', name: 'Meeting.docx' })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 503 })))
     render(<FilesPane teamId="t1" folderId="f1" role="member" />)
-    await screen.findByText('mine.pdf')
-    fireEvent.click(screen.getByRole('button', { name: 'New note' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'New document' }))
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Meeting' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Meeting.ocnote' })
-    const save = within(dialog).getByRole('button', { name: 'Save' })
-    await waitFor(() => expect(save).toBeEnabled())
-    fireEvent.click(save)
-    await waitFor(() => expect(c.uploadFile).toHaveBeenCalledWith('t1', expect.any(File), 'f1'))
-    const file = c.uploadFile.mock.calls[0]![1] as File
-    expect(file.name).toBe('Meeting.ocnote')
-    expect(file.type).toBe('application/json')
+    expect(await screen.findByRole('dialog', { name: 'Meeting.docx' })).toBeInTheDocument()
+    expect(c.createDocument).toHaveBeenCalledWith('t1', 'Meeting', 'docx', 'f1')
+    expect(c.uploadFile).not.toHaveBeenCalled()
   })
 
-  it.each(['owner', 'member', 'guest'] as const)('opens notes with the rights of a %s', async (role) => {
-    c.listFiles.mockResolvedValue({ ...listing, files: [{ ...listing.files[0], name: 'Notes.OCNOTE', mime: 'application/json' }] })
-    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => new Response('{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Note body"}]}]}', { headers: { etag: '"v1"' } })))
-    render(<FilesPane teamId="t1" role={role} />)
-    fireEvent.click(await screen.findByRole('link', { name: 'Notes.OCNOTE' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Notes.OCNOTE' })
-    await within(dialog).findByText('Note body')
-    if (role === 'guest') {
-      expect(within(dialog).queryByRole('button', { name: 'Save' })).toBeNull()
-      expect(screen.queryByRole('button', { name: 'New note' })).toBeNull()
-    } else {
-      fireEvent.click(await within(dialog).findByRole('button', { name: 'Text style' }))
-      fireEvent.click(await screen.findByRole('menuitem', { name: 'Heading 2' }))
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
-      await waitFor(() => expect(c.saveNote).toHaveBeenCalledWith('t1', 'a', expect.stringContaining('heading'), '"v1"'))
-    }
-  })
+  it.each(['owner', 'member', 'guest'] as const)(
+    'opens Office files for a %s through the authorized endpoint',
+    async (role) => {
+      c.listFiles.mockResolvedValue({
+        ...listing,
+        files: [{ ...listing.files[0], name: 'Plan.docx' }],
+      })
+      const fetch = vi.fn().mockResolvedValue(new Response('{}', { status: 503 }))
+      vi.stubGlobal('fetch', fetch)
+      render(<FilesPane teamId="t1" role={role} />)
+      fireEvent.click(await screen.findByRole('link', { name: 'Plan.docx' }))
+      expect(await screen.findByRole('dialog', { name: 'Plan.docx' })).toBeInTheDocument()
+      await waitFor(() =>
+        expect(fetch).toHaveBeenCalledWith(
+          expect.stringContaining('/api/office/team-file/a/session'),
+          expect.anything(),
+        ),
+      )
+      if (role === 'guest')
+        expect(screen.queryByRole('button', { name: 'New document' })).toBeNull()
+    },
+  )
 
   it('says so when file storage is not configured', async () => {
     c.listFiles.mockRejectedValue(Object.assign(new Error(''), { status: 404 }))
@@ -193,11 +255,16 @@ describe('FilesPane', () => {
   })
 
   it('says a stale folder no longer exists, with a link to the root', async () => {
-    c.listFiles.mockRejectedValue(Object.assign(new Error('No such folder.'), { status: 404, code: 'NOT_FOUND' }))
+    c.listFiles.mockRejectedValue(
+      Object.assign(new Error('No such folder.'), { status: 404, code: 'NOT_FOUND' }),
+    )
     render(<FilesPane teamId="t1" folderId="gone" role="owner" />)
     expect(await screen.findByText('This folder no longer exists.')).toBeInTheDocument()
     expect(screen.queryByText(/not configured/i)).toBeNull()
-    expect(screen.getByRole('link', { name: 'All files' })).toHaveAttribute('href', expect.stringMatching(/\/teams\/t1\/files$/))
+    expect(screen.getByRole('link', { name: 'All files' })).toHaveAttribute(
+      'href',
+      expect.stringMatching(/\/teams\/t1\/files$/),
+    )
   })
 
   it('signals folder changes but not file ones', async () => {
@@ -206,7 +273,9 @@ describe('FilesPane', () => {
     render(<FilesPane teamId="t1" role="owner" onFoldersChanged={onFoldersChanged} />)
     const row = (await screen.findByText('theirs.pdf')).closest('tr') as HTMLElement
     fireEvent.click(within(row).getByRole('button', { name: 'Delete' }))
-    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete' }))
+    fireEvent.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete' }),
+    )
     await waitFor(() => expect(c.deleteFile).toHaveBeenCalled())
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(onFoldersChanged).not.toHaveBeenCalled()

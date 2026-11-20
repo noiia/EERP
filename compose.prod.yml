@@ -26,6 +26,8 @@
 #
 # Usage: docker compose -f compose.yml -f compose.prod.yml up -d
 services:
+  euro-office:
+    ports: !reset []
   db:
     # The image is postgis/postgis:18-3.7 (inherited from compose.yml): Postgres 18
     # plus PostGIS, same data directory format, so the existing volume is reused —

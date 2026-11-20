@@ -913,7 +913,7 @@ func (r *Repository) UpdateFile(ctx context.Context, f File) (File, error) {
 		if taken[strings.ToLower(f.Name)] {
 			return ErrNameTaken
 		}
-		// Rename/move must not write a stale object key over a concurrent note save.
+		// Rename/move must not write a stale object key over a concurrent document save.
 		result, err := tx.Exec(ctx, `UPDATE team_file SET name=$3, folder_id=$4, updated_at=now()
 			WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL`, f.TenantID, f.ID, f.Name, f.FolderID)
 		if err != nil {

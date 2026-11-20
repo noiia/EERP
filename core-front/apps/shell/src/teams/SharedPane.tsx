@@ -7,7 +7,7 @@ import TableCell from '@mui/material/TableCell'
 import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import Typography from '@mui/material/Typography'
-import { NoteFileLink, T } from '@eerp/core-front'
+import { OfficeFileLink, T } from '@eerp/core-front'
 import { listShared, type SharedFile } from './client'
 import { formatSize } from './FilesPane'
 
@@ -34,7 +34,7 @@ export function SharedPane() {
           <TableBody>
             {files.map((f) => (
               <TableRow key={f.id}>
-                <TableCell><NoteFileLink name={f.name} url={`/api/teams/files/${f.id}/download`} /></TableCell>
+                <TableCell><OfficeFileLink name={f.name} url={`/api/teams/files/${f.id}/download`} source={{ kind: 'team-file', id: f.id }} /></TableCell>
                 <TableCell>{f.team_name}</TableCell>
                 <TableCell>{f.shared_by_name}</TableCell>
                 <TableCell>{formatSize(f.size)}</TableCell>

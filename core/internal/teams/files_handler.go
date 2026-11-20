@@ -530,12 +530,16 @@ func (h *Handler) DeleteFile(c *echo.Context) error {
 // non-member, or a member its folder is hidden from, gets a 404 unless shared is
 // set and the file is shared with them (role is then ""). ok false means the response is written.
 func (h *Handler) fileRole(c *echo.Context, shared bool) (f File, role string, ok bool, err error) {
-	ctx := c.Request().Context()
-	id := auth.MustIdentity(ctx)
 	fid, err := echo.PathParam[uuid.UUID](c, "file")
 	if err != nil {
 		return File{}, "", false, notFound(c, "file")
 	}
+	return h.fileRoleByID(c, shared, fid)
+}
+
+func (h *Handler) fileRoleByID(c *echo.Context, shared bool, fid uuid.UUID) (f File, role string, ok bool, err error) {
+	ctx := c.Request().Context()
+	id := auth.MustIdentity(ctx)
 	if f, err = h.repo.FindFile(ctx, id.TenantID, fid); errors.Is(err, orm.ErrNotFound) {
 		return File{}, "", false, notFound(c, "file")
 	} else if err != nil {
