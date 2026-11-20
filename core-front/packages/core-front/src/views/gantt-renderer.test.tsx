@@ -6,6 +6,10 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock }),
 }))
 
+const exportElementPng = vi.hoisted(() => vi.fn<(el: HTMLElement, name: string, bg?: string) => Promise<void>>(async () => {}))
+const exportElementPdf = vi.hoisted(() => vi.fn<(el: HTMLElement, meta: unknown, name: string) => Promise<void>>(async () => {}))
+vi.mock('./diagram/export', () => ({ exportElementPng, exportElementPdf }))
+
 import { createTheme, ThemeProvider } from '@mui/material/styles'
 import { GanttRenderer } from './gantt-renderer'
 import { useUndoToastStore } from './undo-toast'
@@ -111,6 +115,19 @@ describe('GanttRenderer', () => {
       cleanup()
       renderGantt([grandchild, child, parent], tree)
       expect(screen.queryByTestId('gantt-row-c')).toBeNull()
+    })
+
+    it('exports the timeline as drawn, folded rows left out, as PNG or PDF', async () => {
+      renderGantt([grandchild, child, parent], tree)
+      fireEvent.click(screen.getByRole('button', { name: 'Collapse Child' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Export PNG' }))
+      await waitFor(() => expect(exportElementPng).toHaveBeenCalledTimes(1))
+      const [el, name] = exportElementPng.mock.calls[0]
+      expect(within(el).getByText('Child')).toBeInTheDocument()
+      expect(within(el).queryByText('Grandchild')).toBeNull()
+      expect(name).toBe('Gantt 2026-03-02 – 2026-05-24')
+      fireEvent.click(screen.getByRole('button', { name: 'Export PDF' }))
+      await waitFor(() => expect(exportElementPdf).toHaveBeenCalledWith(el, expect.objectContaining({ title: name }), name))
     })
 
     it('shows no chevron or toggle without a parent field', () => {

@@ -461,6 +461,23 @@ export function GanttRenderer<T extends HasId>({
   // The phone toolbar's More menu: the pinned-scope controls (Critical path, Baseline)
   // don't fit the 390px row, so they sit in it (the diagram canvas' pattern).
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
+  // PNG/PDF of the timeline as drawn: folded rows (collapsed) are not in it.
+  const [exportError, setExportError] = useState<SerializedError | null>(null)
+  const exportImage = async (kind: 'png' | 'pdf') => {
+    const el = gridRef.current
+    if (!el) return
+    setExportError(null)
+    try {
+      // html-to-image and jspdf load on the first export, not with the Gantt.
+      const { exportElementPdf, exportElementPng } = await import('./diagram/export')
+      const title = `${t('Gantt')} ${fromIso} – ${isoDate(addDays(range.end, -1))}`
+      const background = theme.palette.background.paper
+      if (kind === 'png') await exportElementPng(el, title, background)
+      else await exportElementPdf(el, { title, date: new Date(), legend: [{ color: theme.palette.error.main, label: t('Today') }], background }, title)
+    } catch (e: unknown) {
+      setExportError(serializeError(toApiError(e)))
+    }
+  }
 
   const trackRef = useRef<HTMLDivElement>(null)
   const gridRef = useRef<HTMLDivElement>(null)
@@ -996,6 +1013,7 @@ export function GanttRenderer<T extends HasId>({
     <Box>
       <ErrorAlert error={error} />
       <ErrorAlert error={loadError} />
+      <ErrorAlert error={exportError} />
       {quick.dialog}
       <Stack direction={phone ? 'column' : 'row'} spacing={2} sx={{ alignItems: phone ? 'stretch' : 'flex-start' }}>
         <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -1057,6 +1075,12 @@ export function GanttRenderer<T extends HasId>({
                 {collapsed.length ? t('Expand all') : t('Collapse all')}
               </Button>
             ) : null}
+            {!phone ? (
+              <>
+                <Button size="small" onClick={() => void exportImage('png')}>{t('Export PNG')}</Button>
+                <Button size="small" onClick={() => void exportImage('pdf')}>{t('Export PDF')}</Button>
+              </>
+            ) : null}
             {!phone && exchangePin ? (
               <Button size="small" onClick={(e) => setExportAnchor(e.currentTarget)}>
                 {t('Export')}
@@ -1067,7 +1091,7 @@ export function GanttRenderer<T extends HasId>({
                 {t('Import')}
               </Button>
             ) : null}
-            {phone && (schedulePin || baselinePin || exchangePin) ? (
+            {phone ? (
               <IconButton aria-label={t('More')} sx={{ minWidth: 40, minHeight: 40 }} onClick={(e) => setMoreAnchor(e.currentTarget)}>
                 <FontAwesomeIcon icon={byPrefixAndName.fas['ellipsis-vertical']} />
               </IconButton>
@@ -1369,8 +1393,10 @@ export function GanttRenderer<T extends HasId>({
         </Collapse>
       </Stack>
 
-      {phone && (schedulePin || baselinePin || exchangePin) ? (
+      {phone ? (
         <Menu open={!!moreAnchor} anchorEl={moreAnchor} onClose={() => setMoreAnchor(null)}>
+          <MenuItem onClick={() => { setMoreAnchor(null); void exportImage('png') }}>{t('Export PNG')}</MenuItem>
+          <MenuItem onClick={() => { setMoreAnchor(null); void exportImage('pdf') }}>{t('Export PDF')}</MenuItem>
           {schedulePin ? (
             <MenuItem selected={criticalOn} onClick={() => { setMoreAnchor(null); onCriticalToggle() }}>
               {t('Critical path')}
