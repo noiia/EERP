@@ -1286,6 +1286,8 @@ function TreeRenderer<T extends HasId>({
         schedule={effective.ganttSchedule ?? undefined}
         baseline={effective.ganttBaseline ?? undefined}
         milestones={effective.ganttMilestones ?? undefined}
+        // ADR-042: the pinned project's plan exchange (Export / Import menus).
+        exchange={effective.ganttExchange ?? undefined}
         onRecordsChange={setLiveRecords}
         serverOptions={serverPaged ? (baseOptions ?? {}) : undefined}
       />

@@ -1,0 +1,304 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+
+import { ImportWizard } from './import-wizard'
+import { DEFAULT_NUMBER_FORMAT, useFormatStore } from '../format-store'
+import type { ExchangeChange } from './selection'
+import type { ExchangeFormat, GanttExchangeConfig } from '../../api/view-fields'
+
+const format: ExchangeFormat = { key: 'gan', label: 'GanttProject (.gan)', accept: '.gan' }
+const config: GanttExchangeConfig = {
+  scopeField: 'project_id',
+  scopeEntity: 'project',
+  formats: [format, { key: 'mppdi', label: 'MS Project (MSPDI)', accept: '.xml' }],
+  canImport: 'test.exchange',
+}
+
+const PREVIEW = '/api/exchange/project/p1/gan/preview'
+const APPLY = '/api/exchange/project/p1/gan/apply'
+
+/** The short date the review list prints (the Gantt bar tooltips' own format). */
+const day = (y: number, m: number, d: number) => new Date(y, m - 1, d).toLocaleDateString()
+
+const row = (over: Partial<ExchangeChange> & { key: string; kind: string; task: string }): ExchangeChange => ({
+  wbs: undefined,
+  field: undefined,
+  before: null,
+  after: null,
+  default_selected: true,
+  requires: undefined,
+  was_unscheduled: undefined,
+  dependents: undefined,
+  ...over,
+})
+
+const datesRow = row({
+  key: 'task:t1:dates',
+  kind: 'update',
+  task: 'Design review',
+  wbs: '2.1',
+  field: 'dates',
+  before: { start: '2026-03-12', end: '2026-03-12' },
+  after: { start: '2026-03-19', end: '2026-03-19' },
+})
+const hoursRow = row({
+  key: 'task:t1:planned_hours',
+  kind: 'update',
+  task: 'Design review',
+  wbs: '2.1',
+  field: 'planned_hours',
+  before: 16,
+  after: 24,
+})
+const createRow = row({
+  key: 'new:7',
+  kind: 'create',
+  task: 'Supplier audit',
+  wbs: '2.3',
+  after: { name: 'Supplier audit', parent: 'Design', start: '2026-03-05', end: '2026-03-07', planned_hours: 8 },
+})
+const depRow = row({
+  key: 'dep:t1:new:7',
+  kind: 'dependency',
+  task: 'Supplier audit',
+  wbs: '2.3',
+  after: { pred: 't1', pred_name: 'Design review', succ: 'new:7', succ_name: 'Supplier audit' },
+  requires: ['new:7'],
+})
+const deleteRow = row({
+  key: 'task:t9:delete',
+  kind: 'delete',
+  task: 'Legacy migration',
+  wbs: '3.4',
+  default_selected: false,
+  dependents: { subtasks: 3, timesheets: 2, risk_links: 0 },
+})
+
+const CHANGES = [datesRow, hoursRow, createRow, depRow, deleteRow]
+const WARNINGS = [
+  { code: 'DEP_TYPE', message: 'dependency types and lags are not carried' },
+  { code: 'UNKNOWN_ID', message: 'a task id is unknown here and arrives as a new task' },
+]
+
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+const previewOK = (changes = CHANGES, warnings = WARNINGS, base = 'hash1') => json({ base, changes, warnings })
+
+const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>()
+
+function renderWizard(onApplied = vi.fn()) {
+  render(
+    <ImportWizard open onClose={vi.fn()} onApplied={onApplied} config={config} scopeId="p1" format={format} />,
+  )
+  return onApplied
+}
+
+function pickFile() {
+  const input = screen.getByLabelText('Plan file')
+  fireEvent.change(input, { target: { files: [new File(['<project/>'], 'plan.gan', { type: 'application/xml' })] } })
+}
+
+const checkbox = (key: string) => within(screen.getByTestId(`exchange-row-${key}`)).getByRole('checkbox')
+const rowEl = (key: string) => screen.getByTestId(`exchange-row-${key}`)
+
+describe('ImportWizard', () => {
+  beforeEach(() => {
+    useFormatStore.setState({ ...DEFAULT_NUMBER_FORMAT, dateFormat: null })
+    fetchMock.mockReset()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+  })
+
+  it('step 1 offers the file picker with the format accept and label', () => {
+    renderWizard()
+    expect(screen.getByText('Import GanttProject (.gan)')).toBeInTheDocument()
+    expect(screen.getByLabelText('Plan file')).toHaveAttribute('accept', '.gan')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('the preview renders the rows grouped, and the removals start unticked', async () => {
+    fetchMock.mockResolvedValue(previewOK())
+    renderWizard()
+    pickFile()
+    // Grouped by task/WBS, the added task marked as such.
+    expect(await screen.findByText('2.1 Design review')).toBeInTheDocument()
+    expect(screen.getByText('2.3 Supplier audit (new)')).toBeInTheDocument()
+    expect(screen.getByText('3.4 Legacy migration')).toBeInTheDocument()
+    expect(within(screen.getByTestId('exchange-group-Legacy migration')).getAllByRole('checkbox')).toHaveLength(1)
+    // The four additive rows ticked, the removal not.
+    for (const key of [datesRow.key, hoursRow.key, createRow.key, depRow.key]) {
+      expect(checkbox(key)).toBeChecked()
+    }
+    expect(checkbox(deleteRow.key)).not.toBeChecked()
+    expect(screen.getByText('4 of 5 selected')).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledWith(PREVIEW, expect.objectContaining({ method: 'POST' }))
+  })
+
+  it('a row reads its kind, field, and before → after in the workspace formats', async () => {
+    fetchMock.mockResolvedValue(previewOK())
+    renderWizard()
+    pickFile()
+    await screen.findByText('2.1 Design review')
+    expect(within(rowEl(datesRow.key)).getByText('Update')).toBeInTheDocument()
+    expect(within(rowEl(datesRow.key)).getByText(`${day(2026, 3, 12)} – ${day(2026, 3, 12)}`)).toBeInTheDocument()
+    expect(within(rowEl(datesRow.key)).getByText(`${day(2026, 3, 19)} – ${day(2026, 3, 19)}`)).toBeInTheDocument()
+    expect(within(rowEl(hoursRow.key)).getByText('16')).toBeInTheDocument()
+    expect(within(rowEl(hoursRow.key)).getByText('24')).toBeInTheDocument()
+    expect(within(rowEl(createRow.key)).getByText('Create')).toBeInTheDocument()
+    expect(within(rowEl(createRow.key)).getByText(/Supplier audit/)).toBeInTheDocument()
+    expect(within(rowEl(createRow.key)).getByText(/8 h/)).toBeInTheDocument()
+    expect(within(rowEl(depRow.key)).getByText('Depends on')).toBeInTheDocument()
+    expect(within(rowEl(depRow.key)).getByText('Design review → Supplier audit')).toBeInTheDocument()
+    // A removal names what goes with it, and leaves the zero count out.
+    expect(within(rowEl(deleteRow.key)).getByText('has 2 timesheets, 3 subtasks')).toBeInTheDocument()
+    expect(within(rowEl(deleteRow.key)).queryByText(/risk link/)).not.toBeInTheDocument()
+  })
+
+  it('says when a dates row is really the first schedule a task ever had', async () => {
+    fetchMock.mockResolvedValue(
+      previewOK([row({ ...datesRow, was_unscheduled: true, before: { start: '2026-03-02', end: '2026-03-02' } })]),
+    )
+    renderWizard()
+    pickFile()
+    await screen.findByText('2.1 Design review')
+    expect(within(rowEl(datesRow.key)).getByText('(was unscheduled)')).toBeInTheDocument()
+  })
+
+  it('the warnings sit collapsed behind their count', async () => {
+    fetchMock.mockResolvedValue(previewOK())
+    renderWizard()
+    pickFile()
+    await screen.findByText('2.1 Design review')
+    expect(screen.queryByText(/dependency types and lags/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '2 warnings' }))
+    expect(await screen.findByText(/dependency types and lags/)).toBeInTheDocument()
+    expect(screen.getByText(/arrives as a new task/)).toBeInTheDocument()
+  })
+
+  it('an empty preview says so and cannot be applied', async () => {
+    fetchMock.mockResolvedValue(previewOK([], []))
+    renderWizard()
+    pickFile()
+    expect(await screen.findByText('No changes')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Apply 0 changes' })).toBeDisabled()
+  })
+
+  it('Select all never ticks a removal; Select all removals ticks them', async () => {
+    fetchMock.mockResolvedValue(
+      previewOK([...CHANGES, row({ key: 'task:t8:delete', kind: 'delete', task: 'Old report', wbs: '3.5', default_selected: false })]),
+    )
+    renderWizard()
+    pickFile()
+    await screen.findByText('2.1 Design review')
+    // Untick one additive row: the header checkbox is no longer all-on.
+    fireEvent.click(checkbox(datesRow.key))
+    expect(screen.getByText('3 of 6 selected')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select all' }))
+    expect(checkbox(datesRow.key)).toBeChecked()
+    expect(checkbox(deleteRow.key)).not.toBeChecked()
+    expect(checkbox('task:t8:delete')).not.toBeChecked()
+    expect(screen.getByText('4 of 6 selected')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select all removals' }))
+    expect(checkbox(deleteRow.key)).toBeChecked()
+    expect(checkbox('task:t8:delete')).toBeChecked()
+    expect(screen.getByText('6 of 6 selected')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select all removals' }))
+    expect(checkbox(deleteRow.key)).not.toBeChecked()
+    expect(checkbox(datesRow.key)).toBeChecked()
+  })
+
+  it('ticking a dependency on a new task ticks its create', async () => {
+    fetchMock.mockResolvedValue(previewOK([createRow, depRow], []))
+    renderWizard()
+    pickFile()
+    await screen.findByText('2.3 Supplier audit (new)')
+    fireEvent.click(checkbox(createRow.key)) // untick the create: the dep that needs it goes too
+    expect(checkbox(depRow.key)).not.toBeChecked()
+    expect(screen.getByText('0 of 2 selected')).toBeInTheDocument()
+    fireEvent.click(checkbox(depRow.key))
+    expect(checkbox(createRow.key)).toBeChecked()
+    expect(screen.getByText('2 of 2 selected')).toBeInTheDocument()
+  })
+
+  it('Apply posts the file, the base and exactly the ticked keys', async () => {
+    fetchMock.mockResolvedValue(json({ applied: 4 }))
+    fetchMock.mockResolvedValueOnce(previewOK())
+    const onApplied = renderWizard()
+    pickFile()
+    await screen.findByText('2.1 Design review')
+    fireEvent.click(checkbox(hoursRow.key)) // untick one
+    fireEvent.click(screen.getByRole('button', { name: 'Apply 3 changes' }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(APPLY, expect.objectContaining({ method: 'POST' })))
+    const form = fetchMock.mock.calls.at(-1)![1]!.body as FormData
+    expect(form.get('base')).toBe('hash1')
+    expect((form.get('file') as File).name).toBe('plan.gan')
+    expect(form.getAll('keys')).toEqual([datesRow.key, createRow.key, depRow.key])
+    expect(await screen.findByText('4 changes applied')).toBeInTheDocument()
+    expect(onApplied).toHaveBeenCalled()
+  })
+
+  it('a 413 says the file is too large', async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 413 }))
+    renderWizard()
+    pickFile()
+    expect(await screen.findByText('The file is too large.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Apply 4 changes' })).toBeNull()
+  })
+
+  it('any other preview refusal shows the error', async () => {
+    fetchMock.mockResolvedValue(json({ error: { code: 'INVALID_FILE', message: 'the file is not a plan EERP can read' } }, 422))
+    renderWizard()
+    pickFile()
+    expect(await screen.findByText('INVALID_FILE')).toBeInTheDocument()
+    expect(screen.queryByText('2.1 Design review')).toBeNull()
+  })
+
+  it('a 409 offers Preview again, which re-posts the preview with the same file', async () => {
+    fetchMock
+      .mockResolvedValueOnce(previewOK())
+      .mockResolvedValueOnce(json({ error: { code: 'PROJECT_CHANGED', message: 'the project changed since the preview' } }, 409))
+      .mockResolvedValueOnce(previewOK([{ ...datesRow }], []))
+    renderWizard()
+    pickFile()
+    await screen.findByText('2.1 Design review')
+    fireEvent.click(screen.getByRole('button', { name: 'Apply 4 changes' }))
+    expect(await screen.findByText('The project changed since the preview')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Preview again' }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
+    expect(fetchMock.mock.calls[2]![0]).toBe(PREVIEW)
+    const form = fetchMock.mock.calls[2]![1]!.body as FormData
+    expect((form.get('file') as File).name).toBe('plan.gan')
+    // Back in review against the fresh base, with the list rebuilt.
+    expect(await screen.findByText('1 of 1 selected')).toBeInTheDocument()
+  })
+
+  it('a 422 returns to the review with the message and the named rows highlighted', async () => {
+    fetchMock
+      .mockResolvedValueOnce(previewOK())
+      .mockResolvedValueOnce(
+        json({ code: 'VALIDATION_ERROR', error: { code: 'VALIDATION_ERROR', message: 'a parent delete needs its child deletes', fields: [deleteRow.key, depRow.key] } }, 422),
+      )
+    renderWizard()
+    pickFile()
+    await screen.findByText('2.1 Design review')
+    fireEvent.click(checkbox(deleteRow.key))
+    fireEvent.click(screen.getByRole('button', { name: 'Apply 5 changes' }))
+    expect(await screen.findByText('a parent delete needs its child deletes')).toBeInTheDocument()
+    expect(rowEl(deleteRow.key)).toHaveAttribute('data-highlighted', 'true')
+    expect(rowEl(depRow.key)).toHaveAttribute('data-highlighted', 'true')
+    expect(rowEl(datesRow.key)).not.toHaveAttribute('data-highlighted')
+    // Still on the review, the ticks kept: the manager fixes them and tries again.
+    expect(screen.getByText('5 of 5 selected')).toBeInTheDocument()
+  })
+
+  it('is full screen on phone', async () => {
+    const { setViewportWidth } = await import('../../test/viewport')
+    setViewportWidth(390)
+    renderWizard()
+    expect(document.querySelector('.MuiDialog-paperFullScreen')).not.toBeNull()
+  })
+})

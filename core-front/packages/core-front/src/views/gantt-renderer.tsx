@@ -21,14 +21,16 @@ import { erpPath } from '../navigation'
 import { usePermission } from '../auth/Can'
 import { serializeError, toApiError, type SerializedError } from '../api/errors'
 import { mergeListOptions, type EntityListOptions } from '../api/list-options'
-import { pinnedId, type GanttBaselineConfig, type GanttDependenciesConfig, type GanttMilestonesConfig, type GanttScheduleConfig } from '../api/view-fields'
+import { pinnedId, type ExchangeFormat, type GanttBaselineConfig, type GanttDependenciesConfig, type GanttExchangeConfig, type GanttMilestonesConfig, type GanttScheduleConfig } from '../api/view-fields'
 import { useT } from '../i18n/translate'
 import { useUndoToastStore } from './undo-toast'
 import type { ViewDescriptor } from './descriptor'
 import { BannerScope, BannerSlot } from './banner'
 import { colorStripes } from './color-tags'
 import { ErrorAlert } from './error-alert'
+import { ImportWizard } from './exchange/import-wizard'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
+import { kanbanColumnsGuard } from './kanban-columns'
 import { orderedFields, orderLabel } from './layout-fields'
 import { useRelationOps } from './relation-ops'
 import { RelationColorTagsWidget } from './relation-widgets'
@@ -261,6 +263,8 @@ export interface GanttRendererProps<T extends HasId> {
   baseline?: GanttBaselineConfig
   /** Set ⇒ the pinned scope's milestones, as diamonds on a row under the header. */
   milestones?: GanttMilestonesConfig
+  /** Set ⇒ the pinned scope's plan exchange (the `Export` / `Import` menus, ADR-042). */
+  exchange?: GanttExchangeConfig
 }
 
 export function GanttRenderer<T extends HasId>({
@@ -276,6 +280,7 @@ export function GanttRenderer<T extends HasId>({
   schedule,
   baseline,
   milestones,
+  exchange,
 }: GanttRendererProps<T>) {
   const t = useT()
   const theme = useTheme()
@@ -771,6 +776,38 @@ export function GanttRenderer<T extends HasId>({
     }
   }, [milestoneKey, milestonePin])
 
+  // Plan exchange (ADR-042): the Export/Import menus belong to one project, so they
+  // appear only while the list is pinned to one. Import is the manager's privilege:
+  // the module names a guard, resolved exactly like the OBS renderer's `canEdit`
+  // (same registry, same scope id and ops arguments) — and Go re-checks it anyway.
+  const exchangePin = exchange ? pinnedId(serverOptions, exchange.scopeField) : null
+  const [canImport, setCanImport] = useState(false)
+  useEffect(() => {
+    const name = exchange?.canImport
+    if (!name || exchangePin == null) {
+      setCanImport(false)
+      return
+    }
+    const guard = kanbanColumnsGuard(name)
+    if (!guard) {
+      setCanImport(false)
+      return
+    }
+    let cancelled = false
+    guard(exchangePin, relationOps).then(
+      (ok) => !cancelled && setCanImport(ok),
+      () => !cancelled && setCanImport(false),
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [exchange?.canImport, exchangePin, relationOps])
+  const [exportAnchor, setExportAnchor] = useState<HTMLElement | null>(null)
+  const [importAnchor, setImportAnchor] = useState<HTMLElement | null>(null)
+  const [importFormat, setImportFormat] = useState<ExchangeFormat | null>(null)
+  const exchangeUrl = (key: string, action: string) =>
+    `/api/exchange/${exchange?.scopeEntity}/${encodeURIComponent(exchangePin ?? '')}/${key}/${action}`
+
   const finishRef = useRef(finishDrag)
   finishRef.current = finishDrag
 
@@ -977,7 +1014,17 @@ export function GanttRenderer<T extends HasId>({
                 ))}
               </Select>
             ) : null}
-            {phone && (schedulePin || baselinePin) ? (
+            {!phone && exchangePin ? (
+              <Button size="small" onClick={(e) => setExportAnchor(e.currentTarget)}>
+                {t('Export')}
+              </Button>
+            ) : null}
+            {!phone && exchangePin && canImport ? (
+              <Button size="small" onClick={(e) => setImportAnchor(e.currentTarget)}>
+                {t('Import')}
+              </Button>
+            ) : null}
+            {phone && (schedulePin || baselinePin || exchangePin) ? (
               <IconButton aria-label={t('More')} sx={{ minWidth: 40, minHeight: 40 }} onClick={(e) => setMoreAnchor(e.currentTarget)}>
                 <FontAwesomeIcon icon={byPrefixAndName.fas['ellipsis-vertical']} />
               </IconButton>
@@ -1264,7 +1311,7 @@ export function GanttRenderer<T extends HasId>({
         </Collapse>
       </Stack>
 
-      {phone && (schedulePin || baselinePin) ? (
+      {phone && (schedulePin || baselinePin || exchangePin) ? (
         <Menu open={!!moreAnchor} anchorEl={moreAnchor} onClose={() => setMoreAnchor(null)}>
           {schedulePin ? (
             <MenuItem selected={criticalOn} onClick={() => { setMoreAnchor(null); onCriticalToggle() }}>
@@ -1283,7 +1330,54 @@ export function GanttRenderer<T extends HasId>({
               ))}
             </>
           ) : null}
+          {exchangePin ? (
+            <MenuItem onClick={() => { const el = moreAnchor; setMoreAnchor(null); setExportAnchor(el) }}>
+              {t('Export')}
+            </MenuItem>
+          ) : null}
+          {exchangePin && canImport ? (
+            <MenuItem onClick={() => { const el = moreAnchor; setMoreAnchor(null); setImportAnchor(el) }}>
+              {t('Import')}
+            </MenuItem>
+          ) : null}
         </Menu>
+      ) : null}
+
+      {exchange && exchangePin ? (
+        <>
+          {/* Export is a plain download: the BFF relays Go's Content-Disposition, so the
+              browser names the file after the project. No fetch, no client-side blob. */}
+          <Menu open={!!exportAnchor} anchorEl={exportAnchor} onClose={() => setExportAnchor(null)}>
+            {exchange.formats.map((f) => (
+              <MenuItem
+                key={f.key}
+                component="a"
+                href={exchangeUrl(f.key, 'export')}
+                download
+                onClick={() => setExportAnchor(null)}
+              >
+                {f.label}
+              </MenuItem>
+            ))}
+          </Menu>
+          <Menu open={!!importAnchor} anchorEl={importAnchor} onClose={() => setImportAnchor(null)}>
+            {exchange.formats.map((f) => (
+              <MenuItem key={f.key} onClick={() => { setImportAnchor(null); setImportFormat(f) }}>
+                {f.label}
+              </MenuItem>
+            ))}
+          </Menu>
+          {importFormat ? (
+            <ImportWizard
+              open
+              onClose={() => setImportFormat(null)}
+              onApplied={() => setReloads((n) => n + 1)}
+              config={exchange}
+              scopeId={exchangePin}
+              format={importFormat}
+            />
+          ) : null}
+        </>
       ) : null}
     </Box>
   )
