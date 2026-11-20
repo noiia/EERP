@@ -3,6 +3,10 @@
         "/app/modules"
     ],
     "environment": "development",
+    "mcp_enabled": false,
+    "mcp_allow_writes": false,
+    "mcp_allowed_origins": [],
+    "mcp_rate_limit_per_minute": 120,
     "master_key": "change-me-in-production",
     "access_ttl_seconds": 21600,
     "refresh_ttl_seconds": 604800,

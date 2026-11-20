@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Typography from '@mui/material/Typography'
-import { MarkerType, type Connection, type Edge, type Node } from '@xyflow/react'
+import { MarkerType, Position, type Connection, type Edge, type Node } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { serializeError, toApiError, type SerializedError } from '../../api/errors'
 import type { WbsDeliverablesConfig } from '../../api/view-fields'
@@ -22,7 +22,7 @@ import { DiagramCanvas, DiagramCapNotice, DiagramLoading, useDiagramRecords } fr
 import { useUndoHistory } from './history'
 import type { Point } from './collide'
 import { colorTagsFieldOf, useRecordColors } from '../use-record-colors'
-import { boxFieldOf, LABEL_BOX_SIZE, TASK_BOX_SIZE, type LabelBoxData, type TaskBoxData } from './task-box'
+import { boxFieldOf, LABEL_BOX_SIZE, STACK_HANDLE, TASK_BOX_SIZE, type LabelBoxData, type TaskBoxData } from './task-box'
 import { buildWbs, canReparent } from './wbs'
 
 // WBS display mode: the records as a top-down tree over `parentField`, under one
@@ -42,6 +42,9 @@ const DELIVERABLE_GAP = 24
 const DELIVERABLE = 'deliverable:'
 /** Item ids per `in[id]=` read (the same chunk size the relation labels use). */
 const DELIVERABLE_CHUNK = 100
+/** From this task level on (1 = a top task, so `1.1.1`), children stack vertically under their
+ * parent, each joined by an elbow from the parent's left side. */
+const STACK_LEVEL = 3
 
 export interface WbsRendererProps<T extends HasId> {
   descriptor: ViewDescriptor
@@ -104,6 +107,11 @@ export function WbsRenderer<T extends HasId>({
   const fields = [...new Set(boxFields.filter((n): n is string => !!n))]
     .map(fieldOf)
     .filter((f): f is FieldDescriptor => !!f)
+  // Many2one labels for the export's printed boxes, read once for the whole diagram.
+  const relationLabel = useRelationLabels(
+    fields,
+    rows.flatMap((r) => fields.map((f): [string, unknown] => [f.name, (r as unknown as Record<string, unknown>)[f.name]])),
+  )
   const groupDescriptor = groupField ? fieldOf(groupField) : undefined
 
   const values = (r: T) => r as unknown as Record<string, unknown>
@@ -117,6 +125,17 @@ export function WbsRenderer<T extends HasId>({
     plannedHours: hoursField ? Number(values(r)[hoursField]) || 0 : 0,
   }))
   const { nodes, roots, visible } = buildWbs(inputs, foldedSet)
+  // A task's level: 1 under a group root or at the top, its parent's + 1 below that.
+  const levels = new Map<string, number>()
+  const levelOf = (id: string): number => {
+    if (nodes[id].kind !== 'task') return 0
+    if (!levels.has(id)) {
+      const p = nodes[id].parentId
+      levels.set(id, 1 + (p && nodes[p].kind === 'task' ? levelOf(p) : 0))
+    }
+    return levels.get(id)!
+  }
+  const stacked = (id: string) => levelOf(id) >= STACK_LEVEL
   const groupIds = roots.filter((id) => id.startsWith(GROUP))
   const labelOf = useRelationLabels(
     groupDescriptor ? [groupDescriptor] : [],
@@ -257,15 +276,19 @@ export function WbsRenderer<T extends HasId>({
       chevron: chevron(id),
       footer: footer(id),
       colors: colors.get(id),
+      relationLabel,
     }
-    return { id, position: { x: 0, y: 0 }, data }
+    return { id, position: { x: 0, y: 0 }, data, ...(stacked(id) ? { targetPosition: Position.Left } : {}) }
   })
   const shown = new Set(visible)
   const edges: Edge[] = [...deliverableEdges, ...visible.flatMap((id) => {
     const p = nodes[id].parentId
     // A group root's line isn't a parent link: it can't be deleted or moved.
     const link = canWrite && !p?.startsWith(GROUP)
-    return p && shown.has(p) ? [{ id: `${p}->${id}`, source: p, target: id, deletable: link, reconnectable: link }] : []
+    if (!p || !shown.has(p)) return []
+    // A stacked child: an elbow down the parent's left side, then right into the child.
+    const elbow = stacked(id) ? { type: 'step', sourceHandle: STACK_HANDLE } : {}
+    return [{ id: `${p}->${id}`, source: p, target: id, deletable: link, reconnectable: link, ...elbow }]
   })]
 
   const groupOf = (target: string) =>
@@ -391,7 +414,7 @@ export function WbsRenderer<T extends HasId>({
         nodes={rfNodes}
         edges={edges}
         extraNodes={extraDeliverableNodes}
-        autoLayout={() => layoutWbs(nodes, roots, visible, TASK_BOX_SIZE, heightOf)}
+        autoLayout={() => layoutWbs(nodes, roots, visible, TASK_BOX_SIZE, heightOf, stacked)}
         folded={folded}
         onFoldedChange={setFolded}
         onNodeDrop={onNodeDrop}

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ComponentType, ReactNode } from 'react'
 
 // React Flow stubbed as in wbs-renderer.test.tsx: each node drawn through its nodeTypes component.
@@ -159,6 +159,29 @@ describe('PertRenderer', () => {
     } finally {
       rf.zoom = 1
     }
+  })
+
+  it('takes a task off the diagram and adds it back from the Add task menu', async () => {
+    setup()
+    await waitFor(() => expect(rf.props.edges).toHaveLength(4))
+    const add = screen.getByRole('button', { name: 'Add task' })
+    expect(add).toBeDisabled()
+    fireEvent.click(within(screen.getByTestId('node-A')).getByLabelText('Remove from diagram'))
+    expect(rf.props.nodes.map((n) => n.id)).not.toContain('A')
+    // Its links leave the drawing, the records and dependency rows stay.
+    expect(rf.props.edges.map((e) => e.id)).toEqual(['l3', 'l4'])
+    fireEvent.click(within(screen.getByTestId('node-B')).getByLabelText('Remove from diagram'))
+    expect(add).toBeEnabled()
+    fireEvent.click(add)
+    const menu = await screen.findByTestId('pert-add-task-menu')
+    expect(within(menu).getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Spec', 'Build'])
+    // Typing filters the list, nothing is added yet.
+    fireEvent.change(within(menu).getByLabelText('Search'), { target: { value: 'bui' } })
+    expect(within(menu).getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Build'])
+    expect(rf.props.nodes.map((n) => n.id)).not.toContain('B')
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Build' }))
+    expect(rf.props.nodes.map((n) => n.id)).toContain('B')
+    expect(within(menu).getByRole('checkbox')).toBeChecked()
   })
 
   it('highlights the critical chain', async () => {

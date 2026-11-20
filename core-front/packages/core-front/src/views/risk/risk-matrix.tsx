@@ -1,4 +1,5 @@
 'use client'
+import { useLayoutEffect, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import Chip from '@mui/material/Chip'
 import Tooltip from '@mui/material/Tooltip'
@@ -9,8 +10,6 @@ import { usePhone } from '../use-phone'
 import { band, matrixCells, type Band, type RiskRow } from './scoring'
 
 const BAND_COLOR: Record<Band, 'success' | 'warning' | 'error'> = { low: 'success', medium: 'warning', high: 'error' }
-// A cell holding at most this many risks names them ("6 - Budget cut"); a busier one shows only the criticity.
-export const FULL_LABEL_MAX = 3
 
 export const bandMain = (th: Theme, b: Band | null) => (b ? th.palette[BAND_COLOR[b]].main : th.palette.text.disabled)
 
@@ -33,34 +32,55 @@ export function RiskMatrix({ rows, residual, onOpen, wide = false }: { rows: Ris
         <Box key={`l${l}`} sx={{ alignSelf: 'center', pr: 1, fontWeight: 600 }}>{axis('Likelihood', l)}</Box>,
         ...severities.map((s) => {
           const items = cells.get(`${l}:${s}`) ?? []
-          return (
-            <Box
-              key={`${l}:${s}`}
-              data-testid={`cell-${l}:${s}`}
-              sx={(th) => ({ minWidth: 0, p: 0.5, display: 'flex', flexWrap: 'wrap', gap: 0.5, alignContent: 'flex-start', borderRadius: 1, bgcolor: alpha(bandMain(th, band(l * s)), 0.2) })}
-            >
-              {items.map((r) => {
-                const c = residual ? r.residual_criticity : r.criticity
-                const value = c ?? '—'
-                return (
-                  <Tooltip key={r.id} placement="top" title={<RiskTip risk={r} residual={residual} />}>
-                  <Chip
-                    size="small"
-                    color={band(c) ? BAND_COLOR[band(c)!] : 'default'}
-                    label={items.length <= FULL_LABEL_MAX ? `${value} - ${phone && r.name.length > 12 ? `${r.name.slice(0, 12)}…` : r.name}` : value}
-                    aria-label={phone ? `${value} - ${r.name}` : undefined}
-                    sx={{ maxWidth: '100%', ...(phone && { minHeight: 40 }) }}
-                    onClick={() => onOpen(r.id)}
-                  />
-                  </Tooltip>
-                )
-              })}
-            </Box>
-          )
+          return <RiskCell key={`${l}:${s}`} id={`${l}:${s}`} tone={band(l * s)} items={items} residual={residual} phone={phone} onOpen={onOpen} />
         }),
       ])}
       <Box />
       {severities.map((s) => <Box key={s} sx={{ textAlign: 'center', fontWeight: 600 }}>{axis('Severity', s)}</Box>)}
+    </Box>
+  )
+}
+
+// A cell names its risks ("6 - Budget cut") and falls back to the bare criticity only
+// when the named chips overflow it; a resize re-measures from the full labels.
+function RiskCell({ id, tone, items, residual, phone, onOpen }: { id: string; tone: Band | null; items: RiskRow[]; residual: boolean; phone: boolean; onOpen: (id: string) => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [compact, setCompact] = useState(false)
+  const [size, setSize] = useState('')
+  useLayoutEffect(() => setCompact(false), [items, residual, phone, size])
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!compact && el && el.scrollHeight > el.clientHeight + 1) setCompact(true)
+  })
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(([e]) => setSize(`${Math.round(e.contentRect.width)}x${Math.round(e.contentRect.height)}`))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  return (
+    <Box
+      ref={ref}
+      data-testid={`cell-${id}`}
+      sx={(th) => ({ minWidth: 0, minHeight: 0, overflow: 'hidden', p: 0.5, display: 'flex', flexWrap: 'wrap', gap: 0.5, alignContent: 'flex-start', borderRadius: 1, bgcolor: alpha(bandMain(th, tone), 0.2) })}
+    >
+      {items.map((r) => {
+        const c = residual ? r.residual_criticity : r.criticity
+        const value = c ?? '—'
+        return (
+          <Tooltip key={r.id} placement="top" title={<RiskTip risk={r} residual={residual} />}>
+            <Chip
+              size="small"
+              color={band(c) ? BAND_COLOR[band(c)!] : 'default'}
+              label={compact ? value : `${value} - ${phone && r.name.length > 12 ? `${r.name.slice(0, 12)}…` : r.name}`}
+              aria-label={phone || compact ? `${value} - ${r.name}` : undefined}
+              sx={{ maxWidth: '100%', ...(phone && { minHeight: 40 }) }}
+              onClick={() => onOpen(r.id)}
+            />
+          </Tooltip>
+        )
+      })}
     </Box>
   )
 }

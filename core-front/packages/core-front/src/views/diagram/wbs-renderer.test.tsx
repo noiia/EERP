@@ -4,8 +4,8 @@ import type { ComponentType, ReactNode } from 'react'
 
 // React Flow stubbed as in diagram-canvas.test.tsx, but drawing each node through
 // its nodeTypes component so the boxes (chevrons, footers, labels) are on screen.
-type RfNode = { id: string; type: string; data: unknown; position: { x: number; y: number }; height?: number; draggable?: boolean; selectable?: boolean; connectable?: boolean }
-type RfEdge = { id: string; source: string; target: string; markerEnd?: unknown; deletable?: boolean; reconnectable?: boolean }
+type RfNode = { id: string; type: string; data: unknown; position: { x: number; y: number }; height?: number; draggable?: boolean; selectable?: boolean; connectable?: boolean; targetPosition?: string }
+type RfEdge = { id: string; source: string; target: string; markerEnd?: unknown; deletable?: boolean; reconnectable?: boolean; type?: string; sourceHandle?: string }
 type RfProps = {
   nodes: RfNode[]
   edges: RfEdge[]
@@ -160,6 +160,23 @@ describe('WbsRenderer', () => {
     expect(screen.getAllByLabelText('Name').map((i) => (i as HTMLInputElement).value)).toEqual(['Design', 'Mockups', 'Review', 'Ops'])
     fireEvent.doubleClick(screen.getByTestId('node-A').firstElementChild!)
     expect(push).toHaveBeenCalledWith(expect.stringContaining('/project/tasks/A'))
+  })
+
+  it('stacks level-3 tasks under their parent, joined by elbows from its left side', async () => {
+    setup(undefined, true, {
+      initialData: [...rows(), { id: 'E', name: 'Wireframes', parent_id: 'B', project_id: 'p1', planned_hours: 1 }, { id: 'F', name: 'Icons', parent_id: 'B', project_id: 'p1', planned_hours: 1 }],
+    })
+    await waitFor(() => expect(rf.props.nodes.map((n) => n.id)).toContain('E'))
+    const edge = (target: string) => rf.props.edges.find((e) => e.target === target)!
+    expect(edge('E')).toMatchObject({ source: 'B', type: 'step', sourceHandle: 'stack' })
+    expect(edge('F')).toMatchObject({ source: 'B', type: 'step', sourceHandle: 'stack' })
+    // Levels 1 and 2 keep the plain top-down lines.
+    expect(edge('B').type).toBeUndefined()
+    expect(rf.props.nodes.find((n) => n.id === 'E')!.targetPosition).toBe('left')
+    expect(rf.props.nodes.find((n) => n.id === 'B')!.targetPosition).toBe('top')
+    const at = (id: string) => rf.props.nodes.find((n) => n.id === id)!.position
+    expect(at('E').x).toBe(at('F').x)
+    expect(at('F').y).toBeGreaterThan(at('E').y)
   })
 
   it('chevron folds and saves folded ids', async () => {
@@ -323,7 +340,8 @@ describe('WbsRenderer', () => {
     let inputsDuringExport = -1
     let smallHandlesDuringExport = false
     exportPng.mockImplementationOnce(async () => {
-      inputsDuringExport = screen.queryAllByLabelText('Name').length
+      // The full boxes, their fields printed as text (no input to clip them).
+      inputsDuringExport = screen.queryAllByTestId('export-field-name').length
       // 5px connector dots in the image (the canvas' [data-exporting] rule).
       smallHandlesDuringExport = document.querySelector('[data-exporting]') != null
     })

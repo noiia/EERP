@@ -30,6 +30,9 @@ view engine — read **`core/CLAUDE.md`** and **`core-front/CLAUDE.md`**. This R
 quickstart and contributor guide only; those two files are the framework reference and
 stay current as the design evolves.
 
+EERP also provides an optional authenticated **MCP server**, including project access,
+model discovery, business actions, resources and prompts. See the [MCP setup and API guide](docs/mcp.md).
+
 ---
 
 ## 🧰 Requirements
@@ -47,8 +50,7 @@ stay current as the design evolves.
 Clone the repository:
 
 ```bash
-git clone git@github.com:noiia/EERP.git
-cd EERP
+git clone https://github.com/noiia/EERP.git
 ```
 
 ### Configure secrets and start (one command)

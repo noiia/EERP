@@ -83,6 +83,35 @@ layout: they go through the normal save path and follow the caller's write permi
 dependency entity's). A saved layout keeps the positions of boxes not drawn right now (a folded branch, a
 narrower filter), so they come back where they were.
 
+### WBS stacked levels
+
+From task level 3 on (`1.1.1`, a top task being level 1), the WBS stops spreading children side by
+side: they hang in one column under their parent, indented 40 px (`WBS_STACK_INDENT`), each under the
+previous one (a level-4 task under its level-3 parent, indented again), and the parent's slot widens to
+hold the column. Each is joined by an elbow (`step` edge) leaving the parent's bottom 16 px from its left
+edge (`STACK_TRUNK_X`, an invisible handle) and entering the child's left side, so all the children of
+one parent share one vertical line. Wide project trees stay readable this way: a breadth-first spread of
+every level would push the leaves kilometers apart. Levels 1 and 2 keep the top-down rows. Display only:
+drops, numbers and parent links behave as before.
+
+### Export
+
+A PNG/PDF export draws every box in full (also when zoomed out) and prints its fields as plain wrapping
+text, a label over each value, rather than the editing widgets: an input can't wrap, so a long name was
+clipped and a multi-line field showed a scrollbar in the image. Each box grows to its content. Many2one
+values print by label (read once for the whole diagram), dates and numbers in the workspace formats. The
+image is rendered at 3× when the browsers' canvas limits allow (16 000 px a side, 150 M pixels), else 2×,
+else 1×.
+
+### Removing tasks from the PERT
+
+A PERT box's trash button (full and zoomed-out box) takes the task off this diagram only: the record and
+its dependency rows stay, its arrows leave the drawing and the critical path is computed without it.
+**Add task** (disabled while nothing is removed) lists the removed tasks with checkboxes and a search
+field that filters as you type; ticking one puts it back at once, no reload. The removed ids are part of
+the user's own PERT layout, stored in its `folded` list, which PERT has no other use for, so the choice is
+per user and needs no write right on the tasks.
+
 ### Help
 
 An info button at the start of the canvas toolbar opens a short list of how to use the diagram. It

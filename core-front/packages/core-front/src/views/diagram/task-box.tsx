@@ -10,7 +10,8 @@ import { createTheme, type Theme } from '@mui/material/styles'
 import { Handle, Position, useStore, type Node, type NodeProps } from '@xyflow/react'
 import { serializeError, toApiError, type SerializedError } from '../../api/errors'
 import { useT } from '../../i18n/translate'
-import type { FieldDescriptor, ViewDescriptor } from '../descriptor'
+import { fieldLabel, type FieldDescriptor, type ViewDescriptor } from '../descriptor'
+import { formatDatePattern, useFormatStore, useNumberFormat } from '../format-store'
 import { ColorRibbon } from '../color-tags'
 import { ErrorAlert } from '../error-alert'
 import { byPrefixAndName, FontAwesomeIcon } from '../icons'
@@ -77,6 +78,41 @@ export interface TaskBoxData extends Record<string, unknown> {
   chevron?: { folded: boolean; onToggle: () => void }
   /** The record's color groups (ViewModeDefaults.colorTagsField): a solid bar along the top. */
   colors?: string[]
+  /** Takes the box off this diagram only (the record stays): a trash button in its corner. */
+  onRemove?: () => void
+  /** A many2one value's label (resolved once for the whole diagram): the export prints it. */
+  relationLabel?: (field: string, value: unknown) => string
+}
+
+/** A WBS stacked child's elbow starts here: this far from its parent's left edge. All the
+ * children of one parent share that vertical line. */
+export const STACK_TRUNK_X = 16
+/** The source handle a stacked child's elbow (a `step` edge) leaves from. */
+export const STACK_HANDLE = 'stack'
+
+// Bottom-left, invisible and never a drag start: it only anchors elbow lines.
+const StackHandle = () => (
+  <Handle id={STACK_HANDLE} type="source" position={Position.Bottom} isConnectable={false} style={{ left: STACK_TRUNK_X, opacity: 0, pointerEvents: 'none' }} />
+)
+
+function RemoveButton({ onRemove, size }: { onRemove: () => void; size: number }) {
+  const t = useT()
+  return (
+    <IconButton
+      className="nodrag"
+      size="small"
+      aria-label={t('Remove from diagram')}
+      title={t('Remove from diagram')}
+      onClick={(e) => {
+        e.stopPropagation()
+        onRemove()
+      }}
+      onDoubleClick={(e) => e.stopPropagation()}
+      sx={{ position: 'absolute', top: 2, right: 2, zIndex: 1, fontSize: size }}
+    >
+      <FontAwesomeIcon icon={byPrefixAndName.fas['trash']} />
+    </IconButton>
+  )
 }
 
 /** The form's widgets, compact (they have no size prop of their own). The canvas
@@ -112,8 +148,10 @@ export const TaskBox = memo(function TaskBox({ data, sourcePosition, targetPosit
       <Paper variant="outlined" data-testid="task-box-far" onDoubleClick={data.onOpen} sx={{ position: 'relative', width: TASK_BOX_SIZE.w, height: TASK_BOX_SIZE.h, boxSizing: 'border-box', overflow: 'hidden', p: 1.5, pt: data.colors?.length ? 4 : 1.5 }}>
         <ColorRibbon colors={data.colors} height={20} />
         <Handle type="target" position={targetPosition ?? Position.Top} />
+        {data.onRemove ? <RemoveButton onRemove={data.onRemove} size={40} /> : null}
         <Typography sx={FAR_TITLE_SX}>{data.title ?? String(record.name ?? record.title ?? '')}</Typography>
         <Handle type="source" position={sourcePosition ?? Position.Bottom} />
+        <StackHandle />
       </Paper>
     )
   }
@@ -122,6 +160,7 @@ export const TaskBox = memo(function TaskBox({ data, sourcePosition, targetPosit
     <Paper variant="outlined" onDoubleClick={onDoubleClick} sx={{ position: 'relative', width: TASK_BOX_SIZE.w, boxSizing: 'border-box', p: 1, pt: data.colors?.length ? 2.5 : 1, ...(exporting ? { minHeight: TASK_BOX_SIZE.h, overflow: 'visible' } : { height: TASK_BOX_SIZE.h, overflow: 'auto' }) }}>
       <ColorRibbon colors={data.colors} height={10} />
       <Handle type="target" position={targetPosition ?? Position.Top} />
+      {data.onRemove && !exporting ? <RemoveButton onRemove={data.onRemove} size={14} /> : null}
       <ErrorAlert error={error} />
       {chevron || data.badges ? (
         <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', mb: 0.5 }}>
@@ -134,12 +173,18 @@ export const TaskBox = memo(function TaskBox({ data, sourcePosition, targetPosit
         </Stack>
       ) : null}
       <Stack spacing={0.75} sx={{ pt: 0.75 }}>
-        {data.fields.filter((f) => f.name in record).map((f) => (
-          <BoxField key={f.name} field={f} record={record} editable={data.editable} onCommit={data.onCommit} onError={setError} />
-        ))}
+        {data.fields.filter((f) => f.name in record).map((f) =>
+          // An export prints plain wrapping text: an input clips a long value and scrolls.
+          exporting ? (
+            <ExportField key={f.name} field={f} value={record[f.name]} relationLabel={data.relationLabel} />
+          ) : (
+            <BoxField key={f.name} field={f} record={record} editable={data.editable} onCommit={data.onCommit} onError={setError} />
+          ),
+        )}
       </Stack>
       {data.footer}
       <Handle type="source" position={sourcePosition ?? Position.Bottom} />
+      <StackHandle />
     </Paper>
   )
 })
@@ -224,6 +269,27 @@ export const NoteBox = memo(function NoteBox({ data, sourcePosition, targetPosit
     </Paper>
   )
 })
+
+/** A box field as an export prints it: its label, then its value as text that wraps. */
+function ExportField({ field, value, relationLabel }: { field: FieldDescriptor; value: unknown; relationLabel?: TaskBoxData['relationLabel'] }) {
+  const t = useT()
+  const { format } = useNumberFormat()
+  const dateFormat = useFormatStore((s) => s.dateFormat)
+  let text: string
+  if (value === null || value === undefined || value === '') text = '—'
+  else if (field.type === 'relation') text = relationLabel?.(field.name, value) || String(value)
+  else if (field.type === 'date') text = formatDatePattern(String(value), dateFormat, { time: field.widget === 'datetime' })
+  else if (field.type === 'number') text = format(Number(value))
+  else if (field.type === 'boolean') text = value ? '✓' : '—'
+  else if (field.type === 'selection') text = t(String(value))
+  else text = String(value)
+  return (
+    <Box data-testid={`export-field-${field.name}`}>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.2 }}>{t(fieldLabel(field))}</Typography>
+      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{text}</Typography>
+    </Box>
+  )
+}
 
 function BoxField({ field, record, editable, onCommit, onError }: {
   field: FieldDescriptor

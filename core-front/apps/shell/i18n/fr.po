@@ -1830,6 +1830,9 @@ msgstr "En cours"
 msgid "Mark all as read"
 msgstr "Tout marquer comme lu"
 
+msgid "Enable desktop notifications"
+msgstr "Activer les notifications du bureau"
+
 msgid "No notifications"
 msgstr "Aucune notification"
 
@@ -3365,3 +3368,12 @@ msgstr "Dates"
 
 msgid "Planned h."
 msgstr "H planifiées"
+
+msgid "Add task"
+msgstr "Ajouter une tâche"
+
+msgid "Remove from diagram"
+msgstr "Retirer du diagramme"
+
+msgid "No match"
+msgstr "Aucun résultat"

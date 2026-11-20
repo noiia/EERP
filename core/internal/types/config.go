@@ -90,7 +90,14 @@ func DefaultConfig() *Config {
 
 // Config fields
 type Config struct {
-	ModuleRoot []string `json:"module_root" needed:"true"`
+	// MCP is opt-in and uses ERP Bearer JWTs. Writes additionally require both
+	// MCPAllowWrites and the existing API permission. Origins are exact matches;
+	// an empty list allows only native clients that send no Origin header.
+	MCPEnabled            bool     `json:"mcp_enabled" needed:"false"`
+	MCPAllowWrites        bool     `json:"mcp_allow_writes" needed:"false"`
+	MCPAllowedOrigins     []string `json:"mcp_allowed_origins" needed:"false"`
+	MCPRateLimitPerMinute int      `json:"mcp_rate_limit_per_minute" needed:"false"`
+	ModuleRoot            []string `json:"module_root" needed:"true"`
 	// Environment is exactly "development" or "production" — main.go refuses to
 	// boot on anything else (docs/security/pentest-2026-09-24.md's follow-up).
 	// It's the single switch behind two behaviors that used to be separate,

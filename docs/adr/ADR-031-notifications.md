@@ -55,6 +55,14 @@ sequenceDiagram
   one direct browser→Go connection; new frame types `notification` and `notification_read` are
   additive and ignored by older clients. On every (re)connect the browser re-reads
   `GET /api/v1/notifications`, since frames sent while it was down are not replayed.
+- **Desktop notifications.** The bell panel offers *Enable desktop notifications* while the
+  browser hasn't been asked (a button, since browsers only honor a permission request made from a
+  click). Once granted, every live `notification` frame of kind `message` that is new to the tab
+  pops up as a system notification while the ERP window isn't focused; activities never do (their
+  progress frames would spam). The popup is tagged with the notification id, so several open tabs
+  show it once; clicking it focuses the ERP and opens the notification's ERP link. Who gets one is
+  decided server-side like the bell's feed: a muted Teams conversation sends its reader no
+  notification, so nothing pops up for it either. No service worker: a closed ERP tab shows nothing.
 - **Roles** pick categories on the role form's *Notifications* tab, a stock many2many over the
   generic-CRUD junction — the same pattern as role rights. Admin roles — technical name `admin`, or any role holding the `*:*:*` full-access permission —
   receive each category the first time it appears in a tenant's catalog (never again, so removing

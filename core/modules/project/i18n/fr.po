@@ -407,6 +407,18 @@ msgstr "150 premières tâches affichées"
 msgid "No one accountable"
 msgstr "Personne n'est responsable"
 
+msgid "Several people accountable"
+msgstr "Plusieurs personnes sont responsables"
+
+msgid "Bulk edit"
+msgstr "Modification groupée"
+
+msgid "Select all"
+msgstr "Tout sélectionner"
+
+msgid "Person"
+msgstr "Personne"
+
 msgid "Deliverable"
 msgstr "Livrable"
 

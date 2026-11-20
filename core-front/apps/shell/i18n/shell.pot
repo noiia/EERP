@@ -1670,6 +1670,9 @@ msgstr ""
 msgid "Mark all as read"
 msgstr ""
 
+msgid "Enable desktop notifications"
+msgstr ""
+
 msgid "No notifications"
 msgstr ""
 
@@ -3232,4 +3235,13 @@ msgid "Dates"
 msgstr ""
 
 msgid "Planned h."
+msgstr ""
+
+msgid "Add task"
+msgstr ""
+
+msgid "Remove from diagram"
+msgstr ""
+
+msgid "No match"
 msgstr ""

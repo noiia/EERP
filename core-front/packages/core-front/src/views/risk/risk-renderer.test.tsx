@@ -86,10 +86,23 @@ describe('RiskRenderer', () => {
     expect(await screen.findByText(/nope/)).toBeTruthy()
   })
 
-  it('names chips while a cell is not crowded, else shows only the value', async () => {
-    setup(['a', 'b', 'c', 'd'].map((id) => risk(id)))
+  it('names every chip while they fit, whatever their number', async () => {
+    setup(['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((id) => risk(id)))
     const cell = await screen.findByTestId('cell-2:3')
-    expect(within(cell).getAllByText('6')).toHaveLength(4)
+    expect(within(cell).getAllByText(/^6 - [a-g]$/)).toHaveLength(7)
+  })
+
+  it('shows only the value once the named chips overflow the cell', async () => {
+    const h = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(200)
+    const c = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(80)
+    try {
+      setup(['a', 'b', 'c', 'd'].map((id) => risk(id)))
+      const cell = await screen.findByTestId('cell-2:3')
+      expect(await within(cell).findAllByText('6')).toHaveLength(4)
+    } finally {
+      h.mockRestore()
+      c.mockRestore()
+    }
   })
 
   it('clips long Ishikawa labels and keeps the full name as tooltip', async () => {
