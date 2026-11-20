@@ -233,6 +233,13 @@ func (s *Server) Start(ctx context.Context) error {
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 
+// SlowRequest is the latency from which a successful request is still logged at Info.
+const SlowRequest = time.Second
+
+// zapMiddleware logs one line per request. Only what needs a look reaches Info — a 4xx/5xx
+// or a request slower than SlowRequest; a fast success (the bulk: page reads, polling,
+// health checks) is Debug, visible with -debug. nginx already keeps the access log of
+// every failed request, so logging each success here too only doubled the volume.
 func zapMiddleware(logger *zap.Logger) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
@@ -243,12 +250,17 @@ func zapMiddleware(logger *zap.Logger) echo.MiddlewareFunc {
 			// The error handler writes an uncommitted error after we return, so
 			// resolve the status it will send rather than the still-default 200.
 			_, status := echo.ResolveResponseStatus(c.Response(), err)
+			latency := time.Since(start)
+			log := logger.Debug
+			if status >= http.StatusBadRequest || latency >= SlowRequest {
+				log = logger.Info
+			}
 
-			logger.Info("request",
+			log("request",
 				zap.String("method", req.Method),
 				zap.String("uri", req.RequestURI),
 				zap.Int("status", status),
-				zap.Duration("latency", time.Since(start)),
+				zap.Duration("latency", latency),
 				zap.String("request_id", c.Response().Header().Get(echo.HeaderXRequestID)),
 			)
 			return err

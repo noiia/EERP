@@ -1,5 +1,15 @@
+# Container logs rotate at 10 MB, three files kept per service: Docker's default json-file
+# driver never rotates, so a chatty service (a request loop, euro-office) slowly fills the
+# disk. compose.prod.yml inherits it.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   db:
+    logging: *logging
     image: postgis/postgis:18-3.7
     restart: always
     container_name: db
@@ -39,6 +49,7 @@ services:
   # S3-compatible object storage for the picture service (see infra/garage/README.md).
   # Starts empty: `make bootstrap` (or `make garage-init`) creates the layout, key and bucket.
   garage:
+    logging: *logging
     image: dxflrs/garage:v2.5.0
     restart: always
     container_name: garage
@@ -64,6 +75,7 @@ services:
       retries: 10
 
   core-back:
+    logging: *logging
     container_name: backend
     restart: always
     build:
@@ -99,6 +111,7 @@ services:
         required: false
 
   core-front:
+    logging: *logging
     container_name: frontend
     restart: always
     build:
@@ -128,6 +141,7 @@ services:
   # Euro-Office owns editing/collaboration; EERP owns files and permissions.
   # Bootstrap generates a dedicated JWT secret and configures both services.
   euro-office:
+    logging: *logging
     image: ghcr.io/euro-office/documentserver:${EURO_OFFICE_TAG:-v9.3.1}
     restart: unless-stopped
     environment:
@@ -168,6 +182,7 @@ services:
   # N replicas subscribed to the same NATS queue group are competing consumers with
   # zero code change. No container_name: a static name would collide across replicas.
   pdf-service:
+    logging: *logging
     restart: always
     build:
       context: .
@@ -194,6 +209,7 @@ services:
   # nats-server only takes max_payload from a config file, not a CLI flag, so raising it
   # later means mounting one, not just editing this command.
   nats:
+    logging: *logging
     # Alpine variant on purpose: the default (scratch) image has no nc/shell,
     # so the healthcheck below could never run and the service stays unhealthy.
     image: nats:2-alpine
@@ -214,6 +230,7 @@ services:
   # persistence, bounded memory with LRU eviction — losing it loses nothing.
   # Published on 127.0.0.1 only, for host-native tests (REDIS_URL).
   redis:
+    logging: *logging
     image: redis:8-alpine
     restart: always
     container_name: redis
@@ -230,6 +247,7 @@ services:
   # the Mailpit inbox at http://127.0.0.1:8025 — nothing reaches a real
   # address. Optional like redis: core-back waits on it with required: false.
   mailpit:
+    logging: *logging
     image: axllent/mailpit:latest
     restart: always
     container_name: mailpit
@@ -252,6 +270,7 @@ services:
   # so the step needs no network: installing it at start (apk add) failed
   # whenever containers couldn't reach the Alpine mirror.
   gateway-certs:
+    logging: *logging
     image: alpine/openssl:3.5.9
     container_name: gateway-certs
     volumes:
@@ -264,6 +283,7 @@ services:
     restart: "no"
 
   api-gateway:
+    logging: *logging
     image: nginx:1.31-alpine
     container_name: api-gateway
     restart: unless-stopped
