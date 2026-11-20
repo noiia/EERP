@@ -107,6 +107,7 @@ const (
 	warnDepType          = "DEP_TYPE"
 	warnDepLag           = "DEP_LAG"
 	warnDepFromMilestone = "DEP_FROM_MILESTONE"
+	warnDepNested        = "DEP_NESTED"
 	warnMultiMilestone   = "MULTI_MILESTONE"
 	warnUnknownEmail     = "UNKNOWN_EMAIL"
 	warnNameTruncated    = "NAME_TRUNCATED"
@@ -885,15 +886,24 @@ func (d *diff) fileParent(i int) string {
 // is a hand-built plan's oddity, and reporting it as a removal would blame the
 // manager for data EERP does not have.
 func (d *diff) readDepSets() {
-	d.depsCur = d.readDepSet(d.cur.Deps, false)
-	d.depsFile = d.readDepSet(d.file.Deps, true)
+	d.depsCur = d.readDepSet(d.cur, false)
+	d.depsFile = d.readDepSet(d.file, true)
 }
 
-func (d *diff) readDepSet(deps []PlanDep, fromFile bool) depSet {
+// readDepSet skips links between a task and its own summary task on both sides: no
+// file can carry one (the exporters leave EERP's old ones out), so a current one is
+// no removal, and a file one is reported and not imported (EERP refuses it).
+func (d *diff) readDepSet(p Plan, fromFile bool) depSet {
 	set := depSet{deps: map[depKey]bool{}, links: map[string]string{}}
-	for _, dep := range deps {
+	nested := p.nestedDeps()
+	for i, dep := range p.Deps {
 		pred, succ, ok := d.knownEnds(dep.Pred, dep.Succ, fromFile)
 		if !ok {
+			continue
+		}
+		if nested[i] {
+			d.fileWarn(fromFile, warnDepNested, d.fileLabel(pred),
+				"a dependency between a task and its own summary task is a loop; it is not imported")
 			continue
 		}
 		if namesMilestone(pred) {

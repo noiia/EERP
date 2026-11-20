@@ -102,6 +102,7 @@ func TestValidate_References(t *testing.T) {
 	hiddenTask := f.task(hidden, nil, nil)
 	pTask, qTask := f.task(p, nil, nil), f.task(q, nil, nil)
 	child := f.task(p, &pTask, nil)
+	grandchild := f.task(p, &child, nil)
 	a, b := f.task(p, nil, nil), f.task(p, nil, nil)
 	f.dependency(p, a, b)
 	foreignTag := other.tag()
@@ -127,6 +128,9 @@ func TestValidate_References(t *testing.T) {
 		{"valid parent", me, http.MethodPost, "project_task", task(map[string]any{"parent_id": pTask, "milestone_id": f.milestone(p)}), 201},
 		{"self dependency", me, http.MethodPost, "project_task_dependency", map[string]any{"task_id": a, "depends_on_id": a}, 422},
 		{"dependency cycle", me, http.MethodPost, "project_task_dependency", map[string]any{"task_id": b, "depends_on_id": a}, 422},
+		{"dependency on its summary task", me, http.MethodPost, "project_task_dependency", map[string]any{"task_id": child, "depends_on_id": pTask}, 422},
+		{"summary task depending on its subtask", me, http.MethodPost, "project_task_dependency", map[string]any{"task_id": pTask, "depends_on_id": grandchild}, 422},
+		{"dependency on an unrelated task's subtask", me, http.MethodPost, "project_task_dependency", map[string]any{"task_id": a, "depends_on_id": child}, 201},
 		{"dependency on a hidden task", me, http.MethodPost, "project_task_dependency", map[string]any{"task_id": a, "depends_on_id": hiddenTask}, 422},
 		{"dependency on another tenant's task", me, http.MethodPost, "project_task_dependency", map[string]any{"task_id": a, "depends_on_id": foreignTask}, 422},
 		{"assignee on a hidden task", me, http.MethodPost, "project_task_user", map[string]any{"task_id": hiddenTask, "user_id": m}, 422},

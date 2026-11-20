@@ -82,6 +82,37 @@ func (t PlanTask) Key() string {
 	return "new:" + t.FileID
 }
 
+// nestedDeps reports, by index into p.Deps, the dependencies that link a task
+// and one of its own ancestors (Parent chain, keys as Key() writes them). A
+// summary task spans its subtasks, so such a link is a loop: GanttProject and MS
+// Project refuse it, and EERP no longer accepts one either. Parent loops (only a
+// buggy plan holds one) end the walk instead of looping.
+func (p Plan) nestedDeps() map[int]bool {
+	parent := make(map[string]string, len(p.Tasks))
+	for _, t := range p.Tasks {
+		if _, dup := parent[t.Key()]; !dup {
+			parent[t.Key()] = t.Parent
+		}
+	}
+	under := func(k, anc string) bool {
+		seen := map[string]bool{}
+		for k = parent[k]; k != "" && !seen[k]; k = parent[k] {
+			if k == anc {
+				return true
+			}
+			seen[k] = true
+		}
+		return false
+	}
+	out := map[int]bool{}
+	for i, d := range p.Deps {
+		if d.Pred != d.Succ && (under(d.Pred, d.Succ) || under(d.Succ, d.Pred)) {
+			out[i] = true
+		}
+	}
+	return out
+}
+
 // milestoneRefPrefix marks an eerp_id that names a milestone rather than a task
 // (spec "Matching and change keys"). Task 4's loader builds the same shape from
 // a milestone row's id.
@@ -154,7 +185,7 @@ type Plan struct {
 
 // Warning is something in a file EERP cannot hold. It never blocks an import:
 // the file's value is dropped or degraded, and the wizard lists it. Code is one
-// of UNKNOWN_ID, DUPLICATE_ID, DEP_TYPE, DEP_LAG, DEP_FROM_MILESTONE,
+// of UNKNOWN_ID, DUPLICATE_ID, DEP_TYPE, DEP_LAG, DEP_FROM_MILESTONE, DEP_NESTED,
 // MULTI_MILESTONE, UNKNOWN_EMAIL, NAME_TRUNCATED, HOLIDAYS; Task names the file
 // task it is about, when it is about one.
 type Warning struct {

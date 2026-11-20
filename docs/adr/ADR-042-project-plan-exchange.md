@@ -170,6 +170,12 @@ offers *Preview again*, 422 returns to the review with the refused rows highligh
   costs, calendars and holidays, task notes, colors, custom columns that are not ours. Each
   is a warning, never a silent loss and never a blocked import. Stages, tags, color groups,
   timesheets, risks, RACI, PBS and OBS are out of the exchange entirely.
+- **No link between a task and its own summary task**, at any depth and either way round.
+  A summary spans its subtasks, so such a link is a loop: GanttProject refuses it on open
+  ("Dependency=… is looping") and MS Project does too. EERP refuses to create one (422), the
+  exporter leaves out the ones an older project still holds, and the import diff neither
+  offers to remove those (no file can carry them) nor imports one a file names (warning
+  `DEP_NESTED`).
 - **"Before" is the project as EERP holds it now**, not the version the file was exported
   from: there is no three-way merge and no conflict detection. A concurrent EERP edit shows
   up as an ordinary row, and leaving it unticked keeps the EERP value.

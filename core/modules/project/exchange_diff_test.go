@@ -210,7 +210,7 @@ func TestDiff_IdenticalIsEmpty(t *testing.T) {
 			{Ref: kC, Parent: kA, Name: "Review", Start: day(dfxDay(dfxWed)), Duration: 2, Complete: 100},
 			{Ref: kG, Name: "Deliverable", Start: day(dfxDay(dfxSat)), Milestone: true},
 		},
-		Deps:        []PlanDep{{Pred: kA, Succ: kB}, {Pred: kC, Succ: kG}},
+		Deps:        []PlanDep{{Pred: kB, Succ: kC}, {Pred: kC, Succ: kG}},
 		Assignments: []PlanAssign{{Task: kB, Email: "ann@x.com", Name: "Ann"}},
 	}
 	dfxWantNoChange(t, plan, plan, dfxUsers())
@@ -1749,4 +1749,32 @@ func TestRemovalDependents(t *testing.T) {
 	if len(got) != 0 {
 		t.Errorf("%d entries, want none", len(got))
 	}
+}
+
+// TestDiff_NestedDependency: a link between a task and its own summary task is a
+// loop no exchange file can hold. EERP's old ones are no removal when the file
+// lacks them; a file naming one gets DEP_NESTED and no row.
+func TestDiff_NestedDependency(t *testing.T) {
+	kA, kB, kC, kD := dfxKey(dfxA), dfxKey(dfxB), dfxKey(dfxC), dfxKey(uuid.New())
+	tasks := []PlanTask{
+		{Ref: kA, Name: "Design", Start: day(dfxDay(dfxMon)), Duration: 5, HasChildren: true},
+		{Ref: kB, Parent: kA, Name: "Draft", Start: day(dfxDay(dfxMon)), Duration: 3, HasChildren: true},
+		{Ref: kC, Parent: kB, Name: "Outline", Start: day(dfxDay(dfxMon)), Duration: 1},
+		{Ref: kD, Name: "Build", Start: day(dfxDay(dfxWed)), Duration: 2},
+	}
+	nested := []PlanDep{{Pred: kC, Succ: kA}, {Pred: kA, Succ: kB}}
+
+	t.Run("EERP's own is no removal", func(t *testing.T) {
+		changes, warnings := diffPlans(dfxPlan(tasks, append(nested, PlanDep{Pred: kC, Succ: kD})), dfxPlan(tasks, []PlanDep{{Pred: kC, Succ: kD}}), nil)
+		dfxWantEmpty(t, changes, warnings)
+	})
+	t.Run("the file's is reported, not imported", func(t *testing.T) {
+		changes, warnings := diffPlans(dfxPlan(tasks, nil), dfxPlan(tasks, append(nested, PlanDep{Pred: kC, Succ: kD})), nil)
+		dfxWantKeys(t, changes, "dep:"+kC+":"+kD)
+		dfxWantWarning(t, warnings, "DEP_NESTED", "Outline")
+		dfxWantWarning(t, warnings, "DEP_NESTED", "Design")
+		if len(warnings) != 2 {
+			t.Errorf("%d warnings, want two: %+v", len(warnings), warnings)
+		}
+	})
 }

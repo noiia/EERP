@@ -771,7 +771,12 @@ func ganZeroIfMilestone(task PlanTask) int {
 // is left out; GanttProject puts each <depend> on its predecessor.
 func ganDepIndex(p Plan, ids map[string]string) map[string][]ganDepEl {
 	out := map[string][]ganDepEl{}
-	for _, dep := range p.Deps {
+	// GanttProject refuses a link between a task and its own summary task ("is looping").
+	nested := p.nestedDeps()
+	for i, dep := range p.Deps {
+		if nested[i] {
+			continue
+		}
 		if _, ok := ids[dep.Pred]; !ok {
 			continue
 		}

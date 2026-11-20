@@ -800,6 +800,19 @@ var dependencyRules = taskLinkRules(func(r *request, _ uuid.UUID) error {
 	if cycle {
 		return invalid("depends_on_id", "this dependency would create a cycle")
 	}
+	// Nor link a task and its own summary task: a summary spans its subtasks, so
+	// either order is a loop (GanttProject and MS Project refuse such a link).
+	var nested bool
+	if err := r.ex.QueryRow(r.ctx, `WITH RECURSIVE up AS (
+			SELECT t.parent_id AS id, t.id AS start FROM project_task t WHERE t.id = ANY($1::uuid[]) AND t.tenant_id = $2 AND t.parent_id IS NOT NULL
+			UNION SELECT t.parent_id, up.start FROM project_task t JOIN up ON t.id = up.id WHERE t.parent_id IS NOT NULL AND t.tenant_id = $2)
+		SELECT EXISTS (SELECT 1 FROM up WHERE (start = $3 AND id = $4) OR (start = $4 AND id = $3))`,
+		[]uuid.UUID{on, task}, r.tenant, task, on).Scan(&nested); err != nil {
+		return err
+	}
+	if nested {
+		return invalid("depends_on_id", "a task can't depend on its own summary task or subtask")
+	}
 	return nil
 })
 

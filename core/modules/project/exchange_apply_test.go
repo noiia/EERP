@@ -719,12 +719,12 @@ func TestApply_AllOrNothing(t *testing.T) {
 	e := exFixture(t)
 	f, pid := e.f, e.pid
 	// The project holds one dependency the file knows nothing about: Framing waits
-	// for Superstructure. The file asks for the same link the other way round, and
+	// for Excavation. The file asks for the same link the other way round, and
 	// the rules refuse it (it would close a loop) after the other rows were written.
-	f.dependency(pid, uuid.MustParse(ganFramingRef), uuid.MustParse(ganSuperstructureRef))
+	f.dependency(pid, uuid.MustParse(ganFramingRef), uuid.MustParse(ganExcavationRef))
 	file := e.partner
 	file.Deps = append(slices.Clone(e.partner.Deps),
-		PlanDep{Pred: ganFramingRef, Succ: ganSuperstructureRef, Type: DepFS})
+		PlanDep{Pred: ganFramingRef, Succ: ganExcavationRef, Type: DepFS})
 	_, changes, _ := exPreview(t, f, pid, file)
 	keys := exKeysOf(changes)
 	if len(keys) < 6 {
@@ -742,7 +742,7 @@ func TestApply_AllOrNothing(t *testing.T) {
 	// database.
 	was := e.basic
 	was.Deps = append(slices.Clone(e.basic.Deps),
-		PlanDep{Pred: ganSuperstructureRef, Succ: ganFramingRef, Type: DepFS})
+		PlanDep{Pred: ganExcavationRef, Succ: ganFramingRef, Type: DepFS})
 	_, same, warns := exPreview(t, f, pid, was)
 	dfxWantEmpty(t, same, warns)
 	if logs := exLogs(t, f, pid); len(logs) != 0 {

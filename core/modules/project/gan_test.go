@@ -1286,3 +1286,36 @@ func TestGanEncode_EmptyPlan(t *testing.T) {
 		t.Errorf("plan = %+v warnings %+v", p, warnings)
 	}
 }
+
+// TestGanEncode_NestedDependency: GanttProject refuses a link between a task and
+// its own summary task ("Dependency=… is looping"), at any depth and either way
+// round, so the encoder leaves those out and keeps every other link.
+func TestGanEncode_NestedDependency(t *testing.T) {
+	const top, mid, leaf, other = ganAlphaRef, ganLongRef, ganCharlieRef, ganFoundationRef
+	p := Plan{
+		Tasks: []PlanTask{
+			{Ref: top, Name: "CSR deliverable", Start: exchangeDay(2026, time.January, 5), Duration: 5, HasChildren: true},
+			{Ref: mid, Parent: top, Name: "Overview", Start: exchangeDay(2026, time.January, 5), Duration: 3, HasChildren: true},
+			{Ref: leaf, Parent: mid, Name: "Release RACI", Start: exchangeDay(2026, time.January, 5), Duration: 1},
+			{Ref: other, Name: "Other", Start: exchangeDay(2026, time.January, 12), Duration: 1},
+		},
+		Deps: []PlanDep{
+			{Pred: leaf, Succ: top, Type: DepFS},   // subtask -> its summary
+			{Pred: mid, Succ: leaf, Type: DepFS},   // summary -> its subtask
+			{Pred: leaf, Succ: mid, Type: DepFS},   // subtask -> its direct parent
+			{Pred: leaf, Succ: other, Type: DepFS}, // kept
+			{Pred: other, Succ: mid, Type: DepFS},  // kept
+		},
+	}
+	var buf bytes.Buffer
+	if err := (ganFormat{}).Encode(&buf, p); err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	got, _, err := ganDecodeString(t, buf.String())
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got.Deps) != 2 || !hasGanDep(got, PlanDep{Pred: leaf, Succ: other, Type: DepFS}) || !hasGanDep(got, PlanDep{Pred: other, Succ: mid, Type: DepFS}) {
+		t.Errorf("deps = %+v, want only the two links between unrelated tasks", got.Deps)
+	}
+}
