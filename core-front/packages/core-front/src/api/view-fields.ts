@@ -104,6 +104,9 @@ export interface ViewModeDefaults {
   ganttBaseline?: GanttBaselineConfig
   /** Gantt mode: the pinned scope's milestones, drawn as diamonds on their date. Module-declared only. */
   ganttMilestones?: GanttMilestonesConfig
+  /** Gantt mode: the pinned scope's plan import/export (ADR-042) — the Export and
+   * Import entries beside Critical path and Baseline. Module-declared only. */
+  ganttExchange?: GanttExchangeConfig
   /** Kanban mode: one lane per related record of a many2many junction, plus an
    * Unassigned lane (ADR-041). Module-declared only. */
   kanbanSwimlanes?: KanbanSwimlanesConfig
@@ -155,6 +158,33 @@ export interface GanttMilestonesConfig {
   reachedField?: string
   /** The milestone form (':id'), opened on click. */
   formPath?: string
+}
+
+/** One plan file family the Gantt's Export and Import menus offer (ADR-042). */
+export interface ExchangeFormat {
+  /** The route's `:format` segment, e.g. 'gan'. */
+  key: string
+  /** The menu entry's label, e.g. 'GanttProject (.gan)'. */
+  label: string
+  /** The file input's `accept`, e.g. '.gan'. */
+  accept: string
+}
+
+/**
+ * The pinned scope's plan exchange (ADR-042): the file families EERP reads and
+ * writes, and who may import. The browser calls
+ * `/api/exchange/<scopeEntity>/<id>/<format>/<action>`, which the shell's BFF
+ * relays to Go's `/api/v1/<scopeEntity>/<id>/exchange/<format>/<action>`.
+ */
+export interface GanttExchangeConfig {
+  /** The scope column on the task entity, e.g. 'project_id' — the pin the toolbar waits for. */
+  scopeField: string
+  /** The scope entity, i.e. the route's first segment, e.g. 'project'. */
+  scopeEntity: string
+  /** The formats both menus list, in menu order. */
+  formats: ExchangeFormat[]
+  /** Name registered with registerKanbanColumnsGuard: may the caller import into this scope? */
+  canImport?: string
 }
 
 /** One Kanban swimlane per record of a many2many junction (plus Unassigned). */
@@ -274,6 +304,7 @@ export interface EffectiveViewFields {
   ganttSchedule: GanttScheduleConfig | null
   ganttBaseline: GanttBaselineConfig | null
   ganttMilestones: GanttMilestonesConfig | null
+  ganttExchange: GanttExchangeConfig | null
   kanbanSwimlanes: KanbanSwimlanesConfig | null
   insights: InsightsConfig | null
   matrix: MatrixConfig | null
@@ -312,6 +343,8 @@ export function effectiveViewFields(
     ganttSchedule: defaults?.ganttSchedule ?? null,
     ganttBaseline: defaults?.ganttBaseline ?? null,
     ganttMilestones: defaults?.ganttMilestones ?? null,
+    // ADR-042: the import/export menus, module-declared only, like the schedule and baseline.
+    ganttExchange: defaults?.ganttExchange ?? null,
     kanbanSwimlanes: defaults?.kanbanSwimlanes ?? null,
     insights: defaults?.insights ?? null,
     matrix: defaults?.matrix ?? null,

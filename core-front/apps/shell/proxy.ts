@@ -26,11 +26,14 @@ import { SITE_ACCESS_COOKIE, SITE_REFRESH_COOKIE } from '@/lib/site-session'
 // (ACCESS_TTL_SECONDS), so the browser dropping the cookie IS the "expired" signal —
 // no JWT decoding needed here.
 
-// The upload BFF routes (api/pictures, api/attachments, api/teams) are skipped too: the proxy
-// buffers request bodies only up to Next's 10 MB proxyClientMaxBodySize, below Go's
-// upload_body_limit, and those routes refresh the session themselves.
+// The upload BFF routes (api/pictures, api/attachments, api/teams, api/exchange)
+// are skipped too: the proxy buffers request bodies only up to Next's 10 MB
+// proxyClientMaxBodySize, below Go's upload_body_limit, and those routes refresh
+// the session themselves. api/exchange also carries the .gan export download,
+// which must stream instead of being buffered into memory.
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/auth|api/site-auth|api/pictures|api/attachments|api/teams).*)'],
+  matcher:
+    ['/((?!_next/static|_next/image|favicon.ico|api/auth|api/site-auth|api/pictures|api/attachments|api/teams|api/exchange).*)'],
 }
 
 // First path segment of every ERP page that used to live at the root (website

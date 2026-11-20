@@ -72,10 +72,12 @@ const (
 
 // request is one write under validation. body is what the generic handler
 // will bind (the stored row on a restore); stored is the live row (nil on a
-// create).
+// create). Every read a rule makes goes through ex, the executor the write
+// runs on: the pool on the HTTP path, a transaction for a caller outside it.
 type request struct {
 	h      *Handler
 	ctx    context.Context
+	ex     orm.Executor
 	op     op
 	tenant uuid.UUID
 	user   uuid.UUID
@@ -144,7 +146,7 @@ func (r *request) visibleRef(table, k string, required bool) (uuid.UUID, error) 
 		return id, nil
 	}
 	if r.changed(k) {
-		ok, err := orm.CanSeeRecord(r.ctx, r.h.db, table, id)
+		ok, err := orm.CanSeeRecord(r.ctx, r.ex, table, id)
 		if err != nil {
 			return id, err
 		}
@@ -163,7 +165,7 @@ func (r *request) inProject(table, k string, pid uuid.UUID) (uuid.UUID, error) {
 		return id, err
 	}
 	var owner uuid.UUID
-	if err := r.h.db.QueryRow(r.ctx, `SELECT project_id FROM `+table+` WHERE id = $1 AND tenant_id = $2`,
+	if err := r.ex.QueryRow(r.ctx, `SELECT project_id FROM `+table+` WHERE id = $1 AND tenant_id = $2`,
 		id, r.tenant).Scan(&owner); err != nil {
 		return id, err
 	}
@@ -175,15 +177,21 @@ func (r *request) inProject(table, k string, pid uuid.UUID) (uuid.UUID, error) {
 
 // manages: the caller is a project admin or pid's manager.
 func (r *request) manages(pid uuid.UUID) (bool, error) {
-	return r.h.manages(r.ctx, r.tenant, r.user, pid)
+	return r.h.managesOn(r.ctx, r.ex, r.tenant, r.user, pid)
 }
 
 func (h *Handler) manages(ctx context.Context, tenant, user, pid uuid.UUID) (bool, error) {
+	return h.managesOn(ctx, h.db, tenant, user, pid)
+}
+
+// managesOn is manages reading through ex (the pool, or the transaction a
+// bulk write runs in).
+func (h *Handler) managesOn(ctx context.Context, ex orm.Executor, tenant, user, pid uuid.UUID) (bool, error) {
 	if IsAdmin(ctx, h.perms) {
 		return true, nil
 	}
 	var mine bool
-	err := h.db.QueryRow(ctx, `SELECT manager_id = $3 FROM project WHERE id = $1 AND tenant_id = $2`, pid, tenant, user).Scan(&mine)
+	err := ex.QueryRow(ctx, `SELECT manager_id = $3 FROM project WHERE id = $1 AND tenant_id = $2`, pid, tenant, user).Scan(&mine)
 	if errors.Is(err, orm.ErrNotFound) {
 		return false, nil
 	}
@@ -250,7 +258,7 @@ func (h *Handler) load(c *echo.Context, table string) (*request, error) {
 		return nil, errNoCaller
 	}
 	tenant, _ := access.TenantFromContext(ctx)
-	r := &request{h: h, ctx: ctx, tenant: tenant, user: who.UserID}
+	r := &request{h: h, ctx: ctx, ex: h.db, tenant: tenant, user: who.UserID}
 	restore := strings.HasSuffix(c.Path(), "/restore")
 	switch {
 	case restore:
@@ -268,22 +276,17 @@ func (h *Handler) load(c *echo.Context, table string) (*request, error) {
 			return nil, &rejection{status: http.StatusBadRequest, code: "BAD_REQUEST", msg: "invalid id format"}
 		}
 		r.id = id
-		if !restore {
-			ok, err := orm.CanSeeRecord(ctx, h.db, table, id)
+		if restore { // the deleted row, read unchecked here: the rules check it as a create
+			row, err := h.row(ctx, table, id, tenant, false)
 			if err != nil {
 				return nil, err
 			}
-			if !ok {
-				return nil, errNotFound
-			}
-		}
-		row, err := h.row(ctx, table, id, tenant, !restore)
-		if err != nil {
-			return nil, err
-		}
-		if restore {
 			r.body = row
 			return r, nil
+		}
+		row, err := h.visibleRowOn(ctx, h.db, table, id, tenant)
+		if err != nil {
+			return nil, err
 		}
 		r.stored = row
 	}
@@ -298,8 +301,14 @@ func (h *Handler) load(c *echo.Context, table string) (*request, error) {
 
 // row reads one row of table as JSON values, live or deleted.
 func (h *Handler) row(ctx context.Context, table string, id, tenant uuid.UUID, live bool) (map[string]any, error) {
+	return h.rowOn(ctx, h.db, table, id, tenant, live)
+}
+
+// rowOn is row reading through ex (the pool, or the transaction a bulk write
+// runs in).
+func (h *Handler) rowOn(ctx context.Context, ex orm.Executor, table string, id, tenant uuid.UUID, live bool) (map[string]any, error) {
 	var raw []byte
-	err := h.db.QueryRow(ctx, `SELECT to_jsonb(t) FROM `+table+` t
+	err := ex.QueryRow(ctx, `SELECT to_jsonb(t) FROM `+table+` t
 		WHERE id = $1 AND tenant_id = $2 AND (deleted_at IS NULL) = $3`, id, tenant, live).Scan(&raw)
 	if errors.Is(err, orm.ErrNotFound) {
 		return nil, errNotFound
@@ -309,6 +318,69 @@ func (h *Handler) row(ctx context.Context, table string, id, tenant uuid.UUID, l
 	}
 	var m map[string]any
 	return m, json.Unmarshal(raw, &m)
+}
+
+// visibleRowOn is the single visibility gate in front of rowOn: 404 unless the
+// caller may see the row under its row scope, then read it through ex. The
+// HTTP path (load, on the pool) and check (on the transaction a bulk write runs
+// in) both go through it, so tightening the gate once holds for both.
+//
+// It reads the live row, always: the gate is CanSeeRecord, which is about the row a
+// caller can currently see, and the one caller that wants a deleted row (a restore,
+// which the rules check as a create) reads it through h.row outside here.
+func (h *Handler) visibleRowOn(ctx context.Context, ex orm.Executor, table string, id, tenant uuid.UUID) (map[string]any, error) {
+	seen, err := orm.CanSeeRecord(ctx, ex, table, id)
+	if err != nil {
+		return nil, err
+	}
+	if !seen {
+		return nil, errNotFound
+	}
+	return h.rowOn(ctx, ex, table, id, tenant, true)
+}
+
+// rulesByTable are the tables a caller outside the HTTP path may validate a
+// write of, with the same rules the guard middlewares run. Every entry is the
+// very function Mount puts in front of that table's generic write.
+var rulesByTable = map[string]func(*request) error{
+	"project_task":            taskRules,
+	"project_task_dependency": dependencyRules,
+	"project_task_user":       userLinkRules,
+	"project_milestone":       milestoneRules,
+}
+
+// check runs table's rules on ex for one write of id with body, the way the
+// guard middleware does before a generic write, so a caller that writes
+// outside the HTTP path (an import applying a whole file in one transaction)
+// gets the same invariants and no second copy of the rules. The caller and
+// the tenant come from ctx; the reads, including the visibility check and the
+// stored row of an update or delete, go through ex. It returns the body to
+// write, as the rules rewrote it.
+func (h *Handler) check(ctx context.Context, ex orm.Executor, table string, o op, id uuid.UUID, body map[string]any) (map[string]any, error) {
+	rules, ok := rulesByTable[table]
+	if !ok {
+		return nil, errors.New("project: no validation rules for table " + table)
+	}
+	who, ok := auth.IdentityFromContext(ctx)
+	if !ok {
+		return nil, errNoCaller
+	}
+	tenant, _ := access.TenantFromContext(ctx)
+	if body == nil {
+		body = map[string]any{}
+	}
+	r := &request{h: h, ctx: ctx, ex: ex, op: o, tenant: tenant, user: who.UserID, id: id, body: body}
+	if o != opCreate { // load's gate and stored read, on ex
+		stored, err := h.visibleRowOn(ctx, ex, table, id, tenant)
+		if err != nil {
+			return nil, err
+		}
+		r.stored = stored
+	}
+	if err := rules(r); err != nil {
+		return nil, err
+	}
+	return r.body, nil
 }
 
 // ── Rules per table ──────────────────────────────────────────────────────────
@@ -322,7 +394,7 @@ func projectRules(r *request) error {
 		}
 		if id != uuid.Nil {
 			var kind *string
-			err := r.h.db.QueryRow(r.ctx, `SELECT kind FROM contact WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`, id, r.tenant).Scan(&kind)
+			err := r.ex.QueryRow(r.ctx, `SELECT kind FROM contact WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`, id, r.tenant).Scan(&kind)
 			if err != nil && !errors.Is(err, orm.ErrNotFound) {
 				return err
 			}
@@ -340,7 +412,7 @@ func projectRules(r *request) error {
 	}
 	if r.op == opCreate { // a restore: 404 unless the caller saw it when deleted
 		var seen bool
-		if err := r.h.db.QueryRow(r.ctx, `SELECT `+visibleWhenDeleted, r.id, r.tenant, r.user).Scan(&seen); err != nil {
+		if err := r.ex.QueryRow(r.ctx, `SELECT `+visibleWhenDeleted, r.id, r.tenant, r.user).Scan(&seen); err != nil {
 			return err
 		}
 		if !seen && !IsAdmin(r.ctx, r.h.perms) {
@@ -394,7 +466,7 @@ var stageRules = managedChildRules(func(r *request, pid uuid.UUID) error {
 		return nil
 	}
 	var next int // a new column goes last
-	if err := r.h.db.QueryRow(r.ctx, `SELECT COALESCE(max(sequence), 0) + 10 FROM project_stage
+	if err := r.ex.QueryRow(r.ctx, `SELECT COALESCE(max(sequence), 0) + 10 FROM project_stage
 		WHERE project_id = $1 AND deleted_at IS NULL`, pid).Scan(&next); err != nil {
 		return err
 	}
@@ -419,7 +491,7 @@ func taskRules(r *request) error {
 		delete(r.body, "wbs_number")
 		// An assignee-only caller can't see the source project: moving would
 		// expose its hidden subtasks and rows in the target.
-		ok, err := orm.CanSeeRecord(r.ctx, r.h.db, "project", r.storedRef("project_id"))
+		ok, err := orm.CanSeeRecord(r.ctx, r.ex, "project", r.storedRef("project_id"))
 		if err != nil {
 			return err
 		}
@@ -438,7 +510,7 @@ func taskRules(r *request) error {
 	r.defaults(map[string]any{"description": "", "priority": false, "planned_hours": 0, "sequence": 0})
 	if r.op == opCreate && r.get("stage_id") == nil {
 		var first *string
-		if err := r.h.db.QueryRow(r.ctx, `SELECT (SELECT id::text FROM project_stage WHERE project_id = $1 AND deleted_at IS NULL
+		if err := r.ex.QueryRow(r.ctx, `SELECT (SELECT id::text FROM project_stage WHERE project_id = $1 AND deleted_at IS NULL
 			ORDER BY sequence, created_at LIMIT 1)`, pid).Scan(&first); err != nil {
 			return err
 		}
@@ -462,7 +534,7 @@ func taskRules(r *request) error {
 	}
 	// parent_id must not be the task itself nor one of its descendants.
 	var cycle bool
-	if err := r.h.db.QueryRow(r.ctx, `WITH RECURSIVE up AS (
+	if err := r.ex.QueryRow(r.ctx, `WITH RECURSIVE up AS (
 			SELECT $1::uuid AS id
 			UNION SELECT t.parent_id FROM project_task t JOIN up ON t.id = up.id WHERE t.parent_id IS NOT NULL)
 		SELECT EXISTS (SELECT 1 FROM up WHERE id = $2)`, parent, r.id).Scan(&cycle); err != nil {
@@ -500,7 +572,7 @@ func taskOrder(r *request, pid uuid.UUID) error {
 	var parent any
 	if parentCode != "" {
 		var id uuid.UUID
-		err := r.h.db.QueryRow(r.ctx, `SELECT id FROM project_task
+		err := r.ex.QueryRow(r.ctx, `SELECT id FROM project_task
 			WHERE tenant_id = $1 AND project_id = $2 AND wbs_number = $3 AND deleted_at IS NULL`, r.tenant, pid, parentCode).Scan(&id)
 		if errors.Is(err, orm.ErrNotFound) {
 			return invalid("wbs_number", "no task numbered "+parentCode+" in this project")
@@ -530,7 +602,7 @@ func taskLinkRules(extra func(*request, uuid.UUID) error) func(*request) error {
 			return err
 		}
 		var pid uuid.UUID
-		if err := r.h.db.QueryRow(r.ctx, `SELECT project_id FROM project_task WHERE id = $1 AND tenant_id = $2`,
+		if err := r.ex.QueryRow(r.ctx, `SELECT project_id FROM project_task WHERE id = $1 AND tenant_id = $2`,
 			task, r.tenant).Scan(&pid); err != nil {
 			return err
 		}
@@ -555,7 +627,7 @@ func sharedLinkRules(table, k string) func(*request) error {
 			return invalid(k, k+" is required")
 		}
 		var ok bool // no row scope: check the tenant
-		if err := r.h.db.QueryRow(r.ctx, `SELECT EXISTS (SELECT 1 FROM `+table+`
+		if err := r.ex.QueryRow(r.ctx, `SELECT EXISTS (SELECT 1 FROM `+table+`
 			WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL)`, id, r.tenant).Scan(&ok); err != nil {
 			return err
 		}
@@ -631,7 +703,7 @@ var obsRules = managedChildRules(func(r *request, pid uuid.UUID) error {
 			q = `SELECT EXISTS (SELECT 1 FROM users WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL AND kind <> 'website')`
 		}
 		var found bool
-		if err := r.h.db.QueryRow(r.ctx, q, id, r.tenant).Scan(&found); err != nil {
+		if err := r.ex.QueryRow(r.ctx, q, id, r.tenant).Scan(&found); err != nil {
 			return err
 		}
 		if !found {
@@ -653,7 +725,7 @@ var obsRules = managedChildRules(func(r *request, pid uuid.UUID) error {
 		return err
 	}
 	var cycle bool // walk up from the new parent: reaching the box is a cycle
-	if err := r.h.db.QueryRow(r.ctx, `WITH RECURSIVE up AS (
+	if err := r.ex.QueryRow(r.ctx, `WITH RECURSIVE up AS (
 			SELECT $1::uuid AS id
 			UNION SELECT b.parent_id FROM project_obs_box b JOIN up ON b.id = up.id
 			WHERE b.parent_id IS NOT NULL AND b.deleted_at IS NULL)
@@ -691,7 +763,7 @@ var pbsRules = managedChildRules(func(r *request, pid uuid.UUID) error {
 		return err
 	}
 	var cycle bool // walk up from the new parent: reaching the item is a cycle
-	if err := r.h.db.QueryRow(r.ctx, `WITH RECURSIVE up AS (
+	if err := r.ex.QueryRow(r.ctx, `WITH RECURSIVE up AS (
 			SELECT $1::uuid AS id
 			UNION SELECT b.parent_id FROM project_pbs_item b JOIN up ON b.id = up.id
 			WHERE b.parent_id IS NOT NULL AND b.deleted_at IS NULL)
@@ -718,7 +790,7 @@ var dependencyRules = taskLinkRules(func(r *request, _ uuid.UUID) error {
 	}
 	// depends_on_id must not already (transitively) depend on task_id.
 	var cycle bool
-	if err := r.h.db.QueryRow(r.ctx, `WITH RECURSIVE dep AS (
+	if err := r.ex.QueryRow(r.ctx, `WITH RECURSIVE dep AS (
 			SELECT $1::uuid AS id
 			UNION SELECT d.depends_on_id FROM project_task_dependency d JOIN dep ON d.task_id = dep.id
 			WHERE d.deleted_at IS NULL AND d.tenant_id = $3 AND d.id <> $4)
@@ -738,7 +810,7 @@ func riskStaff(r *request, k string) error {
 		return err
 	}
 	var ok bool
-	if err := r.h.db.QueryRow(r.ctx, `SELECT EXISTS (SELECT 1 FROM users WHERE id = $1 AND tenant_id = $2
+	if err := r.ex.QueryRow(r.ctx, `SELECT EXISTS (SELECT 1 FROM users WHERE id = $1 AND tenant_id = $2
 		AND deleted_at IS NULL AND kind <> 'website')`, id, r.tenant).Scan(&ok); err != nil {
 		return err
 	}
@@ -796,7 +868,7 @@ func riskRules(r *request) error {
 	}
 	if phase != uuid.Nil && (r.changed("phase_task_id") || r.changed("project_id")) {
 		var top bool
-		if err := r.h.db.QueryRow(r.ctx, `SELECT parent_id IS NULL FROM project_task WHERE id = $1 AND tenant_id = $2`,
+		if err := r.ex.QueryRow(r.ctx, `SELECT parent_id IS NULL FROM project_task WHERE id = $1 AND tenant_id = $2`,
 			phase, r.tenant).Scan(&top); err != nil {
 			return err
 		}
@@ -808,7 +880,7 @@ func riskRules(r *request) error {
 		return err
 	} else if cat != uuid.Nil && r.changed("category_id") {
 		var ok bool
-		if err := r.h.db.QueryRow(r.ctx, `SELECT EXISTS (SELECT 1 FROM project_risk_category
+		if err := r.ex.QueryRow(r.ctx, `SELECT EXISTS (SELECT 1 FROM project_risk_category
 			WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL)`, cat, r.tenant).Scan(&ok); err != nil {
 			return err
 		}
@@ -831,7 +903,7 @@ var riskLinkRules = taskLinkRules(func(r *request, pid uuid.UUID) error {
 	}
 	var owner uuid.UUID
 	var impact string
-	if err := r.h.db.QueryRow(r.ctx, `SELECT project_id, impact_on FROM project_risk WHERE id = $1 AND tenant_id = $2`,
+	if err := r.ex.QueryRow(r.ctx, `SELECT project_id, impact_on FROM project_risk WHERE id = $1 AND tenant_id = $2`,
 		risk, r.tenant).Scan(&owner, &impact); err != nil {
 		return err
 	}
@@ -1014,7 +1086,7 @@ func capacityRules(r *request) error {
 		return invalid("user_id", "user_id is required")
 	}
 	var ok bool
-	if err := r.h.db.QueryRow(r.ctx, `SELECT EXISTS (SELECT 1 FROM users WHERE id = $1 AND tenant_id = $2
+	if err := r.ex.QueryRow(r.ctx, `SELECT EXISTS (SELECT 1 FROM users WHERE id = $1 AND tenant_id = $2
 		AND deleted_at IS NULL)`, id, r.tenant).Scan(&ok); err != nil {
 		return err
 	}

@@ -3120,6 +3120,123 @@ msgstr ""
 msgid "Records: {n}"
 msgstr ""
 
+# ── Plan exchange with GanttProject: the Gantt toolbar menus and the import
+# wizard (docs/adr/ADR-042-project-plan-exchange.md) ─────────────────────────
+
+msgid "Import"
+msgstr ""
+
+msgid "Choose a plan file to compare with this project."
+msgstr ""
+
+msgid "Plan file"
+msgstr ""
+
+msgid "The file is too large."
+msgstr ""
+
+msgid "1 warning"
+msgstr ""
+
+msgid "{n} warnings"
+msgstr ""
+
+msgid "Select all"
+msgstr ""
+
+msgid "Select all removals"
+msgstr ""
+
+msgid "{n} of {m} selected"
+msgstr ""
+
+msgid "No changes"
+msgstr ""
+
+msgid "new"
+msgstr ""
+
+msgid "Select change"
+msgstr ""
+
+msgid "(was unscheduled)"
+msgstr ""
+
+msgid "has"
+msgstr ""
+
+msgid "1 timesheet"
+msgstr ""
+
+msgid "{n} timesheets"
+msgstr ""
+
+msgid "1 risk link"
+msgstr ""
+
+msgid "{n} risk links"
+msgstr ""
+
+msgid "1 subtask"
+msgstr ""
+
+msgid "{n} subtasks"
+msgstr ""
+
+msgid "The project changed since the preview"
+msgstr ""
+
+msgid "1 change applied"
+msgstr ""
+
+msgid "{n} changes applied"
+msgstr ""
+
+msgid "Apply 1 change"
+msgstr ""
+
+msgid "Apply {n} changes"
+msgstr ""
+
+msgid "Preview again"
+msgstr ""
+
+msgid "under"
+msgstr ""
+
+msgid "after"
+msgstr ""
+
+msgid "Update"
+msgstr ""
+
+msgid "Depends on"
+msgstr ""
+
+msgid "Remove dependency"
+msgstr ""
+
+msgid "Assign"
+msgstr ""
+
+msgid "Unassign"
+msgstr ""
+
+msgid "Create milestone"
+msgstr ""
+
+msgid "Update milestone"
+msgstr ""
+
+msgid "Delete milestone"
+msgstr ""
+
+msgid "Dates"
+msgstr ""
+
+msgid "Planned h."
+msgstr ""
+
 msgid "Add task"
 msgstr ""
 

@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?><project name="Untitled Gantt Project" company="" webLink="http://" view-date="2025-12-01" view-index="0" gantt-divider-location="368" resource-divider-location="300" version="3.3.3316" locale="fr_FR">
+    <description/>
+    <view zooming-state="default:11" id="gantt-chart">
+        <field id="tpd3" name="Nom" width="209" order="0"/>
+        <field id="tpd4" name="Date de début" width="79" order="1"/>
+        <field id="tpd5" name="Date de fin" width="79" order="2"/>
+        <field id="tpd15" name="Notes" width="20" order="3"/>
+        <option id="filter.completedTasks" value="false"/>
+        <option id="filter.dueTodayTasks" value="false"/>
+        <option id="filter.overdueTasks" value="false"/>
+        <option id="filter.inProgressTodayTasks" value="false"/>
+        <option id="color.recent"><![CDATA[#ff6666]]></option>
+    </view>
+    <view id="resource-table">
+        <field id="0" name="Nom" width="210" order="0"/>
+        <field id="1" name="Rôle par défaut" width="86" order="1"/>
+    </view>
+    <!-- -->
+    <calendars>
+        <day-types>
+            <day-type id="0"/>
+            <day-type id="1"/>
+            <default-week id="1" name="default" sun="1" mon="0" tue="0" wed="0" thu="0" fri="0" sat="1"/>
+            <only-show-weekends value="false"/>
+            <overriden-day-types/>
+            <days/>
+        </day-types>
+    </calendars>
+    <tasks empty-milestones="true">
+        <taskproperties>
+            <taskproperty id="tpd0" name="type" type="default" valuetype="icon"/>
+            <taskproperty id="tpd1" name="priority" type="default" valuetype="icon"/>
+            <taskproperty id="tpd2" name="info" type="default" valuetype="icon"/>
+            <taskproperty id="tpd3" name="name" type="default" valuetype="text"/>
+            <taskproperty id="tpd4" name="begindate" type="default" valuetype="date"/>
+            <taskproperty id="tpd5" name="enddate" type="default" valuetype="date"/>
+            <taskproperty id="tpd6" name="duration" type="default" valuetype="int"/>
+            <taskproperty id="tpd7" name="completion" type="default" valuetype="int"/>
+            <taskproperty id="tpd8" name="coordinator" type="default" valuetype="text"/>
+            <taskproperty id="tpd9" name="predecessorsr" type="default" valuetype="text"/>
+        </taskproperties>
+        <task id="0" uid="aa8601af38994a3681696685d3948c84" name="Tâche 01" meeting="false" start="2025-11-24" duration="30" complete="0" expand="true">
+            <depend id="22" type="2" difference="0" hardness="Strong"/>
+        </task>
+        <task id="22" uid="591f80f450c84d9faa55670dc041c8fe" name="Jalon 01" color="#ff6666" meeting="true" start="2026-01-05" duration="0" complete="0" expand="true">
+            <depend id="1" type="2" difference="0" hardness="Strong"/>
+            <depend id="4" type="2" difference="0" hardness="Strong"/>
+            <depend id="7" type="2" difference="0" hardness="Strong"/>
+        </task>
+        <task id="1" uid="05ecb443c42c4d71bc6a18b5fc27f127" name="Tâche 02" meeting="false" start="2026-01-05" duration="60" complete="0" expand="true">
+            <depend id="2" type="2" difference="0" hardness="Strong"/>
+        </task>
+        <task id="2" uid="d507061558b244f0ab44ea45c4c4ea55" name="Tâche 03" meeting="false" start="2026-04-27" duration="20" complete="0" expand="true">
+            <notes><![CDATA[Note exemple]]></notes>
+            <depend id="5" type="2" difference="0" hardness="Strong"/>
+        </task>
+        <task id="3" uid="db3038aa882d4a0cb274221ff99fc658" name="Tâche 04" meeting="false" start="2026-07-06" duration="40" complete="0" expand="true">
+            <notes><![CDATA[Note exemple]]></notes>
+            <depend id="23" type="2" difference="0" hardness="Strong"/>
+        </task>
+        <task id="4" uid="4b2303bd427f402e954b3d4fc33e1873" name="Tâche 05" meeting="false" start="2026-01-05" duration="60" complete="0" expand="true">
+            <depend id="2" type="2" difference="0" hardness="Strong"/>
+        </task>
+        <task id="5" uid="214a0ec4028443c1adb2376281adcab6" name="Tâche 06 &amp; suite" meeting="false" start="2026-05-25" duration="30" complete="0" expand="true">
+            <depend id="3" type="2" difference="0" hardness="Strong"/>
+            <depend id="6" type="2" difference="0" hardness="Strong"/>
+            <depend id="11" type="2" difference="0" hardness="Strong"/>
+        </task>
+        <task id="6" uid="acf745e78ce94f62b9c74ac1f845c7a7" name="Tâche 07" meeting="false" start="2026-07-06" duration="60" complete="0" expand="true">
+            <depend id="23" type="2" difference="0" hardness="Strong"/>
+        </task>
+        <task id="7" uid="bff37167adf84f0086d63609d32d33e6" name="Tâche 08" meeting="false" start="2026-01-05" duration="40" complete="0" expand="true">
+            <depend id="8" type="2" difference="0" hardness="Strong"/>
+        </task>
+        <task id="8" uid="a3384598ee0b4c37bd5087af0ec35334" name="Tâche 09" meeting="false" start="2026-03-02" duration="40" complete="0" expand="true">
+            <depend id="2" type="2" difference="0" hardness="Strong"/>
+            <depend id="9" type="2" difference="0" hardness="Strong"/>
+        </task>
+        <task id="9" uid="afe3f3dbf61d4457a8fb1f1395e81aa3" name="Tâche 10" meeting="false" start="2026-04-27" duration="20" complete="0" expand="true">
+            <depend id="10" type="2" difference="0" hardness="Strong"/>
+        </task>
+        <task id="10" uid="d24feb348210465cb0cb69af570ac950" name="Tâche 11" meeting="false" start="2026-05-25" duration="20" complete="0" expand="true">
+            <depend id="3" type="2" difference="0" hardness="Strong"/>
+        </task>
+        <task id="11" uid="fba0940b48c84260b8fa795bed7c1238" name="Tâche 12" meeting="false" start="2026-07-06" duration="100" complete="0" expand="true">
+            <notes><![CDATA[Note exemple]]></notes>
+            <depend id="23" type="2" difference="0" hardness="Strong"/>
+        </task>
+        <task id="23" uid="abfbaea5143a4c00874e9a92662b3678" name="Jalon 02" color="#ff6666" meeting="true" start="2026-11-23" duration="0" complete="0" expand="true">
+            <depend id="12" type="2" difference="0" hardness="Strong"/>
+            <depend id="16" type="2" difference="0" hardness="Strong"/>
+        </task>
+        <task id="12" uid="589c40d33aee47dfa1196bd7e494f316" name="Tâche 13" meeting="false" start="2026-11-23" duration="20" complete="0" expand="true">
+            <depend id="25" type="2" difference="0" hardness="Strong"/>
+        </task>
+        <task id="16" uid="420770c935f54902a790544a0a7b29c1" name="Tâche 14" meeting="false" start="2026-11-23" duration="30" complete="0" expand="true">
+            <depend id="17" type="2" difference="0" hardness="Strong"/>
+        </task>
+        <task id="17" uid="402ec06380414a3b81f2fca8bea084ba" name="Tâche 15" meeting="false" start="2027-01-04" duration="10" complete="0" expand="true">
+            <depend id="25" type="2" difference="0" hardness="Strong"/>
+        </task>
+        <task id="25" uid="1d11ca125416458e8a8aa354154b7ef4" name="Jalon 03" color="#ff6666" meeting="true" start="2027-01-18" duration="0" complete="0" expand="true">
+            <depend id="13" type="2" difference="0" hardness="Strong"/>
+            <depend id="14" type="2" difference="5" hardness="Strong"/>
+            <depend id="18" type="2" difference="50" hardness="Strong"/>
+            <depend id="19" type="2" difference="0" hardness="Strong"/>
+        </task>
+        <task id="13" uid="36397ed74f2c4b078956d381a4a0baa6" name="Tâche 16" meeting="false" start="2027-01-18" duration="180" complete="0" expand="true">
+            <depend id="15" type="2" difference="0" hardness="Strong"/>
+        </task>
+        <task id="14" uid="51e7964fe4d04245888f5d1d97c9efc5" name="Tâche 17" meeting="false" start="2027-01-25" duration="180" complete="0" expand="true">
+            <depend id="15" type="2" difference="0" hardness="Strong"/>
+        </task>
+        <task id="15" uid="16a3cd684607459482932bc9c01d7be3" name="Tâche 18" meeting="false" start="2027-10-04" duration="20" complete="0" expand="true">
+            <depend id="26" type="2" difference="0" hardness="Strong"/>
+        </task>
+        <task id="18" uid="6b0574e262074a88a33afafcd649ffa1" name="Tâche 19" meeting="false" start="2027-03-29" duration="70" complete="0" expand="true">
+            <notes><![CDATA[Note exemple]]></notes>
+            <depend id="24" type="2" difference="0" hardness="Strong"/>
+        </task>
+        <task id="24" uid="32a54724b82248d29c1df4e7cfe2aed8" name="Tâche 20" meeting="false" start="2027-07-05" duration="20" complete="0" expand="true">
+            <depend id="26" type="2" difference="0" hardness="Strong"/>
+        </task>
+        <task id="26" uid="590f2edb4f9349d09c1ac85d1ab0167c" name="Jalon 04" color="#ff6666" meeting="true" start="2027-11-01" duration="0" complete="0" expand="true">
+            <depend id="21" type="2" difference="0" hardness="Strong"/>
+        </task>
+        <task id="19" uid="92e4bcbd20fc4725ac3c4f15ab99347d" name="Tâche 21" meeting="false" start="2027-01-18" duration="60" complete="0" expand="true">
+            <depend id="20" type="2" difference="0" hardness="Strong"/>
+        </task>
+        <task id="20" uid="7dd0f0bd07c54b19b6c1bdd14e2eea28" name="Tâche 22" meeting="false" start="2027-04-12" duration="60" complete="0" expand="true">
+            <notes><![CDATA[Note exemple]]></notes>
+            <depend id="21" type="2" difference="0" hardness="Strong"/>
+        </task>
+        <task id="21" uid="17ec979c5f984a22a41160f2622e0753" name="Tâche 23" meeting="false" start="2027-11-01" duration="2" complete="0" expand="true">
+            <depend id="27" type="2" difference="0" hardness="Strong"/>
+        </task>
+        <task id="27" uid="5001321641b9430a8e48c32455d63e08" name="Jalon 05" color="#ff6666" meeting="true" start="2027-11-03" duration="0" complete="0" expand="true"/>
+    </tasks>
+    <resources/>
+    <allocations/>
+    <vacations/>
+    <previous/>
+    <roles roleset-name="Default"/>
+</project>
