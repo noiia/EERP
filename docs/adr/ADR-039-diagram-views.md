@@ -193,6 +193,14 @@ company field, a `canEdit` guard).
   the pin is lost.
 - *Controlled canvas.* `DiagramCanvas` takes `positions` + `onMove` (a rejected write snaps the box
   back) and never reads or saves a per-user layout in this mode; boxes never placed are laid out like WBS.
+- *Fit the screen.* An org chart grows sideways (many people per manager), which leaves the
+  screen's height empty and shrinks every box once fitted. The OBS auto-layout (*Re-arrange*, and
+  never-placed boxes) is `layoutTreeToFit`: when the plain tree is wider than the window's shape, its
+  deepest levels hang as indented vertical columns under their parent (WBS's stacked columns), one
+  level at a time, keeping the arrangement a fit-to-screen view shows largest; a chart already
+  that tall is left as it is. A box in its parent's column is read from the saved positions
+  (`stackedUnder`: below the parent, indented less than half its width), so after a reload or a
+  hand move it is still entered from the left by an elbow down the parent's side.
 - *Colors.* A box has a free `#rrggbb` color; the text color is derived for contrast.
 - *Deleting.* Deleting a box clears its children's `parent_id` in the same transaction, so the
   children become roots instead of disappearing.

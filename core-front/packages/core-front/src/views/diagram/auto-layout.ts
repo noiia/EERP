@@ -63,6 +63,47 @@ export function layoutWbs(
   return finish(pos, size, heightOf)
 }
 
+/** layoutWbs for a chart that should fill a screen of `aspect` (width / height): when the
+ * plain tree is wider than that, its deepest levels hang as stacked columns (layoutWbs's
+ * `stacked`) one level at a time, and the arrangement kept is the one a fit-to-screen view
+ * shows largest. A tree already as tall as the screen is left as it is. Roots never stack. */
+export function layoutTreeToFit(
+  nodes: Record<string, WbsNode>,
+  roots: string[],
+  visible: string[],
+  size: BoxSize,
+  aspect: number,
+): Record<string, Point> {
+  const deepest = Math.max(0, ...visible.map((id) => nodes[id].depth))
+  let best: Record<string, Point> = {}
+  let bestHeight = Infinity
+  // From no level stacked (deepest + 1) up to every level under the roots.
+  for (let from = deepest + 1; from >= 1; from--) {
+    const pos = layoutWbs(nodes, roots, visible, size, undefined, (id) => nodes[id].depth >= from)
+    const xs = Object.values(pos).map((p) => p.x)
+    const ys = Object.values(pos).map((p) => p.y)
+    const w = xs.length ? Math.max(...xs) - Math.min(...xs) + size.w : 0
+    const h = ys.length ? Math.max(...ys) - Math.min(...ys) + size.h : 0
+    // The screen height this needs once fitted: the smaller, the bigger it shows.
+    const needed = Math.max(w / aspect, h)
+    // The plain tree (tried first) already fits the screen's shape: nothing to win.
+    if (from === deepest + 1 && w <= h * aspect) return pos
+    if (needed < bestHeight) {
+      best = pos
+      bestHeight = needed
+    }
+  }
+  return best
+}
+
+/** Whether `child` sits in a stacked column under `parent` (below it, indented right of the
+ * parent's left edge but left of its middle): its line then elbows down the parent's left side
+ * (STACK_HANDLE) instead of dropping from the parent's bottom. Read from the boxes' positions, so
+ * it holds for a saved chart and after a hand move. */
+export function stackedUnder(child: Point, parent: Point, size: BoxSize): boolean {
+  return child.y >= parent.y + size.h && child.x > parent.x && child.x < parent.x + size.w / 2
+}
+
 /** Two parts, left to right. Linked records: each connected group of links is its own small
  * graph, in columns (blocker left of dependent, links kept one column long where possible, empty
  * columns dropped — rankColumns), each box inline with its blockers (or, for a box nothing blocks,

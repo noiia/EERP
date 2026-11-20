@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { layoutPert, layoutWbs, PERT_UNLINKED_ROWS } from './auto-layout'
+import { layoutPert, layoutTreeToFit, layoutWbs, PERT_UNLINKED_ROWS, stackedUnder } from './auto-layout'
 import { bezierPoint, overlaps } from './collide'
 import { buildWbs } from './wbs'
 
@@ -200,5 +200,48 @@ describe('layoutWbs with stacked children', () => {
     expect(pos['1.2'].y).toBe(pos['1.1'].y)
     expect(pos['1.2'].x).toBeGreaterThanOrEqual(pos['1.1'].x + size.w + 80)
     noOverlap(pos)
+  })
+})
+
+describe('layoutTreeToFit', () => {
+  const bounds = (pos: Record<string, { x: number; y: number }>) => {
+    const ps = Object.values(pos)
+    return {
+      w: Math.max(...ps.map((p) => p.x)) - Math.min(...ps.map((p) => p.x)) + size.w,
+      h: Math.max(...ps.map((p) => p.y)) - Math.min(...ps.map((p) => p.y)) + size.h,
+    }
+  }
+  // One root, 6 managers, 5 people each: plain, a wide strip of 30 boxes.
+  const rows: { id: string; parentId: string | null }[] = [{ id: 'ceo', parentId: null }]
+  for (let m = 0; m < 6; m++) {
+    rows.push({ id: `m${m}`, parentId: 'ceo' })
+    for (let p = 0; p < 5; p++) rows.push({ id: `p${m}.${p}`, parentId: `m${m}` })
+  }
+  const { nodes, roots, visible } = buildWbs(rows, new Set())
+
+  it('a wide chart hangs its lowest level in columns, so it fits the screen larger', () => {
+    const plain = bounds(layoutWbs(nodes, roots, visible, size))
+    const pos = layoutTreeToFit(nodes, roots, visible, size, 16 / 9)
+    const fitted = bounds(pos)
+    expect(plain.w / plain.h).toBeGreaterThan(16 / 9)
+    expect(fitted.w).toBeLessThan(plain.w)
+    expect(Math.max(fitted.w / (16 / 9), fitted.h)).toBeLessThan(Math.max(plain.w / (16 / 9), plain.h))
+    // The people are stacked under their manager; the managers stay side by side.
+    expect(stackedUnder(pos['p0.0'], pos.m0, size)).toBe(true)
+    expect(stackedUnder(pos.m0, pos.ceo, size)).toBe(false)
+    noOverlap(pos)
+  })
+
+  it('a chart already taller than the screen keeps the plain tree', () => {
+    const chain = buildWbs(Array.from({ length: 8 }, (_, i) => ({ id: `c${i}`, parentId: i ? `c${i - 1}` : null })), new Set())
+    expect(layoutTreeToFit(chain.nodes, chain.roots, chain.visible, size, 16 / 9)).toEqual(layoutWbs(chain.nodes, chain.roots, chain.visible, size))
+  })
+
+  it('stackedUnder reads the column from the geometry', () => {
+    const parent = { x: 0, y: 0 }
+    expect(stackedUnder({ x: 40, y: 64 }, parent, size)).toBe(true)
+    expect(stackedUnder({ x: 0, y: 100 }, parent, size)).toBe(false) // straight below
+    expect(stackedUnder({ x: 40, y: 20 }, parent, size)).toBe(false) // not below
+    expect(stackedUnder({ x: 200, y: 100 }, parent, size)).toBe(false) // off to the right
   })
 })

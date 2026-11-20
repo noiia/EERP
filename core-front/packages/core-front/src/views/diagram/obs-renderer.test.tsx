@@ -39,7 +39,7 @@ vi.mock('@xyflow/react', () => ({
 vi.mock('./export', () => ({ exportPng: vi.fn(), exportPdf: vi.fn() }))
 
 import { ObsRenderer, OBS_BOX_SIZE } from './obs-renderer'
-import { layoutWbs } from './auto-layout'
+import { layoutTreeToFit } from './auto-layout'
 import { buildWbs } from './wbs'
 import { registerKanbanColumnsGuard } from '../kanban-columns'
 import { RelationOpsProvider, type RelationOps } from '../relation-ops'
@@ -208,6 +208,21 @@ describe('ObsRenderer', () => {
     expect(await within(screen.getByTestId('node-b6')).findByText('Alice')).toBeInTheDocument()
     // b1 and b6 share contact c1: one read.
     expect(ops.get.mock.calls.filter(([e, id]) => e === 'contact' && id === 'c1')).toHaveLength(1)
+  })
+
+  it("a box hanging in its parent's column is entered from the left, its line elbowing down the parent's side", async () => {
+    setup({ rows: [
+      box('b1', { x: 100, y: 50 }),
+      box('b2', { parent_id: 'b1', x: 140, y: 184 }), // stacked: below, indented
+      box('b3', { parent_id: 'b1', x: 100, y: 300 }), // straight below: a plain line
+    ] })
+    await screen.findByTestId('node-b2')
+    expect(rf.props.edges.map((e) => [e.target, e.type, (e as { sourceHandle?: string }).sourceHandle])).toEqual([
+      ['b2', 'step', 'stack'],
+      ['b3', 'smoothstep', undefined],
+    ])
+    const target = (id: string) => (rf.props.nodes.find((n) => n.id === id) as { targetPosition?: string }).targetPosition
+    expect([target('b2'), target('b3')]).toEqual(['left', 'top'])
   })
 
   it('zoomed out, an untitled box shows its first content line', async () => {
@@ -385,7 +400,9 @@ describe('ObsRenderer', () => {
     const { ops } = setup({ rows })
     await editable()
     const { nodes, roots, visible } = buildWbs(rows.map((r) => ({ id: r.id, parentId: r.parent_id })), new Set())
-    const want = layoutWbs(nodes, roots, visible, OBS_BOX_SIZE)
+    // Wider than the (jsdom 1024×768) screen: the children hang in a column under r1.
+    const want = layoutTreeToFit(nodes, roots, visible, OBS_BOX_SIZE, window.innerWidth / window.innerHeight)
+    expect(want.k1.x).toBeGreaterThan(want.r1.x)
     for (const r of rows) expect(node(r.id).position).toEqual(want[r.id])
     fireEvent.click(screen.getByRole('button', { name: 'Re-arrange' }))
     await waitFor(() => expect(ops.update).toHaveBeenCalledTimes(4))

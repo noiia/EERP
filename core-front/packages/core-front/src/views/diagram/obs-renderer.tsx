@@ -10,7 +10,8 @@ import DialogTitle from '@mui/material/DialogTitle'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import type { Connection, Edge, Node } from '@xyflow/react'
+import { Position, type Connection, type Edge, type Node } from '@xyflow/react'
+import { STACK_HANDLE } from './task-box'
 import '@xyflow/react/dist/style.css'
 import { serializeError, toApiError, type SerializedError } from '../../api/errors'
 import type { ObsConfig } from '../../api/view-fields'
@@ -21,7 +22,7 @@ import { byPrefixAndName, FontAwesomeIcon } from '../icons'
 import { kanbanColumnsGuard } from '../kanban-columns'
 import { useRelationOps, type RelationOps, type RelationRecord } from '../relation-ops'
 import { RelationCreateWizard } from '../relation-widgets'
-import { layoutWbs } from './auto-layout'
+import { layoutTreeToFit, stackedUnder } from './auto-layout'
 import type { Point } from './collide'
 import { DiagramCanvas, DiagramLoading } from './diagram-canvas'
 import { useUndoHistory } from './history'
@@ -161,9 +162,16 @@ export function ObsRenderer({ config, projectId }: ObsRendererProps) {
     return history.perform(() => patch(id, body), () => patch(id, old))
   }
 
+  // A box laid out in a stacked column under its parent (see layoutTreeToFit) is entered from
+  // the left, and its line elbows down the parent's left side.
+  const stacked = (row: ObsRow) => {
+    const p = row.parent_id ? positions[row.parent_id] : undefined
+    return !!p && !!positions[row.id] && stackedUnder(positions[row.id], p, OBS_BOX_SIZE)
+  }
   const nodes: Node[] = rows.map((row) => ({
     id: row.id,
     type: 'obs',
+    targetPosition: stacked(row) ? Position.Left : Position.Top,
     position: { x: 0, y: 0 },
     width: OBS_BOX_SIZE.w,
     height: OBS_BOX_SIZE.h,
@@ -182,11 +190,16 @@ export function ObsRenderer({ config, projectId }: ObsRendererProps) {
   }))
   const edges: Edge[] = rows
     .filter((r) => r.parent_id && ids.has(r.parent_id))
-    .map((r) => ({ id: `${r.parent_id}->${r.id}`, source: r.parent_id!, target: r.id, type: 'smoothstep', deletable: editable }))
+    .map((r) => ({
+      id: `${r.parent_id}->${r.id}`, source: r.parent_id!, target: r.id, deletable: editable,
+      ...(stacked(r) ? { type: 'step', sourceHandle: STACK_HANDLE } : { type: 'smoothstep' }),
+    }))
 
   const autoLayout = () => {
     const tree = buildWbs(rows.map((r) => ({ id: r.id, parentId: r.parent_id && ids.has(r.parent_id) ? r.parent_id : null })), new Set())
-    return layoutWbs(tree.nodes, tree.roots, tree.visible, OBS_BOX_SIZE)
+    // Fill the screen: a chart wider than it hangs its lower levels in columns.
+    const aspect = typeof window !== 'undefined' && window.innerHeight > 0 ? window.innerWidth / window.innerHeight : 16 / 9
+    return layoutTreeToFit(tree.nodes, tree.roots, tree.visible, OBS_BOX_SIZE, aspect)
   }
 
   const onConnect = ({ source, target }: Connection) => {

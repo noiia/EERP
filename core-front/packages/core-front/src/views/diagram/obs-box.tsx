@@ -11,7 +11,7 @@ import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import { useT } from '../../i18n/translate'
 import { byPrefixAndName, FontAwesomeIcon } from '../icons'
 import { useRelationOps } from '../relation-ops'
-import { useDetailed } from './task-box'
+import { STACK_HANDLE, STACK_TRUNK_X, useDetailed } from './task-box'
 
 // One box of an OBS chart: a contact, a user or free text, with its role title and color.
 // The contact/user label is read through the canvas's cached RelationOps.get.
@@ -67,7 +67,7 @@ function useLines(row: ObsRow): string[] {
   return row.kind === 'text' ? (row.text ? [row.text] : []) : lines
 }
 
-export const ObsBox = memo(function ObsBox({ data, positionAbsoluteX, positionAbsoluteY }: NodeProps<Node<ObsBoxData>>) {
+export const ObsBox = memo(function ObsBox({ data, positionAbsoluteX, positionAbsoluteY, targetPosition }: NodeProps<Node<ObsBoxData>>) {
   const t = useT()
   const theme = useTheme()
   const detailed = useDetailed({ x: positionAbsoluteX, y: positionAbsoluteY, ...OBS_BOX_SIZE })
@@ -101,7 +101,8 @@ export const ObsBox = memo(function ObsBox({ data, positionAbsoluteX, positionAb
       sx={{ width: OBS_BOX_SIZE.w, height: OBS_BOX_SIZE.h, boxSizing: 'border-box', overflow: 'hidden', position: 'relative', p: 1, pr: editable ? 4 : 1 }}
       style={{ backgroundColor: bg, color: fg }}
     >
-      <Handle type="target" position={Position.Top} />
+      {/* A box in a stacked column is entered from the left (the renderer sets targetPosition). */}
+      <Handle type="target" position={targetPosition ?? Position.Top} />
       {detailed ? (
         <>
           <Typography variant="subtitle2" sx={{ fontWeight: 700 }} noWrap>{row.title}</Typography>
@@ -129,6 +130,9 @@ export const ObsBox = memo(function ObsBox({ data, positionAbsoluteX, positionAb
         <Typography noWrap sx={{ fontSize: 28, lineHeight: 1.4, fontWeight: 600 }}>{row.title || lines[0]}</Typography>
       )}
       <Handle type="source" position={Position.Bottom} />
+      {/* Where the elbow to a stacked child leaves: down the box's left side. */}
+      <Handle id={STACK_HANDLE} type="source" position={Position.Bottom} isConnectable={false}
+        style={{ left: STACK_TRUNK_X, opacity: 0, pointerEvents: 'none' }} />
     </Paper>
   )
 })
