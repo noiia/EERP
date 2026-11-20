@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
 import { ImportWizard } from './import-wizard'
-import { DEFAULT_NUMBER_FORMAT, useFormatStore } from '../format-store'
 import type { ExchangeChange } from './selection'
 import type { ExchangeFormat, GanttExchangeConfig } from '../../api/view-fields'
 
@@ -103,7 +102,6 @@ const rowEl = (key: string) => screen.getByTestId(`exchange-row-${key}`)
 
 describe('ImportWizard', () => {
   beforeEach(() => {
-    useFormatStore.setState({ ...DEFAULT_NUMBER_FORMAT, dateFormat: null })
     fetchMock.mockReset()
     vi.stubGlobal('fetch', fetchMock)
   })
@@ -156,6 +154,26 @@ describe('ImportWizard', () => {
     // A removal names what goes with it, and leaves the zero count out.
     expect(within(rowEl(deleteRow.key)).getByText('has 2 timesheets, 3 subtasks')).toBeInTheDocument()
     expect(within(rowEl(deleteRow.key)).queryByText(/risk link/)).not.toBeInTheDocument()
+    // The row checkbox says which row it is, not just "Select change".
+    expect(checkbox(datesRow.key)).toHaveAccessibleName(/Select change.*Design review/)
+  })
+
+  it('keeps two distinct tasks that share a name in separate groups', async () => {
+    fetchMock.mockResolvedValue(
+      previewOK(
+        [
+          row({ key: 'task:tA:planned_hours', kind: 'update', task: 'Design review', wbs: '2.1', field: 'planned_hours', before: 8, after: 16 }),
+          row({ key: 'task:tB:planned_hours', kind: 'update', task: 'Design review', wbs: '9.9', field: 'planned_hours', before: 4, after: 6 }),
+        ],
+        [],
+      ),
+    )
+    renderWizard()
+    pickFile()
+    // Same name, two tasks: each header keeps its own WBS, no merge.
+    expect(await screen.findByText('2.1 Design review')).toBeInTheDocument()
+    expect(screen.getByText('9.9 Design review')).toBeInTheDocument()
+    expect(within(rowEl('task:tB:planned_hours')).getByText('6')).toBeInTheDocument()
   })
 
   it('says when a dates row is really the first schedule a task ever had', async () => {
@@ -280,7 +298,7 @@ describe('ImportWizard', () => {
     fetchMock
       .mockResolvedValueOnce(previewOK())
       .mockResolvedValueOnce(
-        json({ code: 'VALIDATION_ERROR', error: { code: 'VALIDATION_ERROR', message: 'a parent delete needs its child deletes', fields: [deleteRow.key, depRow.key] } }, 422),
+        json({ code: 'VALIDATION_ERROR', error: { code: 'VALIDATION_ERROR', message: 'a parent delete needs its child deletes', request_id: 'req-42', fields: [deleteRow.key, depRow.key] } }, 422),
       )
     renderWizard()
     pickFile()
@@ -288,6 +306,9 @@ describe('ImportWizard', () => {
     fireEvent.click(checkbox(deleteRow.key))
     fireEvent.click(screen.getByRole('button', { name: 'Apply 5 changes' }))
     expect(await screen.findByText('a parent delete needs its child deletes')).toBeInTheDocument()
+    // The admin can find the log line: the Banner carries the code and the request id.
+    expect(screen.getByText('VALIDATION_ERROR')).toBeInTheDocument()
+    expect(screen.getByText(/req-42/)).toBeInTheDocument()
     expect(rowEl(deleteRow.key)).toHaveAttribute('data-highlighted', 'true')
     expect(rowEl(depRow.key)).toHaveAttribute('data-highlighted', 'true')
     expect(rowEl(datesRow.key)).not.toHaveAttribute('data-highlighted')
@@ -369,4 +390,5 @@ describe('ImportWizard', () => {
     renderWizard()
     expect(document.querySelector('.MuiDialog-paperFullScreen')).not.toBeNull()
   })
+
 })

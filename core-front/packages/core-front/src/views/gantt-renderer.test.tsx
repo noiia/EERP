@@ -1149,6 +1149,8 @@ describe('GanttRenderer', () => {
     const PINNED: EntityListOptions = { filter: { project_id: 'p1' } }
 
     it('shows no Export or Import control while the list is not pinned', async () => {
+      // The guard passes: the only thing that can keep the Import control hidden here is the missing pin.
+      registerKanbanColumnsGuard('test.exchange', async () => true)
       renderExchange(undefined, exchangeCfg)
       // The pending reads (server load, the import guard) settle after the sync body: flush inside act.
       await act(async () => {})

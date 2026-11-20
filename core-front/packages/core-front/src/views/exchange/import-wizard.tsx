@@ -151,7 +151,7 @@ export function ImportWizard({ open, onClose, onApplied, config, scopeId, format
   const [warningsOpen, setWarningsOpen] = useState(false)
   const [error, setError] = useState<SerializedError | null>(null)
   const [tooLarge, setTooLarge] = useState(false)
-  const [refused, setRefused] = useState<string | null>(null)
+  const [refused, setRefused] = useState<SerializedError | null>(null)
   const [highlight, setHighlight] = useState<ReadonlySet<string>>(() => new Set())
   const [stale, setStale] = useState(false)
   const [applied, setApplied] = useState<number | null>(null)
@@ -209,7 +209,7 @@ export function ImportWizard({ open, onClose, onApplied, config, scopeId, format
       }
       if (res.status === 422) {
         const e = await parseError(res)
-        setRefused(e.message)
+        setRefused(serializeError(e))
         setHighlight(new Set(e.fields ?? []))
         setStep(2)
         return
@@ -239,31 +239,21 @@ export function ImportWizard({ open, onClose, onApplied, config, scopeId, format
     setSel(new Set())
   }
 
-  /** One group of the review list: every row about one task, in the preview's order. */
-  const groups: { task: string; wbs: string; fresh: boolean; rows: { c: ExchangeChange; i: number }[] }[] = []
-  const byTask = new Map<string, number>()
-  changes.forEach((c, i) => {
-    const at = byTask.get(c.task)
+  /** One group of the review list: every row about one task, in the preview's order.
+   * The key carries the wbs too: two distinct tasks can share a name. */
+  const groups: { key: string; task: string; wbs: string; fresh: boolean; rows: ExchangeChange[] }[] = []
+  const byGroup = new Map<string, number>()
+  changes.forEach((c) => {
+    const groupKey = `${c.task}\u0000${c.wbs ?? ''}`
+    const at = byGroup.get(groupKey)
     if (at == null) {
-      byTask.set(c.task, groups.length)
-      groups.push({ task: c.task, wbs: c.wbs ?? '', fresh: false, rows: [] })
+      byGroup.set(groupKey, groups.length)
+      groups.push({ key: groupKey, task: c.task, wbs: c.wbs ?? '', fresh: false, rows: [] })
     }
-    const g = groups[byTask.get(c.task)!]
-    g.rows.push({ c, i })
+    const g = groups[byGroup.get(groupKey)!]
+    g.rows.push(c)
     if (c.kind === 'create') g.fresh = true
   })
-  // Presentation only — no tick state is touched here. The diff anchors a row about
-  // something the file lost at the head of the removal cluster (`anchorOf` returns -1),
-  // which would otherwise lift that task's group above rows that come before it in
-  // WBS order. So a group sits where its own anchored rows sit, and its unanchored
-  // removal rows ride along beneath them.
-  const anchorOf = (rows: { i: number }[]) => {
-    const anchored = rows.map((r) => r.i).filter((i) => i >= 0)
-    return anchored.length ? Math.min(...anchored) : -1
-  }
-  const ordered = groups
-    .map((g, order) => ({ g, order, anchor: anchorOf(g.rows) }))
-    .sort((a, b) => a.anchor - b.anchor || a.order - b.order)
 
   const selectedCount = changes.reduce((n, c) => (sel.has(c.key) ? n + 1 : n), 0)
   const additiveAll = changes.some((c) => !isRemoval(c)) && changes.every((c) => isRemoval(c) || sel.has(c.key))
@@ -309,7 +299,16 @@ export function ImportWizard({ open, onClose, onApplied, config, scopeId, format
 
           {step === 2 ? (
             <Stack spacing={1.5}>
-              {refused ? <Banner status="error" title={refused} /> : null}
+              {refused ? (
+                <Banner status="error" title={refused.message}>
+                  <Typography variant="body2">{refused.code}</Typography>
+                  {refused.requestId ? (
+                    <Typography variant="caption" sx={{ display: 'block', mt: 0.5 }}>
+                      {t('Reference for your administrator')}: {refused.requestId}
+                    </Typography>
+                  ) : null}
+                </Banner>
+              ) : null}
               {warnings.length ? (
                 <Box>
                   <Button
@@ -353,15 +352,12 @@ export function ImportWizard({ open, onClose, onApplied, config, scopeId, format
               {changes.length === 0 ? (
                 <Typography variant="body1">{t('No changes')}</Typography>
               ) : (
-                ordered.map(({ g }) => (
-                  <Box key={g.task} data-testid={`exchange-group-${g.task}`}>
+                groups.map((g) => (
+                  <Box key={g.key} data-testid={`exchange-group-${g.task}`}>
                     <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
                       {[g.wbs, g.task, g.fresh ? `(${t('new')})` : null].filter(Boolean).join(' ')}
                     </Typography>
-                    {g.rows
-                      .slice()
-                      .sort((a, b) => (a.i < 0 ? 1 : 0) - (b.i < 0 ? 1 : 0) || a.i - b.i)
-                      .map(({ c }) => (
+                    {g.rows.map((c) => (
                         <Stack
                           key={c.key}
                           direction="row"
@@ -378,7 +374,14 @@ export function ImportWizard({ open, onClose, onApplied, config, scopeId, format
                           <Checkbox
                             size="small"
                             checked={sel.has(c.key)}
-                            slotProps={{ input: { 'aria-label': t('Select change') } }}
+                            slotProps={{
+                              input: {
+                                // Every row would otherwise announce the same "Select change": name what is being ticked.
+                                'aria-label': `${t('Select change')}, ${g.task}, ${
+                                  c.field ? t(FIELD_LABEL[c.field] ?? c.field) : t(KIND_LABEL[c.kind] ?? c.kind)
+                                }`,
+                              },
+                            }}
                             onChange={(e) => setSel(toggle(changes, sel, c.key, e.target.checked))}
                           />
                           <Chip size="small" label={t(KIND_LABEL[c.kind] ?? c.kind)} />
