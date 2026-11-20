@@ -88,10 +88,10 @@ identity, in either direction.
 
 ### Comparing in the file's terms
 
-The diff never compares a raw EERP column with a parsed file value. It **encodes the
-current EERP task exactly the way export would** and compares that with the file; a field is
-a change only when the two differ, and only then is the file's value converted back to EERP
-form. That is what makes a round trip silent:
+The diff never compares a raw EERP column with a parsed file value. It **loads the current
+EERP task in the file's terms** (`loadPlan` on the file's own weekend mask, no project label)
+and compares that with the file; a field is a change only when the two differ, and only then is
+the file's value converted back to EERP form. That is what makes a round trip silent:
 
 - a deadline on a Saturday exports as some duration over the file's weekend mask, and the
   same duration coming back is no change, even though converting it again would land on a
@@ -137,9 +137,10 @@ That is why the plan's first task was making those guards runnable on any execut
 only as Echo middleware over the pool: run on the transaction, they see the tasks the import
 has just created, and the middleware keeps calling the same functions with no second copy of
 the rules. Read-only and trigger-maintained columns are never written directly; a move goes
-through `taskOrder`, which is the only sanctioned writer of `wbs_number`. Deletes are the
-normal soft deletes, so they stay restorable. The transaction ends with a `kind: "log"`
-chatter message on the project naming the file and the count.
+through the same shared rules writing `parent_id` and `sequence`, and `wbs_number` stays
+trigger-maintained. Deletes are the normal soft deletes, so they stay restorable. The
+transaction ends with a `kind: "log"` chatter message on the project naming the file and the
+count.
 
 ### Frontend (engine + one descriptor key)
 

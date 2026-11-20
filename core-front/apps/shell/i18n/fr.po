@@ -3294,20 +3294,20 @@ msgstr "(était non planifié)"
 msgid "has"
 msgstr "comporte"
 
-msgid "{n} timesheet"
-msgstr "{n} feuille de temps"
+msgid "1 timesheet"
+msgstr "1 feuille de temps"
 
 msgid "{n} timesheets"
 msgstr "{n} feuilles de temps"
 
-msgid "{n} risk link"
-msgstr "{n} lien de risque"
+msgid "1 risk link"
+msgstr "1 lien de risque"
 
 msgid "{n} risk links"
 msgstr "{n} liens de risque"
 
-msgid "{n} subtask"
-msgstr "{n} sous-tâche"
+msgid "1 subtask"
+msgstr "1 sous-tâche"
 
 msgid "{n} subtasks"
 msgstr "{n} sous-tâches"

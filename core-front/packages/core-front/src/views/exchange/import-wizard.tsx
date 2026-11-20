@@ -405,13 +405,13 @@ export function ImportWizard({ open, onClose, onApplied, config, scopeId, format
                               {t('has')}{' '}
                               {[
                                 c.dependents.timesheets
-                                  ? count('{n} timesheet', '{n} timesheets', c.dependents.timesheets)
+                                  ? count('1 timesheet', '{n} timesheets', c.dependents.timesheets)
                                   : null,
                                 c.dependents.risk_links
-                                  ? count('{n} risk link', '{n} risk links', c.dependents.risk_links)
+                                  ? count('1 risk link', '{n} risk links', c.dependents.risk_links)
                                   : null,
                                 c.dependents.subtasks
-                                  ? count('{n} subtask', '{n} subtasks', c.dependents.subtasks)
+                                  ? count('1 subtask', '{n} subtasks', c.dependents.subtasks)
                                   : null,
                               ]
                                 .filter(Boolean)

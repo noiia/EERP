@@ -158,6 +158,30 @@ describe('ImportWizard', () => {
     expect(checkbox(datesRow.key)).toHaveAccessibleName(/Select change.*Design review/)
   })
 
+  it('a removal with one dependent says 1, not a literal {n}', async () => {
+    fetchMock.mockResolvedValue(
+      previewOK(
+        [
+          row({
+            key: 'task:t9:delete',
+            kind: 'delete',
+            task: 'Legacy migration',
+            wbs: '3.4',
+            default_selected: false,
+            dependents: { subtasks: 1, timesheets: 1, risk_links: 1 },
+          }),
+        ],
+        [],
+      ),
+    )
+    renderWizard()
+    pickFile()
+    await screen.findByText('3.4 Legacy migration')
+    // The one-form is a literal "1" (the PERT chip's idiom), not a template to substitute.
+    expect(within(rowEl('task:t9:delete')).getByText('has 1 timesheet, 1 risk link, 1 subtask')).toBeInTheDocument()
+    expect(rowEl('task:t9:delete').textContent).not.toContain('{n}')
+  })
+
   it('keeps two distinct tasks that share a name in separate groups', async () => {
     fetchMock.mockResolvedValue(
       previewOK(

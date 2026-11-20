@@ -3162,19 +3162,19 @@ msgstr ""
 msgid "has"
 msgstr ""
 
-msgid "{n} timesheet"
+msgid "1 timesheet"
 msgstr ""
 
 msgid "{n} timesheets"
 msgstr ""
 
-msgid "{n} risk link"
+msgid "1 risk link"
 msgstr ""
 
 msgid "{n} risk links"
 msgstr ""
 
-msgid "{n} subtask"
+msgid "1 subtask"
 msgstr ""
 
 msgid "{n} subtasks"
