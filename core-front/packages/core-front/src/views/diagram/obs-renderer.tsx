@@ -11,7 +11,6 @@ import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { Position, type Connection, type Edge, type Node } from '@xyflow/react'
-import { STACK_HANDLE } from './task-box'
 import '@xyflow/react/dist/style.css'
 import { serializeError, toApiError, type SerializedError } from '../../api/errors'
 import type { ObsConfig } from '../../api/view-fields'
@@ -22,7 +21,7 @@ import { byPrefixAndName, FontAwesomeIcon } from '../icons'
 import { kanbanColumnsGuard } from '../kanban-columns'
 import { useRelationOps, type RelationOps, type RelationRecord } from '../relation-ops'
 import { RelationCreateWizard } from '../relation-widgets'
-import { layoutTreeToFit, stackedUnder } from './auto-layout'
+import { GRID_MAX_ROW, GRID_TRUNK_GAP, layoutTreeGrid } from './auto-layout'
 import type { Point } from './collide'
 import { DiagramCanvas, DiagramLoading } from './diagram-canvas'
 import { useUndoHistory } from './history'
@@ -162,16 +161,27 @@ export function ObsRenderer({ config, projectId }: ObsRendererProps) {
     return history.perform(() => patch(id, body), () => patch(id, old))
   }
 
-  // A box laid out in a stacked column under its parent (see layoutTreeToFit) is entered from
-  // the left, and its line elbows down the parent's left side.
-  const stacked = (row: ObsRow) => {
-    const p = row.parent_id ? positions[row.parent_id] : undefined
-    return !!p && !!positions[row.id] && stackedUnder(positions[row.id], p, OBS_BOX_SIZE)
+  // A box among more than GRID_MAX_ROW siblings sits in a grid (layoutTreeGrid): entered from
+  // the left by a bus line whose trunk runs in the gap left of its subtree's leftmost box.
+  const kidsOf = new Map<string, string[]>()
+  for (const r of rows) if (r.parent_id && ids.has(r.parent_id)) kidsOf.set(r.parent_id, [...(kidsOf.get(r.parent_id) ?? []), r.id])
+  const inGrid = (row: ObsRow) => !!row.parent_id && (kidsOf.get(row.parent_id)?.length ?? 0) > GRID_MAX_ROW
+  const trunk = (id: string) => {
+    let left = positions[id]?.x ?? 0
+    const seen = new Set<string>()
+    const walk = (k: string) => {
+      if (seen.has(k)) return
+      seen.add(k)
+      left = Math.min(left, positions[k]?.x ?? left)
+      ;(kidsOf.get(k) ?? []).forEach(walk)
+    }
+    walk(id)
+    return (positions[id]?.x ?? 0) - left + GRID_TRUNK_GAP
   }
   const nodes: Node[] = rows.map((row) => ({
     id: row.id,
     type: 'obs',
-    targetPosition: stacked(row) ? Position.Left : Position.Top,
+    targetPosition: inGrid(row) ? Position.Left : Position.Top,
     position: { x: 0, y: 0 },
     width: OBS_BOX_SIZE.w,
     height: OBS_BOX_SIZE.h,
@@ -192,14 +202,12 @@ export function ObsRenderer({ config, projectId }: ObsRendererProps) {
     .filter((r) => r.parent_id && ids.has(r.parent_id))
     .map((r) => ({
       id: `${r.parent_id}->${r.id}`, source: r.parent_id!, target: r.id, deletable: editable,
-      ...(stacked(r) ? { type: 'step', sourceHandle: STACK_HANDLE } : { type: 'smoothstep' }),
+      ...(inGrid(r) ? { type: 'bus', data: { trunk: trunk(r.id) } } : { type: 'smoothstep' }),
     }))
 
   const autoLayout = () => {
     const tree = buildWbs(rows.map((r) => ({ id: r.id, parentId: r.parent_id && ids.has(r.parent_id) ? r.parent_id : null })), new Set())
-    // Fill the screen: a chart wider than it hangs its lower levels in columns.
-    const aspect = typeof window !== 'undefined' && window.innerHeight > 0 ? window.innerWidth / window.innerHeight : 16 / 9
-    return layoutTreeToFit(tree.nodes, tree.roots, tree.visible, OBS_BOX_SIZE, aspect)
+    return layoutTreeGrid(tree.nodes, tree.roots, tree.visible, OBS_BOX_SIZE)
   }
 
   const onConnect = ({ source, target }: Connection) => {

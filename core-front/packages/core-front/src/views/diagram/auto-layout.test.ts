@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { layoutPert, layoutTreeToFit, layoutWbs, PERT_UNLINKED_ROWS, stackedUnder } from './auto-layout'
+import { GRID_TRUNK_GAP, layoutPert, layoutTreeGrid, layoutWbs, PERT_UNLINKED_ROWS } from './auto-layout'
 import { bezierPoint, overlaps } from './collide'
 import { buildWbs } from './wbs'
 
@@ -203,45 +203,56 @@ describe('layoutWbs with stacked children', () => {
   })
 })
 
-describe('layoutTreeToFit', () => {
-  const bounds = (pos: Record<string, { x: number; y: number }>) => {
-    const ps = Object.values(pos)
-    return {
-      w: Math.max(...ps.map((p) => p.x)) - Math.min(...ps.map((p) => p.x)) + size.w,
-      h: Math.max(...ps.map((p) => p.y)) - Math.min(...ps.map((p) => p.y)) + size.h,
-    }
-  }
-  // One root, 6 managers, 5 people each: plain, a wide strip of 30 boxes.
-  const rows: { id: string; parentId: string | null }[] = [{ id: 'ceo', parentId: null }]
-  for (let m = 0; m < 6; m++) {
-    rows.push({ id: `m${m}`, parentId: 'ceo' })
-    for (let p = 0; p < 5; p++) rows.push({ id: `p${m}.${p}`, parentId: `m${m}` })
-  }
-  const { nodes, roots, visible } = buildWbs(rows, new Set())
+describe('layoutTreeGrid', () => {
+  const tree = (rows: [string, string | null][]) => buildWbs(rows.map(([id, parentId]) => ({ id, parentId })), new Set())
 
-  it('a wide chart hangs its lowest level in columns, so it fits the screen larger', () => {
-    const plain = bounds(layoutWbs(nodes, roots, visible, size))
-    const pos = layoutTreeToFit(nodes, roots, visible, size, 16 / 9)
-    const fitted = bounds(pos)
-    expect(plain.w / plain.h).toBeGreaterThan(16 / 9)
-    expect(fitted.w).toBeLessThan(plain.w)
-    expect(Math.max(fitted.w / (16 / 9), fitted.h)).toBeLessThan(Math.max(plain.w / (16 / 9), plain.h))
-    // The people are stacked under their manager; the managers stay side by side.
-    expect(stackedUnder(pos['p0.0'], pos.m0, size)).toBe(true)
-    expect(stackedUnder(pos.m0, pos.ceo, size)).toBe(false)
+  it('up to 3 children sit side by side under their centered parent', () => {
+    const { nodes, roots, visible } = tree([['p', null], ['a', 'p'], ['b', 'p'], ['c', 'p']])
+    const pos = layoutTreeGrid(nodes, roots, visible, size)
+    expect(pos.a.y).toBe(pos.b.y)
+    expect(pos.c.y).toBe(pos.b.y)
+    expect(pos.b.x).toBeGreaterThan(pos.a.x)
+    expect(pos.p.x).toBe((pos.a.x + pos.c.x) / 2)
     noOverlap(pos)
   })
 
-  it('a chart already taller than the screen keeps the plain tree', () => {
-    const chain = buildWbs(Array.from({ length: 8 }, (_, i) => ({ id: `c${i}`, parentId: i ? `c${i - 1}` : null })), new Set())
-    expect(layoutTreeToFit(chain.nodes, chain.roots, chain.visible, size, 16 / 9)).toEqual(layoutWbs(chain.nodes, chain.roots, chain.visible, size))
+  it('more than 3 children go in a balanced grid of ceil(sqrt(n)) columns, the parent centered over it', () => {
+    const kids = Array.from({ length: 7 }, (_, i) => `k${i}`)
+    const { nodes, roots, visible } = tree([['p', null], ...kids.map((k): [string, string] => [k, 'p'])])
+    const pos = layoutTreeGrid(nodes, roots, visible, size)
+    const xs = [...new Set(kids.map((k) => pos[k].x))]
+    const ys = [...new Set(kids.map((k) => pos[k].y))]
+    expect(xs).toHaveLength(3) // ceil(sqrt(7))
+    expect(ys).toHaveLength(3)
+    // Row by row, in order.
+    expect(pos.k1.y).toBe(pos.k0.y)
+    expect(pos.k3.x).toBe(pos.k0.x)
+    expect(pos.k3.y).toBeGreaterThan(pos.k0.y)
+    // Room for the trunk line left of each column.
+    expect(pos.k1.x - (pos.k0.x + size.w)).toBeGreaterThanOrEqual(2 * GRID_TRUNK_GAP)
+    expect(pos.p.x + size.w / 2).toBe((Math.min(...xs) + Math.max(...xs) + size.w) / 2)
+    noOverlap(pos)
   })
 
-  it('stackedUnder reads the column from the geometry', () => {
-    const parent = { x: 0, y: 0 }
-    expect(stackedUnder({ x: 40, y: 64 }, parent, size)).toBe(true)
-    expect(stackedUnder({ x: 0, y: 100 }, parent, size)).toBe(false) // straight below
-    expect(stackedUnder({ x: 40, y: 20 }, parent, size)).toBe(false) // not below
-    expect(stackedUnder({ x: 200, y: 100 }, parent, size)).toBe(false) // off to the right
+  it('a grid cell holds the whole subtree of its child, deep levels laid out the same way', () => {
+    const rows: [string, string | null][] = [['ceo', null]]
+    for (let m = 0; m < 5; m++) {
+      rows.push([`m${m}`, 'ceo'])
+      for (let p = 0; p < 5; p++) rows.push([`p${m}.${p}`, `m${m}`])
+    }
+    const { nodes, roots, visible } = tree(rows)
+    const pos = layoutTreeGrid(nodes, roots, visible, size)
+    // People are a 3-column grid under their manager, not one vertical column.
+    expect(new Set([0, 1, 2, 3, 4].map((p) => pos[`p0.${p}`].x)).size).toBe(3)
+    // m3 (second grid row) starts below m0's whole subtree.
+    expect(pos.m3.y).toBeGreaterThan(Math.max(...[0, 1, 2, 3, 4].map((p) => pos[`p0.${p}`].y)) + size.h)
+    noOverlap(pos)
+  })
+
+  it('places several roots side by side', () => {
+    const { nodes, roots, visible } = tree([['r1', null], ['r2', null]])
+    const pos = layoutTreeGrid(nodes, roots, visible, size)
+    expect(pos.r2.y).toBe(pos.r1.y)
+    expect(pos.r2.x).toBeGreaterThanOrEqual(pos.r1.x + size.w)
   })
 })

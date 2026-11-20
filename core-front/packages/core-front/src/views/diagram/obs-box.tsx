@@ -7,11 +7,12 @@ import MenuItem from '@mui/material/MenuItem'
 import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
 import { useTheme } from '@mui/material/styles'
-import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
+import { BaseEdge, Handle, Position, type Edge, type EdgeProps, type Node, type NodeProps } from '@xyflow/react'
 import { useT } from '../../i18n/translate'
 import { byPrefixAndName, FontAwesomeIcon } from '../icons'
 import { useRelationOps } from '../relation-ops'
-import { STACK_HANDLE, STACK_TRUNK_X, useDetailed } from './task-box'
+import { GRID_BUS_DROP } from './auto-layout'
+import { useDetailed } from './task-box'
 
 // One box of an OBS chart: a contact, a user or free text, with its role title and color.
 // The contact/user label is read through the canvas's cached RelationOps.get.
@@ -101,7 +102,7 @@ export const ObsBox = memo(function ObsBox({ data, positionAbsoluteX, positionAb
       sx={{ width: OBS_BOX_SIZE.w, height: OBS_BOX_SIZE.h, boxSizing: 'border-box', overflow: 'hidden', position: 'relative', p: 1, pr: editable ? 4 : 1 }}
       style={{ backgroundColor: bg, color: fg }}
     >
-      {/* A box in a stacked column is entered from the left (the renderer sets targetPosition). */}
+      {/* A box in a grid of siblings is entered from the left (the renderer sets targetPosition). */}
       <Handle type="target" position={targetPosition ?? Position.Top} />
       {detailed ? (
         <>
@@ -130,9 +131,17 @@ export const ObsBox = memo(function ObsBox({ data, positionAbsoluteX, positionAb
         <Typography noWrap sx={{ fontSize: 28, lineHeight: 1.4, fontWeight: 600 }}>{row.title || lines[0]}</Typography>
       )}
       <Handle type="source" position={Position.Bottom} />
-      {/* Where the elbow to a stacked child leaves: down the box's left side. */}
-      <Handle id={STACK_HANDLE} type="source" position={Position.Bottom} isConnectable={false}
-        style={{ left: STACK_TRUNK_X, opacity: 0, pointerEvents: 'none' }} />
     </Paper>
   )
 })
+
+export type BusEdgeType = Edge<{ trunk: number }, 'bus'>
+
+/** The line to a child laid out in a grid (layoutTreeGrid): down from the parent to the bus
+ * GRID_BUS_DROP below it, across to the trunk `trunk` px left of the child, down to the child's
+ * middle, then into its left side. Relative to both ends, so it follows a hand move. */
+export function BusEdge({ sourceX, sourceY, targetX, targetY, data, markerEnd, style, interactionWidth }: EdgeProps<BusEdgeType>) {
+  const busY = sourceY + GRID_BUS_DROP
+  const trunkX = targetX - (data?.trunk ?? 0)
+  return <BaseEdge path={`M${sourceX},${sourceY}V${busY}H${trunkX}V${targetY}H${targetX}`} markerEnd={markerEnd} style={style} interactionWidth={interactionWidth} />
+}

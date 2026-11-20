@@ -4,7 +4,7 @@ import type { ComponentType, ReactNode } from 'react'
 
 // React Flow stubbed as in pert-renderer.test.tsx: each node drawn through its nodeTypes component.
 type RfNode = { id: string; type: string; data: unknown; position: { x: number; y: number }; width?: number; height?: number }
-type RfEdge = { id: string; source: string; target: string; type?: string; markerEnd?: unknown; deletable?: boolean }
+type RfEdge = { id: string; source: string; target: string; type?: string; markerEnd?: unknown; deletable?: boolean; data?: { trunk?: number } }
 type RfProps = {
   nodes: RfNode[]
   edges: RfEdge[]
@@ -39,7 +39,7 @@ vi.mock('@xyflow/react', () => ({
 vi.mock('./export', () => ({ exportPng: vi.fn(), exportPdf: vi.fn() }))
 
 import { ObsRenderer, OBS_BOX_SIZE } from './obs-renderer'
-import { layoutTreeToFit } from './auto-layout'
+import { layoutTreeGrid } from './auto-layout'
 import { buildWbs } from './wbs'
 import { registerKanbanColumnsGuard } from '../kanban-columns'
 import { RelationOpsProvider, type RelationOps } from '../relation-ops'
@@ -210,19 +210,25 @@ describe('ObsRenderer', () => {
     expect(ops.get.mock.calls.filter(([e, id]) => e === 'contact' && id === 'c1')).toHaveLength(1)
   })
 
-  it("a box hanging in its parent's column is entered from the left, its line elbowing down the parent's side", async () => {
+  it('a box among more than 3 siblings is entered from the left by a bus line', async () => {
     setup({ rows: [
-      box('b1', { x: 100, y: 50 }),
-      box('b2', { parent_id: 'b1', x: 140, y: 184 }), // stacked: below, indented
-      box('b3', { parent_id: 'b1', x: 100, y: 300 }), // straight below: a plain line
+      box('b1', { x: 100, y: 0 }),
+      box('b2', { parent_id: 'b1', x: 0, y: 200 }),
+      box('b3', { parent_id: 'b1', x: 300, y: 200 }),
+      box('b4', { parent_id: 'b1', x: 0, y: 400 }),
+      box('b5', { parent_id: 'b1', x: 300, y: 400 }),
+      box('b6', { parent_id: 'b5', x: 250, y: 600 }), // b5's subtree reaches 50px left of it
     ] })
     await screen.findByTestId('node-b2')
-    expect(rf.props.edges.map((e) => [e.target, e.type, (e as { sourceHandle?: string }).sourceHandle])).toEqual([
-      ['b2', 'step', 'stack'],
-      ['b3', 'smoothstep', undefined],
+    expect(rf.props.edges.map((e) => [e.target, e.type, e.data?.trunk])).toEqual([
+      ['b2', 'bus', 20],
+      ['b3', 'bus', 20],
+      ['b4', 'bus', 20],
+      ['b5', 'bus', 70],
+      ['b6', 'smoothstep', undefined],
     ])
     const target = (id: string) => (rf.props.nodes.find((n) => n.id === id) as { targetPosition?: string }).targetPosition
-    expect([target('b2'), target('b3')]).toEqual(['left', 'top'])
+    expect([target('b2'), target('b6')]).toEqual(['left', 'top'])
   })
 
   it('zoomed out, an untitled box shows its first content line', async () => {
@@ -400,9 +406,7 @@ describe('ObsRenderer', () => {
     const { ops } = setup({ rows })
     await editable()
     const { nodes, roots, visible } = buildWbs(rows.map((r) => ({ id: r.id, parentId: r.parent_id })), new Set())
-    // Wider than the (jsdom 1024×768) screen: the children hang in a column under r1.
-    const want = layoutTreeToFit(nodes, roots, visible, OBS_BOX_SIZE, window.innerWidth / window.innerHeight)
-    expect(want.k1.x).toBeGreaterThan(want.r1.x)
+    const want = layoutTreeGrid(nodes, roots, visible, OBS_BOX_SIZE)
     for (const r of rows) expect(node(r.id).position).toEqual(want[r.id])
     fireEvent.click(screen.getByRole('button', { name: 'Re-arrange' }))
     await waitFor(() => expect(ops.update).toHaveBeenCalledTimes(4))

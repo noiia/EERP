@@ -20,6 +20,7 @@ import {
   type Connection,
   type Edge,
   type EdgeChange,
+  type EdgeTypes,
   type Node,
   type NodeChange,
   type NodeTypes,
@@ -37,7 +38,7 @@ import type { HasId } from '../stores'
 import { freeSpot, segmentHitsRect, separateBoxes, type Point, type Rect } from './collide'
 import { historyKey, type UndoHistory } from './history'
 import { DeliverableBox } from './deliverable-box'
-import { ObsBox } from './obs-box'
+import { BusEdge, ObsBox } from './obs-box'
 import { PbsBox } from './pbs-box'
 import { compactTheme, ForceDetail, LabelBox, NOTE_BOX_SIZE, NOTE_LIMIT, NOTE_LINK_LIMIT, NoteBox, TASK_BOX_SIZE, TaskBox, type NoteBoxData } from './task-box'
 
@@ -283,6 +284,7 @@ export interface DiagramCanvasProps {
 }
 
 const nodeTypes: NodeTypes = { task: TaskBox, label: LabelBox, note: NoteBox, obs: ObsBox, pbs: PbsBox, deliverable: DeliverableBox }
+const edgeTypes: EdgeTypes = { bus: BusEdge }
 const NOTE_EDGE = 'note-link:'
 // No notes is no key: a layout without notes saves as it always did.
 const savedNotes = (notes: DiagramNote[]) => (notes.length ? notes : undefined)
@@ -829,6 +831,7 @@ function Canvas(props: DiagramCanvasProps) {
             edges={rfEdges}
             onEdgesChange={onEdgesChange}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             onNodesChange={onNodesChange}
             onNodeDragStop={onNodeDragStop}
             onConnect={props.onConnect || props.notes ? onConnect : undefined}

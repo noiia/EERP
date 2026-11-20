@@ -63,45 +63,75 @@ export function layoutWbs(
   return finish(pos, size, heightOf)
 }
 
-/** layoutWbs for a chart that should fill a screen of `aspect` (width / height): when the
- * plain tree is wider than that, its deepest levels hang as stacked columns (layoutWbs's
- * `stacked`) one level at a time, and the arrangement kept is the one a fit-to-screen view
- * shows largest. A tree already as tall as the screen is left as it is. Roots never stack. */
-export function layoutTreeToFit(
+/** A parent with more children than this lays them out in a grid (layoutTreeGrid). */
+export const GRID_MAX_ROW = 3
+/** How far below its parent's bottom a grid's bus line runs: half the gap to the first grid row. */
+export const GRID_BUS_DROP = WBS_GAP_Y / 2
+/** How far left of a grid cell its trunk line runs: half the gap between grid columns. */
+export const GRID_TRUNK_GAP = WBS_GAP_X / 2
+
+/** Tidy tree for an org chart. A parent with up to GRID_MAX_ROW visible children has them side
+ * by side below it, centered under it. With more, they go in a grid of ceil(√n) columns, so the
+ * family is about as tall as it is wide: each cell holds a child's whole subtree (left-aligned),
+ * the parent is centered over the grid, and the lines run as a bus — down from the parent, along
+ * the gap above the grid, down the gap left of each column, into the child's left side (BusEdge). */
+export function layoutTreeGrid(
   nodes: Record<string, WbsNode>,
   roots: string[],
   visible: string[],
   size: BoxSize,
-  aspect: number,
 ): Record<string, Point> {
-  const deepest = Math.max(0, ...visible.map((id) => nodes[id].depth))
-  let best: Record<string, Point> = {}
-  let bestHeight = Infinity
-  // From no level stacked (deepest + 1) up to every level under the roots.
-  for (let from = deepest + 1; from >= 1; from--) {
-    const pos = layoutWbs(nodes, roots, visible, size, undefined, (id) => nodes[id].depth >= from)
-    const xs = Object.values(pos).map((p) => p.x)
-    const ys = Object.values(pos).map((p) => p.y)
-    const w = xs.length ? Math.max(...xs) - Math.min(...xs) + size.w : 0
-    const h = ys.length ? Math.max(...ys) - Math.min(...ys) + size.h : 0
-    // The screen height this needs once fitted: the smaller, the bigger it shows.
-    const needed = Math.max(w / aspect, h)
-    // The plain tree (tried first) already fits the screen's shape: nothing to win.
-    if (from === deepest + 1 && w <= h * aspect) return pos
-    if (needed < bestHeight) {
-      best = pos
-      bestHeight = needed
-    }
+  const vis = new Set(visible)
+  type Block = { pos: Record<string, Point>; w: number; h: number }
+  const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
+  // Copies `b`'s positions into `out`, moved by (dx, dy).
+  const put = (out: Record<string, Point>, b: Block, dx: number, dy: number) => {
+    for (const [k, p] of Object.entries(b.pos)) out[k] = { x: p.x + dx, y: p.y + dy }
   }
-  return best
-}
-
-/** Whether `child` sits in a stacked column under `parent` (below it, indented right of the
- * parent's left edge but left of its middle): its line then elbows down the parent's left side
- * (STACK_HANDLE) instead of dropping from the parent's bottom. Read from the boxes' positions, so
- * it holds for a saved chart and after a hand move. */
-export function stackedUnder(child: Point, parent: Point, size: BoxSize): boolean {
-  return child.y >= parent.y + size.h && child.x > parent.x && child.x < parent.x + size.w / 2
+  // `id`'s subtree with its top-left at (0, 0).
+  const block = (id: string): Block => {
+    const kids = nodes[id].children.filter((c) => vis.has(c)).map(block)
+    if (!kids.length) return { pos: { [id]: { x: 0, y: 0 } }, w: size.w, h: size.h }
+    const pos: Record<string, Point> = {}
+    const top = size.h + WBS_GAP_Y
+    if (kids.length <= GRID_MAX_ROW) {
+      let x = 0
+      for (const k of kids) {
+        put(pos, k, x, top)
+        x += k.w + WBS_GAP_X
+      }
+      const first = nodes[id].children.find((c) => c in pos)!
+      const last = [...nodes[id].children].reverse().find((c) => c in pos)!
+      pos[id] = { x: (pos[first].x + pos[last].x) / 2, y: 0 }
+      return { pos, w: Math.max(x - WBS_GAP_X, pos[id].x + size.w), h: top + Math.max(...kids.map((k) => k.h)) }
+    }
+    const cols = Math.ceil(Math.sqrt(kids.length))
+    const colW: number[] = []
+    const rowH: number[] = []
+    kids.forEach((k, i) => {
+      const c = i % cols
+      const r = Math.floor(i / cols)
+      colW[c] = Math.max(colW[c] ?? 0, k.w)
+      rowH[r] = Math.max(rowH[r] ?? 0, k.h)
+    })
+    const gridW = sum(colW) + WBS_GAP_X * (colW.length - 1)
+    const gx = Math.max(0, (size.w - gridW) / 2)
+    kids.forEach((k, i) => {
+      const c = i % cols
+      const r = Math.floor(i / cols)
+      put(pos, k, gx + sum(colW.slice(0, c)) + WBS_GAP_X * c, top + sum(rowH.slice(0, r)) + WBS_GAP_Y * r)
+    })
+    pos[id] = { x: Math.max(0, (gridW - size.w) / 2), y: 0 }
+    return { pos, w: Math.max(gridW, size.w), h: top + sum(rowH) + WBS_GAP_Y * (rowH.length - 1) }
+  }
+  const pos: Record<string, Point> = {}
+  let x = 0
+  for (const r of roots.filter((r) => vis.has(r))) {
+    const b = block(r)
+    put(pos, b, x, 0)
+    x += b.w + WBS_GAP_X
+  }
+  return finish(pos, size)
 }
 
 /** Two parts, left to right. Linked records: each connected group of links is its own small

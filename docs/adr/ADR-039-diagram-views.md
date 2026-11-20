@@ -193,14 +193,15 @@ company field, a `canEdit` guard).
   the pin is lost.
 - *Controlled canvas.* `DiagramCanvas` takes `positions` + `onMove` (a rejected write snaps the box
   back) and never reads or saves a per-user layout in this mode; boxes never placed are laid out like WBS.
-- *Fit the screen.* An org chart grows sideways (many people per manager), which leaves the
+- *Balanced families.* An org chart grows sideways (many people per manager), which leaves the
   screen's height empty and shrinks every box once fitted. The OBS auto-layout (*Re-arrange*, and
-  never-placed boxes) is `layoutTreeToFit`: when the plain tree is wider than the window's shape, its
-  deepest levels hang as indented vertical columns under their parent (WBS's stacked columns), one
-  level at a time, keeping the arrangement a fit-to-screen view shows largest; a chart already
-  that tall is left as it is. A box in its parent's column is read from the saved positions
-  (`stackedUnder`: below the parent, indented less than half its width), so after a reload or a
-  hand move it is still entered from the left by an elbow down the parent's side.
+  never-placed boxes) is `layoutTreeGrid`: a parent with up to 3 children has them side by side
+  under it; with more, they go in a grid of ⌈√n⌉ columns (each cell holding the child's whole
+  subtree), so every large family is about as tall as it is wide, at every level. Deep levels
+  are no longer hung as one vertical column. A grid child is entered from the left by a bus line
+  (`BusEdge`: down from the parent, along the gap above the grid, down the gap left of the child's
+  subtree, into the child), chosen from the tree's shape (more than 3 siblings), not the saved
+  positions, so it holds after a reload or a hand move.
 - *Colors.* A box has a free `#rrggbb` color; the text color is derived for contrast.
 - *Deleting.* Deleting a box clears its children's `parent_id` in the same transaction, so the
   children become roots instead of disappearing.
