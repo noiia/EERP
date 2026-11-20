@@ -103,6 +103,7 @@ func (h *Handler) Mount(e *echo.Echo, generic func(table string) Generic, mw ...
 	e.GET("/api/v1/project/:id/can_manage", h.CanManage, mw...)
 	e.GET("/api/v1/project/:id/metrics", h.Metrics, mw...)
 	e.GET("/api/v1/project/:id/schedule", h.Schedule, mw...)
+	e.GET("/api/v1/project/:id/indicators", h.Indicators, mw...)
 	e.POST("/api/v1/project/:id/baseline", h.CreateBaseline, mw...)
 }
 

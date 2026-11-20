@@ -3398,3 +3398,6 @@ msgstr "Chemin critique seul"
 
 msgid "PERT - critical path"
 msgstr "PERT - chemin critique"
+
+msgid "Filter the list on one {name} to see this."
+msgstr "Filtrez la liste sur un seul {name} pour voir ceci."

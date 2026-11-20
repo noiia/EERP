@@ -187,9 +187,12 @@ function StatWidgetBody<T extends HasId>({
 }) {
   const t = useT()
   const { format } = useNumberFormat()
-  const config = tile.config as { field?: string; aggregate?: FullAggregate }
-  if (!config.field || !config.aggregate) return <NoData />
-  const value = server?.stat ?? statValue(records, { field: config.field, aggregate: config.aggregate })
+  const config = tile.config as { field?: string; aggregate?: FullAggregate; source?: { unit?: string } }
+  // An indicator tile (graph-indicators.ts) shows the module's figure, never the rows'.
+  if (config.source) {
+    if (server?.stat == null) return <NoData />
+  } else if (!config.field || !config.aggregate) return <NoData />
+  const value = server?.stat ?? statValue(records, { field: config.field!, aggregate: config.aggregate! })
   return (
     <Stack spacing={0.25} sx={{ height: '100%', width: '100%' }}>
       {!server && <PartialDataBadge shown={records.length} total={recordTotal} />}
@@ -206,11 +209,14 @@ function StatWidgetBody<T extends HasId>({
           textAlign: 'center',
         }}
       >
-        <Typography variant="caption" color="text.secondary">
-          {t(AGGREGATE_LABELS[config.aggregate])}
-        </Typography>
+        {config.aggregate ? (
+          <Typography variant="caption" color="text.secondary">
+            {t(AGGREGATE_LABELS[config.aggregate])}
+          </Typography>
+        ) : null}
         <Typography variant="h3" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-          {format(value, { decimals: 2 })}
+          {format(value, { decimals: config.source ? 1 : 2 })}
+          {config.source?.unit ? ` ${t(config.source.unit)}` : ''}
         </Typography>
       </Box>
     </Stack>
@@ -785,7 +791,7 @@ function PieChart({ slices, format }: { slices: PieSlice[]; format: (v: number) 
                 const dashoffset = -offset
                 offset += length
                 const color =
-                  slice.label === OTHER_LABEL ? palette.chrome.mutedInk : colorFor(i, palette.categorical)
+                  slice.color ?? (slice.label === OTHER_LABEL ? palette.chrome.mutedInk : colorFor(i, palette.categorical))
                 return (
                   <ChartTip
                     key={slice.label}
@@ -817,7 +823,7 @@ function PieChart({ slices, format }: { slices: PieSlice[]; format: (v: number) 
                     borderRadius: '50%',
                     flexShrink: 0,
                     bgcolor:
-                      slice.label === OTHER_LABEL ? palette.chrome.mutedInk : colorFor(i, palette.categorical),
+                      slice.color ?? (slice.label === OTHER_LABEL ? palette.chrome.mutedInk : colorFor(i, palette.categorical)),
                   }}
                 />
                 <Typography variant="caption" noWrap color="text.secondary">
@@ -844,13 +850,16 @@ function PieWidgetBody<T extends HasId>({
   server?: ServerTileData
 }) {
   const { format } = useNumberFormat()
-  const config = tile.config as { groupByField?: string; valueField?: string }
-  if (!config.groupByField) return <NoData />
+  const t = useT()
+  const config = tile.config as { groupByField?: string; valueField?: string; source?: unknown }
+  // An indicator pie (graph-indicators.ts): the module's slices, labels translated.
+  const sourced = config.source ? (server?.slices ?? []).map((s) => ({ ...s, label: t(s.label) })) : null
+  if (!sourced && !config.groupByField) return <NoData />
   const slices =
-    server?.slices ?? pieSlices(records, { groupByField: config.groupByField, valueField: config.valueField })
+    sourced ?? server?.slices ?? pieSlices(records, { groupByField: config.groupByField!, valueField: config.valueField })
   return (
     <Stack spacing={0.5} sx={{ height: '100%', width: '100%' }}>
-      {!server && <PartialDataBadge shown={records.length} total={recordTotal} />}
+      {!server && !sourced && <PartialDataBadge shown={records.length} total={recordTotal} />}
       <Box sx={{ flex: 1, minHeight: 0, width: '100%' }}>
         <PieChart slices={slices} format={(v) => format(v, { decimals: config.valueField ? 1 : 0 })} />
       </Box>

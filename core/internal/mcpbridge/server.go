@@ -110,7 +110,7 @@ type RecordInput struct {
 }
 type ProjectInput struct {
 	ID      string            `json:"id" jsonschema:"Project UUID"`
-	Section string            `json:"section,omitempty" jsonschema:"record (default), metrics, schedule, or can_manage"`
+	Section string            `json:"section,omitempty" jsonschema:"record (default), metrics, schedule, indicators, or can_manage"`
 	Query   map[string]string `json:"query,omitempty" jsonschema:"Filters, pagination, or parameters supported by the selected project endpoint"`
 }
 
@@ -180,12 +180,12 @@ func (b *Bridge) server() *mcp.Server {
 		}) (any, error) {
 			return b.record(ctx, RecordInput{Model: "project", Query: in.Query}, "GET", "")
 		})
-	addTool(s, "eerp_get_project", "Read a project or its metrics (burndown/EVM/flow/risk), computed schedule, or management capabilities. section: record, metrics, schedule, can_manage.", true,
+	addTool(s, "eerp_get_project", "Read a project or its metrics (burndown/EVM/flow/risk), computed schedule, headline indicators (progress ratios, critical path, task and OBS breakdowns), or management capabilities. section: record, metrics, schedule, indicators, can_manage.", true,
 		func(ctx context.Context, in ProjectInput) (any, error) {
 			suffix := ""
 			switch in.Section {
 			case "", "record":
-			case "metrics", "schedule", "can_manage":
+			case "metrics", "schedule", "indicators", "can_manage":
 				suffix = "/" + in.Section
 			default:
 				return nil, errors.New("unknown project section")

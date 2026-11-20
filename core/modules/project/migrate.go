@@ -22,7 +22,7 @@ func (m *projectModule) Migrate(ctx context.Context, db *orm.DB) error {
 			return fmt.Errorf("project: migrate: %w", err)
 		}
 	}
-	return nil
+	return seedGraphPresets(ctx, db)
 }
 
 // check adds a CHECK constraint once.

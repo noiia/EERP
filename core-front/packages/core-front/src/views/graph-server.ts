@@ -24,7 +24,8 @@ import type { GraphOps } from './graph-ops'
 export interface ServerTileData {
   series?: XySeries[]
   slices?: PieSlice[]
-  stat?: number
+  /** null: no value (an indicator that can't be computed). */
+  stat?: number | null
 }
 
 export interface TilePlan {

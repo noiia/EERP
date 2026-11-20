@@ -3267,3 +3267,6 @@ msgstr ""
 
 msgid "PERT - critical path"
 msgstr ""
+
+msgid "Filter the list on one {name} to see this."
+msgstr ""

@@ -507,3 +507,45 @@ msgstr ""
 
 msgid "GanttProject (.gan)"
 msgstr ""
+
+msgid "Tasks done (%)"
+msgstr ""
+
+msgid "Project time elapsed (%)"
+msgstr ""
+
+msgid "Hours spent on planned (%)"
+msgstr ""
+
+msgid "Critical path (days)"
+msgstr ""
+
+msgid "Planned hours, all tasks"
+msgstr ""
+
+msgid "Tasks by stage"
+msgstr ""
+
+msgid "Tasks by color group"
+msgstr ""
+
+msgid "Tasks by top-level WBS task"
+msgstr ""
+
+msgid "OBS contacts per level 1"
+msgstr ""
+
+msgid "OBS contacts per level 2"
+msgstr ""
+
+msgid "No stage"
+msgstr ""
+
+msgid "No color group"
+msgstr ""
+
+msgid "Unnamed"
+msgstr ""
+
+msgid "d"
+msgstr ""

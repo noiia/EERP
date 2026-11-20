@@ -107,7 +107,7 @@ func TestMCPProjectAccess(t *testing.T) {
 			if tc.visible {
 				want = 200
 			}
-			for _, section := range []string{"record", "metrics", "schedule", "can_manage"} {
+			for _, section := range []string{"record", "metrics", "schedule", "indicators", "can_manage"} {
 				status, _ := call(raw, "eerp_get_project", map[string]any{"id": p.String(), "section": section})
 				if status != want {
 					t.Errorf("%s: %d, want %d", section, status, want)

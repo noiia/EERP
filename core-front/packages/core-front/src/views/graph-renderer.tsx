@@ -16,6 +16,7 @@ import { useT } from '../i18n/translate'
 import { fieldLabel, type ViewDescriptor } from './descriptor'
 import type { EntityListOptions } from '../api/list-options'
 import { planTile, useServerTileData } from './graph-server'
+import { tileSource, useIndicatorTileData } from './graph-indicators'
 import { ErrorAlert } from './error-alert'
 import { calcKeysIn, expandByChildren, withCalculatedFields } from './graph-aggregate'
 import { useRelationOps, type RelationRecord } from './relation-ops'
@@ -117,6 +118,9 @@ function GraphTileCard<T extends HasId>({
     },
   )
   const server = useServerTileData(descriptor.entity, plan, graphOps, listOptions)
+  // A tile reading a module's indicator for the record the list is filtered on.
+  const indicator = useIndicatorTileData(tile, listOptions)
+  const source = tileSource(tile)
   return (
     <Card
       variant="outlined"
@@ -143,16 +147,19 @@ function GraphTileCard<T extends HasId>({
           pointerEvents: 'none',
         }}
       >
-        {tile.title || t(tile.type)}
+        {t(tile.title || tile.type)}
       </Typography>
       {editing ? (
         <Box
           className="graph-tile-no-drag"
           sx={{ position: 'absolute', top: 2, right: 2, zIndex: 2, display: 'flex' }}
         >
-          <IconButton size="small" aria-label={t('Configure widget')} onClick={onConfigure}>
-            ✎
-          </IconButton>
+          {/* An indicator tile is a module preset: the dialog can't build its source. */}
+          {source ? null : (
+            <IconButton size="small" aria-label={t('Configure widget')} onClick={onConfigure}>
+              ✎
+            </IconButton>
+          )}
           <IconButton size="small" aria-label={t('Hide widget')} onClick={onHide}>
             ×
           </IconButton>
@@ -173,13 +180,21 @@ function GraphTileCard<T extends HasId>({
           '&:last-child': { pb: 1 },
         }}
       >
-        <GraphWidgetBody
-          tile={tile}
-          descriptor={descriptor}
-          records={records}
-          recordTotal={recordTotal}
-          server={server}
-        />
+        {indicator === 'unpinned' ? (
+          <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
+            <Typography variant="body2" color="text.secondary">
+              {t('Filter the list on one {name} to see this.').replace('{name}', t(source?.scopeLabel ?? source?.scopeEntity ?? '').toLowerCase())}
+            </Typography>
+          </Box>
+        ) : (
+          <GraphWidgetBody
+            tile={tile}
+            descriptor={descriptor}
+            records={records}
+            recordTotal={recordTotal}
+            server={indicator ?? server}
+          />
+        )}
       </CardContent>
     </Card>
   )

@@ -165,6 +165,8 @@ export interface PieSlice {
    * configured, otherwise the same as `count` (nothing else to show). Purely
    * a display annotation — never affects slice size. */
   displayValue: number
+  /** The slice's own `#rrggbb` (a color group), over the categorical palette. */
+  color?: string
 }
 
 /** Sentinel label for the folded "everything past the palette's slot count"

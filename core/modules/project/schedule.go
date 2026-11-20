@@ -1,6 +1,7 @@
 package project
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -189,39 +190,8 @@ func (h *Handler) Schedule(c *echo.Context) error {
 		start = *dateStart
 	}
 
-	rows, err := h.db.Query(ctx, `SELECT id, planned_hours, date_start, deadline FROM project_task
-		WHERE project_id = $1 AND tenant_id = $2 AND deleted_at IS NULL`, id, tenant)
+	tasks, links, err := h.scheduleInput(ctx, tenant, id)
 	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	var tasks []calcTask
-	for rows.Next() {
-		var t calcTask
-		if err := rows.Scan(&t.ID, &t.PlannedHours, &t.DateStart, &t.Deadline); err != nil {
-			return err
-		}
-		tasks = append(tasks, t)
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-
-	deps, err := h.db.Query(ctx, `SELECT task_id, depends_on_id FROM project_task_dependency
-		WHERE project_id = $1 AND tenant_id = $2 AND deleted_at IS NULL`, id, tenant)
-	if err != nil {
-		return err
-	}
-	defer deps.Close()
-	var links []calcLink
-	for deps.Next() {
-		var l calcLink
-		if err := deps.Scan(&l.From, &l.To); err != nil {
-			return err
-		}
-		links = append(links, l)
-	}
-	if err := deps.Err(); err != nil {
 		return err
 	}
 
@@ -237,4 +207,46 @@ func (h *Handler) Schedule(c *echo.Context) error {
 			LateStart: r.LateStart, LateFinish: r.LateFinish, Slack: r.Slack, Critical: r.Critical})
 	}
 	return c.JSON(http.StatusOK, resp)
+}
+
+// scheduleInput reads a project's live tasks and dependency links, the
+// schedule's input (tenant-pinned).
+func (h *Handler) scheduleInput(ctx context.Context, tenant, id uuid.UUID) ([]calcTask, []calcLink, error) {
+	rows, err := h.db.Query(ctx, `SELECT id, planned_hours, date_start, deadline FROM project_task
+		WHERE project_id = $1 AND tenant_id = $2 AND deleted_at IS NULL`, id, tenant)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	var tasks []calcTask
+	for rows.Next() {
+		var t calcTask
+		if err := rows.Scan(&t.ID, &t.PlannedHours, &t.DateStart, &t.Deadline); err != nil {
+			return nil, nil, err
+		}
+		tasks = append(tasks, t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+
+	deps, err := h.db.Query(ctx, `SELECT task_id, depends_on_id FROM project_task_dependency
+		WHERE project_id = $1 AND tenant_id = $2 AND deleted_at IS NULL`, id, tenant)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer deps.Close()
+	var links []calcLink
+	for deps.Next() {
+		var l calcLink
+		if err := deps.Scan(&l.From, &l.To); err != nil {
+			return nil, nil, err
+		}
+		links = append(links, l)
+	}
+	if err := deps.Err(); err != nil {
+		return nil, nil, err
+	}
+
+	return tasks, links, nil
 }

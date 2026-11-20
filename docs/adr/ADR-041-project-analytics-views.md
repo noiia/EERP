@@ -386,3 +386,40 @@ documented no-op there (the mind-map and Ishikawa elements are plain SVG
 with explicit presentation attributes and no markers), so the WP11 PBS
 diagram and the WBS deliverables footer exports are covered by the same
 call.
+
+### Default Graph tiles: project indicators (2026-11-20)
+
+**Why.** A project's headline figures — how far along it is, how much of its time and of
+its planned hours are used, how long its critical path is, how its tasks split across
+stages, color groups and top-level WBS tasks, and how many contacts each OBS branch holds —
+span several tables (the project's dates, stages, color groups, the dependency graph, the
+OBS chart). Graph mode's stat and pie tiles aggregate one entity's rows (ADR-023), so they
+cannot express them.
+
+**What.** `GET /api/v1/project/:id/indicators` (`indicators.go`, `project:project:read`,
+404 when the project is not visible, like the metrics) answers one object: numbers
+(`tasks_total`, `tasks_done`, `done_pct`, `time_elapsed_pct` — the share of
+`[date_start, date_end]` already past, 0 before it starts, over 100 once overdue, null
+without both dates —, `planned_hours`, `spent_hours`, `spent_pct`, `critical_path_days`
+and `critical_path_hours` — the PERT finish of `schedule.go`, null on a cycle) and slice
+lists `[{label, value, color?}]` (`by_stage` in column order with *No stage*, `by_color` in
+each group's own color with *No color group*, a task in two groups counted in both,
+`by_wbs_l1` — each top-level task counting itself and its whole subtree —, and
+`obs_contacts_l1` / `obs_contacts_l2` — the contact boxes in each level-1 / level-2 box's
+subtree, itself included, boxes without contacts left out). A percentage is null on a
+zero denominator. MCP reads it as `eerp_get_project` section `indicators`.
+
+**How it shows.** A stat or pie tile whose `config.source` is
+`{scopeField, scopeEntity, path, key, unit?, scopeLabel?}` (the engine's
+`graph-indicators.ts`, generic: any module may serve such an endpoint) reads
+`GET /{scopeEntity}/<pinned id>/{path}` once per pinned id (all tiles share the answer,
+cached 30 s) and draws `key`: a stat shows the number with its unit, a pie the slices (a
+slice's `color` beats the palette, labels go through `t()`). While the list is not filtered
+on one project, the tile asks for that filter instead. The project module seeds this layout
+as `views.project_task.graph` in every company that has none (`presets.go`, from
+`Migrate`; an admin's own layout is never touched). Such a tile has no ✎ (the widget dialog
+can't build a source), only hide/move/resize.
+
+Pitfalls: the cache is not invalidated by writes, so a figure can lag 30 s behind an
+edit; a company that already had a task Graph layout keeps it — delete the setting to get
+the preset at the next boot.

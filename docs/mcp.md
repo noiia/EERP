@@ -200,7 +200,7 @@ endpoint return `405`; JSON-RPC methods use `POST`.
 | `eerp_read_operation` | Execute a GET operation from the catalog |
 | `eerp_write_operation` | Execute a JSON or multipart mutation from the catalog |
 | `eerp_list_projects` | List projects visible to the caller |
-| `eerp_get_project` | Read a project, its metrics, schedule or management capabilities |
+| `eerp_get_project` | Read a project, its metrics, schedule, indicators or management capabilities |
 | `eerp_list_project_tasks` | List a project's tasks and subtasks, with filters and pagination |
 
 In read-only mode, the five write tools are absent from `tools/list`, and write
@@ -248,7 +248,9 @@ For `eerp_get_project`:
 ```
 
 `section` accepts `record` (the default), `metrics` (burndown, EVM, flow and
-risk), `schedule` (the computed schedule) or `can_manage`.
+risk), `schedule` (the computed schedule), `indicators` (progress ratios, the
+critical path length, and task and OBS breakdowns — what the task list's Graph
+tiles show) or `can_manage`.
 
 For `eerp_list_project_tasks`:
 

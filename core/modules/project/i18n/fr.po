@@ -508,3 +508,45 @@ msgstr "Rouge"
 
 msgid "GanttProject (.gan)"
 msgstr "GanttProject (.gan)"
+
+msgid "Tasks done (%)"
+msgstr "Tâches terminées (%)"
+
+msgid "Project time elapsed (%)"
+msgstr "Temps du projet écoulé (%)"
+
+msgid "Hours spent on planned (%)"
+msgstr "Heures passées sur prévues (%)"
+
+msgid "Critical path (days)"
+msgstr "Chemin critique (jours)"
+
+msgid "Planned hours, all tasks"
+msgstr "Heures prévues, toutes tâches"
+
+msgid "Tasks by stage"
+msgstr "Tâches par étape"
+
+msgid "Tasks by color group"
+msgstr "Tâches par groupe de couleur"
+
+msgid "Tasks by top-level WBS task"
+msgstr "Tâches par tâche de niveau 1 du WBS"
+
+msgid "OBS contacts per level 1"
+msgstr "Contacts OBS par niveau 1"
+
+msgid "OBS contacts per level 2"
+msgstr "Contacts OBS par niveau 2"
+
+msgid "No stage"
+msgstr "Sans étape"
+
+msgid "No color group"
+msgstr "Sans groupe de couleur"
+
+msgid "Unnamed"
+msgstr "Sans nom"
+
+msgid "d"
+msgstr "j"
