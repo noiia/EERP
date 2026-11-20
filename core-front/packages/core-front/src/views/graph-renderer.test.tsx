@@ -190,6 +190,44 @@ describe('GraphRenderer', () => {
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
   })
 
+  it('Add default graphs brings the module defaults onto the draft, then saves them like any tile', async () => {
+    useSessionStore.setState({ identity: identityWith(['settings:views:write']) })
+    const d1: Tile = { id: 'd1', x: 0, y: 0, w: 4, h: 4, type: 'pie', title: 'By stage', config: {} }
+    const d2: Tile = { id: 'd2', x: 4, y: 2, w: 4, h: 4, type: 'stat', title: 'Done', config: {} }
+    const save = vi.fn(async () => ({ ok: true as const }))
+    render(
+      <GraphOpsProvider ops={fakeOps({ get: vi.fn(async () => ({ tiles: [savedTile, { ...d2, hidden: true }], defaults: [d1, d2] })), save })}>
+        <GraphRenderer descriptor={descriptor} records={[]} />
+      </GraphOpsProvider>,
+    )
+    await screen.findByTestId('graph-tile-t1')
+    // Edit mode only.
+    expect(screen.queryByRole('button', { name: 'Add default graphs' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add default graphs' }))
+    // Every default is on the canvas now: the button goes away.
+    expect(screen.queryByRole('button', { name: 'Add default graphs' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(save).toHaveBeenCalled())
+    const tiles = (save.mock.calls[0] as unknown as [string, Tile[]])[1]
+    // The hidden default is shown where it was; the absent one lands below the visible tiles (t1 ends at y 6).
+    expect(tiles.find((tl) => tl.id === 'd2')).toMatchObject({ x: 4, y: 2, hidden: false })
+    expect(tiles.find((tl) => tl.id === 'd1')).toMatchObject({ x: 0, y: 6, w: 4, h: 4, type: 'pie' })
+    expect(tiles).toHaveLength(3)
+  })
+
+  it('offers no Add default graphs without module defaults', async () => {
+    useSessionStore.setState({ identity: identityWith(['settings:views:write']) })
+    render(
+      <GraphOpsProvider ops={fakeOps({ get: vi.fn(async () => ({ tiles: [savedTile] })) })}>
+        <GraphRenderer descriptor={descriptor} records={[]} />
+      </GraphOpsProvider>,
+    )
+    await screen.findByTestId('graph-tile-t1')
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    expect(screen.queryByRole('button', { name: 'Add default graphs' })).not.toBeInTheDocument()
+  })
+
   it('the whole tile is the drag surface, and resize is enabled from all 8 handles', async () => {
     useSessionStore.setState({ identity: identityWith(['settings:views:write']) })
     render(

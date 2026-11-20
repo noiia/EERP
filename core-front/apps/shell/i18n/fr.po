@@ -305,6 +305,9 @@ msgstr "Ajouter un widget"
 msgid "Hidden widgets:"
 msgstr "Widgets masqués :"
 
+msgid "Add default graphs"
+msgstr "Ajouter les graphiques par défaut"
+
 msgid "Widget type"
 msgstr "Type de widget"
 

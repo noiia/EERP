@@ -8,6 +8,7 @@ import (
 
 	"core/internal/common"
 	"core/internal/module"
+	"core/internal/settings"
 	"core/orm"
 
 	"go.uber.org/zap"
@@ -22,6 +23,11 @@ type eventModule struct{}
 func (m *eventModule) Name() string { return "event" }
 
 func (m *eventModule) Register() error {
+	for entity, tiles := range graphPresets {
+		if err := settings.RegisterGraphPreset(entity, tiles); err != nil {
+			return err
+		}
+	}
 	if err := orm.Register[Event](orm.WithTableName("event"),
 		orm.WithPublicFields(orm.AllPublicFields)); err != nil {
 		return err

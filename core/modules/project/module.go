@@ -6,6 +6,7 @@ package project
 
 import (
 	"core/internal/module"
+	"core/internal/settings"
 	"core/orm"
 )
 
@@ -20,6 +21,7 @@ func (m *projectModule) Name() string { return "project" }
 func (m *projectModule) Register() error {
 	p := currentPermissions
 	for _, err := range []error{
+		settings.RegisterGraphPreset("project_task", taskGraphPreset),
 		orm.Register[Project](orm.WithTableName("project"), orm.WithRowScope(ProjectScope(p)),
 			orm.WithReadOnlyFields("task_count", "planned_hours", "spent_hours")),
 		orm.Register[ProjectMember](orm.WithTableName("project_member"), orm.WithRowScope(ChildScope(p))),

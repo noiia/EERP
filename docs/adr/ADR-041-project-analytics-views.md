@@ -417,7 +417,10 @@ cached 30 s) and draws `key`: a stat shows the number with its unit, a pie the s
 slice's `color` beats the palette, labels go through `t()`). While the list is not filtered
 on one project, the tile asks for that filter instead. The project module seeds this layout
 as `views.project_task.graph` in every company that has none (`presets.go`, from
-`Migrate`; an admin's own layout is never touched). Such a tile has no ✎ (the widget dialog
+`Migrate`; an admin's own layout is never touched). A company that already had a layout
+(a dev seed's, an earlier edit) therefore gets no seed: the preset is also registered with
+`settings.RegisterGraphPreset`, rides the layout GET as `defaults`, and the Graph edit mode's
+**Add default graphs** button puts the missing tiles into the draft. Such a tile has no ✎ (the widget dialog
 can't build a source), only hide/move/resize.
 
 Pitfalls: the cache is not invalidated by writes, so a figure can lag 30 s behind an

@@ -674,6 +674,14 @@ type graphLayout struct {
 	Tiles []graphTile `json:"tiles"`
 }
 
+// graphLayoutResponse is the GET body: the saved layout plus the entity's
+// module preset (RegisterGraphPreset), if any, for "Add default graphs". Never
+// stored: a PUT binds graphLayout, so a client echoing `defaults` back saves none.
+type graphLayoutResponse struct {
+	graphLayout
+	Defaults []graphTile `json:"defaults,omitempty"`
+}
+
 // validateGraphLayout applies the shape-level checks the contracts table
 // requires (id, non-negative/non-zero geometry, closed type set, duplicate
 // ids) — never the tile's `config` contents, which stay opaque JSON.
@@ -726,13 +734,13 @@ func (h *Handler) GetGraphLayoutSettings(c *echo.Context) error {
 		return fmt.Errorf("settings: get graph layout for %s: %w", entity, err)
 	}
 
-	resp := graphLayout{Tiles: []graphTile{}}
+	resp := graphLayoutResponse{graphLayout: graphLayout{Tiles: []graphTile{}}, Defaults: graphPreset(entity)}
 	if ok && raw != "" {
 		// An unparsable stored value degrades to an empty canvas rather than
 		// failing the read — same posture as the view-fields/preferences reads.
 		var parsed graphLayout
 		if err := json.Unmarshal([]byte(raw), &parsed); err == nil {
-			resp = parsed
+			resp.graphLayout = parsed
 			if resp.Tiles == nil {
 				resp.Tiles = []graphTile{}
 			}

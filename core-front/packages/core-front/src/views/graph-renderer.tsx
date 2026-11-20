@@ -17,6 +17,7 @@ import { fieldLabel, type ViewDescriptor } from './descriptor'
 import type { EntityListOptions } from '../api/list-options'
 import { planTile, useServerTileData } from './graph-server'
 import { tileSource, useIndicatorTileData } from './graph-indicators'
+import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { ErrorAlert } from './error-alert'
 import { calcKeysIn, expandByChildren, withCalculatedFields } from './graph-aggregate'
 import { useRelationOps, type RelationRecord } from './relation-ops'
@@ -224,6 +225,7 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
 
   // null = still loading; [] once the read resolves (even to an empty canvas).
   const [saved, setSaved] = useState<Tile[] | null>(null)
+  const [defaults, setDefaults] = useState<Tile[]>([])
   // null = view mode; a non-null array is the in-progress edit draft.
   const [draft, setDraft] = useState<Tile[] | null>(null)
   const [error, setError] = useState<SerializedError | null>(null)
@@ -267,7 +269,9 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
     }
     graphOps.get(descriptor.entity).then(
       (layout) => {
-        if (!cancelled) setSaved(layout.tiles)
+        if (cancelled) return
+        setSaved(layout.tiles)
+        setDefaults(layout.defaults ?? [])
       },
       () => {
         if (!cancelled) setSaved([])
@@ -305,6 +309,8 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
     return withCalculatedFields(expanded, calcFields, calcKeysIn([cfg]))
   }
   const hiddenTiles = editing ? (draft ?? []).filter((tl) => tl.hidden) : []
+  // Default tiles not on the canvas right now (absent, or hidden): what "Add default graphs" brings in.
+  const missingDefaults = editing ? defaults.filter((d) => !draft?.some((tl) => tl.id === d.id && !tl.hidden)) : []
   // The route's fixed refinement always applies, like loadView's merge.
   const aggregateOptions: EntityListOptions | undefined =
     descriptor.listFilter || listOptions
@@ -376,6 +382,20 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
     const res = await graphOps?.deleteField?.(field.id)
     if (res?.ok) setCalcFields((prev) => prev.filter((f) => f.id !== field.id))
     else setError({ code: 'VALIDATION_ERROR', message: res?.message ?? 'Could not delete the field.' })
+  }
+
+  /** Brings the module's missing default tiles onto the draft: a hidden one is shown again where it
+   * was, an absent one is added below the current tiles, keeping the preset's own arrangement. */
+  function addDefaults() {
+    setDraft((prev) => {
+      if (!prev) return prev
+      const bottom = Math.max(0, ...prev.filter((tl) => !tl.hidden).map((tl) => tl.y + tl.h))
+      const ids = new Set(prev.map((tl) => tl.id))
+      return [
+        ...prev.map((tl) => (tl.hidden && defaults.some((d) => d.id === tl.id) ? { ...tl, hidden: false } : tl)),
+        ...defaults.filter((d) => !ids.has(d.id)).map((d) => ({ ...d, y: bottom + d.y, hidden: undefined })),
+      ]
+    })
   }
 
   function hideTile(id: string) {
@@ -450,6 +470,11 @@ export function GraphRenderer<T extends HasId>({ descriptor, records, recordTota
             <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mb: 1 }}>
               {editing ? (
                 <>
+                  {missingDefaults.length ? (
+                    <Button size="small" startIcon={<FontAwesomeIcon icon={byPrefixAndName.fas['plus']} />} onClick={addDefaults} disabled={saving}>
+                      {t('Add default graphs')}
+                    </Button>
+                  ) : null}
                   <Button size="small" onClick={cancelEdit} disabled={saving}>
                     {t('Cancel')}
                   </Button>

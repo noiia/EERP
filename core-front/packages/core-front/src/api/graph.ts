@@ -36,6 +36,8 @@ export interface Tile {
 
 export interface GraphLayout {
   tiles: Tile[]
+  /** The module's default tiles for this entity (Go's RegisterGraphPreset), offered in edit mode. */
+  defaults?: Tile[]
 }
 
 export const EMPTY_GRAPH_LAYOUT: GraphLayout = { tiles: [] }

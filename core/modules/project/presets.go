@@ -11,7 +11,8 @@ import (
 
 // The task list's default Graph mode: the project's indicators (indicators.go)
 // as stat and pie tiles, seeded in every company where the entity has no
-// layout yet. An admin's own layout, even an empty one, is never touched. Each
+// layout yet. An admin's own layout, even an empty one, is never touched; it can
+// pull these tiles in from edit mode ("Add default graphs", registered in Register). Each
 // tile reads one indicator of the project the list is filtered on (`source`,
 // graph-indicators.ts); without that filter it asks for one.
 
