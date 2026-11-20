@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"slices"
 	"time"
 
 	"core/internal/auth"
@@ -103,6 +104,27 @@ func (h *Handler) Mount(e *echo.Echo, generic func(table string) Generic, mw ...
 	e.GET("/api/v1/project/:id/metrics", h.Metrics, mw...)
 	e.GET("/api/v1/project/:id/schedule", h.Schedule, mw...)
 	e.POST("/api/v1/project/:id/baseline", h.CreateBaseline, mw...)
+}
+
+// MountExchange registers the GanttProject exchange routes (spec "API"): the
+// download, the review list and the import. It is a separate Mount so the
+// existing callers of Mount do not change, and because the two uploads need a
+// middleware the rest of the module has no use for: upload is the larger body cap
+// the file routes get (app.go's uploadLimit), which they must carry themselves
+// because app.go's BodyLimitExempt keeps the server's small JSON cap off
+// /api/v1/project/<id>/exchange. It is required: both POSTs read a plan file.
+//
+// The permission is the one the pattern already names, project:project:read for
+// the download and project:project:write for the two imports; who may READ a
+// project and who may CHANGE it is the handlers' own gate, because the exchange
+// reads the schedule through the tenant, not through the row scope.
+func (h *Handler) MountExchange(e *echo.Echo, upload echo.MiddlewareFunc, mw ...echo.MiddlewareFunc) {
+	e.GET("/api/v1/project/:id/exchange/:format/export", h.ExportExchange, mw...)
+	// Cloned, so the caller's mw is never written through. Echo only reads the
+	// slice it is handed, so the two POSTs may share this one.
+	post := append(slices.Clone(mw), upload)
+	e.POST("/api/v1/project/:id/exchange/:format/preview", h.PreviewExchange, post...)
+	e.POST("/api/v1/project/:id/exchange/:format/apply", h.ApplyExchange, post...)
 }
 
 // AssignedToMe serves the task list's filter[assignee]=me (the My tasks

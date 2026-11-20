@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- odd.gan: the cases a plain export does not produce, in one file. A start to
+     start dependency, a finish to start dependency with a two day lag, a
+     dependency whose predecessor is a milestone, a holiday in the calendar, a
+     name over the 200 character limit, and two tasks sharing one eerp_id
+     (copy-pasted rows). The calendar has Friday off too, so that the test can
+     tell a read mask from the default one. Fixture of TestGanDecode_Odd. -->
+<project name="Odd project" version="3.3.3316" locale="en_US">
+    <calendars>
+        <day-types>
+            <day-type id="0"/>
+            <day-type id="1"/>
+            <default-week id="1" name="default" sun="1" mon="0" tue="0" wed="0" thu="0" fri="1" sat="1"/>
+        </day-types>
+        <date year="2026" month="5" date="1" type="HOLIDAY"/>
+    </calendars>
+    <tasks empty-milestones="true">
+        <taskproperties>
+            <taskproperty id="tpc0" name="eerp_id" type="custom" valuetype="text"/>
+            <taskproperty id="tpc1" name="planned_hours" type="custom" valuetype="double"/>
+        </taskproperties>
+        <task id="1" name="Alpha" meeting="false" start="2026-01-05" duration="4" complete="0" expand="true">
+            <customproperty taskproperty-id="tpc0" value="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"/>
+            <customproperty taskproperty-id="tpc1" value="16"/>
+            <depend id="2" type="1" difference="0" hardness="Strong"/>
+        </task>
+        <!-- 250 characters: past EERP's 200 character name limit. -->
+        <task id="2" name="0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789" meeting="false" start="2026-01-09" duration="3" complete="0" expand="true">
+            <customproperty taskproperty-id="tpc0" value="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"/>
+            <customproperty taskproperty-id="tpc1" value="8"/>
+            <depend id="3" type="2" difference="2" hardness="Strong"/>
+        </task>
+        <task id="3" name="Charlie" meeting="false" start="2026-01-14" duration="2" complete="0" expand="true">
+            <customproperty taskproperty-id="tpc0" value="cccccccc-cccc-4ccc-8ccc-cccccccccccc"/>
+            <customproperty taskproperty-id="tpc1" value="4"/>
+        </task>
+        <!-- The same eerp_id on two rows: copy-paste in GanttProject. -->
+        <task id="4" name="Charlie (copy)" meeting="false" start="2026-01-20" duration="1" complete="0" expand="true">
+            <customproperty taskproperty-id="tpc0" value="cccccccc-cccc-4ccc-8ccc-cccccccccccc"/>
+            <customproperty taskproperty-id="tpc1" value="2"/>
+        </task>
+        <task id="5" name="Gate" meeting="true" start="2026-01-28" duration="0" complete="0" expand="true">
+            <customproperty taskproperty-id="tpc0" value="milestone:dddddddd-dddd-4ddd-8ddd-dddddddddddd"/>
+            <customproperty taskproperty-id="tpc1" value="0"/>
+            <depend id="3" type="2" difference="0" hardness="Strong"/>
+        </task>
+    </tasks>
+    <resources/>
+    <allocations/>
+</project>

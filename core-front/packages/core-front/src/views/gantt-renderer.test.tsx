@@ -17,7 +17,8 @@ import { useSessionStore } from './session-store'
 import { ApiError } from '../api/errors'
 import { setViewportWidth } from '../test/viewport'
 import type { EntityListOptions } from '../api/list-options'
-import type { GanttBaselineConfig, GanttMilestonesConfig, GanttScheduleConfig } from '../api/view-fields'
+import type { GanttBaselineConfig, GanttExchangeConfig, GanttMilestonesConfig, GanttScheduleConfig } from '../api/view-fields'
+import { registerKanbanColumnsGuard } from './kanban-columns'
 
 type Task = {
   id: string
@@ -1112,6 +1113,122 @@ describe('GanttRenderer', () => {
       await screen.findByTestId('gantt-bar-1')
       expect(screen.queryByTestId('gantt-milestones')).toBeNull()
       expect(listPage).not.toHaveBeenCalledWith('project_milestone', expect.anything())
+    })
+  })
+
+  describe('plan exchange toolbar', () => {
+    const exchangeCfg: GanttExchangeConfig = {
+      scopeField: 'project_id',
+      scopeEntity: 'project',
+      formats: [
+        { key: 'gan', label: 'GanttProject (.gan)', accept: '.gan' },
+        { key: 'mppdi', label: 'MS Project (MSPDI)', accept: '.xml' },
+      ],
+      canImport: 'test.exchange',
+    }
+    const emptyList = vi.fn<ListPage>(async () => ({ records: [], total: 0 }))
+
+    function renderExchange(serverOptions: EntityListOptions | undefined, cfg: GanttExchangeConfig) {
+      render(
+        <RelationOpsProvider
+          ops={{ list: vi.fn(), get: vi.fn(), create: vi.fn(), remove: vi.fn(), listPage: emptyList }}
+        >
+          <GanttRenderer
+            descriptor={descriptor}
+            initialData={[]}
+            actions={actions}
+            startField="date_start"
+            endField="deadline"
+            serverOptions={serverOptions}
+            exchange={cfg}
+          />
+        </RelationOpsProvider>,
+      )
+    }
+
+    const PINNED: EntityListOptions = { filter: { project_id: 'p1' } }
+
+    it('shows no Export or Import control while the list is not pinned', async () => {
+      // The guard passes: the only thing that can keep the Import control hidden here is the missing pin.
+      registerKanbanColumnsGuard('test.exchange', async () => true)
+      renderExchange(undefined, exchangeCfg)
+      // The pending reads (server load, the import guard) settle after the sync body: flush inside act.
+      await act(async () => {})
+      expect(screen.queryByRole('button', { name: 'Export' })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Import' })).toBeNull()
+      cleanup()
+      renderExchange({}, exchangeCfg)
+      await act(async () => {})
+      expect(screen.queryByRole('button', { name: 'Export' })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Import' })).toBeNull()
+    })
+
+    it('shows nothing at all without the descriptor config', async () => {
+      render(
+        <RelationOpsProvider ops={{ list: vi.fn(), get: vi.fn(), create: vi.fn(), remove: vi.fn(), listPage: emptyList }}>
+          <GanttRenderer
+            descriptor={descriptor}
+            initialData={[]}
+            actions={actions}
+            startField="date_start"
+            endField="deadline"
+            serverOptions={PINNED}
+          />
+        </RelationOpsProvider>,
+      )
+      await act(async () => {})
+      expect(screen.queryByRole('button', { name: 'Export' })).toBeNull()
+    })
+
+    it('Export lists every format as a download of the pinned project', async () => {
+      registerKanbanColumnsGuard('test.exchange', async () => false)
+      renderExchange(PINNED, exchangeCfg)
+      fireEvent.click(await screen.findByRole('button', { name: 'Export' }))
+      const gan = await screen.findByRole('menuitem', { name: 'GanttProject (.gan)' })
+      expect(gan).toHaveAttribute('href', '/api/exchange/project/p1/gan/export')
+      expect(gan).toHaveAttribute('download')
+      expect(screen.getByRole('menuitem', { name: 'MS Project (MSPDI)' })).toHaveAttribute(
+        'href',
+        '/api/exchange/project/p1/mppdi/export',
+      )
+    })
+
+    it('Import appears only when the canImport guard passes, and opens the wizard for that format', async () => {
+      registerKanbanColumnsGuard('test.exchange', async () => false)
+      renderExchange(PINNED, exchangeCfg)
+      await screen.findByRole('button', { name: 'Export' })
+      expect(screen.queryByRole('button', { name: 'Import' })).toBeNull()
+      cleanup()
+      let seen: unknown
+      registerKanbanColumnsGuard('test.exchange', async (scopeId, ops) => {
+        seen = { scopeId, hasOps: !!ops }
+        return true
+      })
+      renderExchange(PINNED, exchangeCfg)
+      fireEvent.click(await screen.findByRole('button', { name: 'Import' }))
+      expect(seen).toEqual({ scopeId: 'p1', hasOps: true })
+      fireEvent.click(await screen.findByRole('menuitem', { name: 'GanttProject (.gan)' }))
+      expect(await screen.findByText('Import GanttProject (.gan)')).toBeInTheDocument()
+    })
+
+    it('on phone both controls sit in the More menu', async () => {
+      setViewportWidth(390)
+      registerKanbanColumnsGuard('test.exchange', async () => true)
+      renderExchange(PINNED, exchangeCfg)
+      expect(screen.queryByRole('button', { name: 'Export' })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Import' })).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: 'More' }))
+      fireEvent.click(await screen.findByRole('menuitem', { name: 'Export' }))
+      expect(await screen.findByRole('menuitem', { name: 'GanttProject (.gan)' })).toHaveAttribute(
+        'href',
+        '/api/exchange/project/p1/gan/export',
+      )
+      cleanup()
+      setViewportWidth(390)
+      renderExchange(PINNED, exchangeCfg)
+      fireEvent.click(screen.getByRole('button', { name: 'More' }))
+      fireEvent.click(await screen.findByRole('menuitem', { name: 'Import' }))
+      expect(await screen.findByRole('menuitem', { name: 'MS Project (MSPDI)' })).toBeInTheDocument()
     })
   })
 })

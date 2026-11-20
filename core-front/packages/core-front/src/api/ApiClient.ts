@@ -734,6 +734,18 @@ export async function officeSession(source: string, id: string, lang: string): P
   )
 }
 
+/**
+ * Project plan exchange BFF passthrough (ADR-042): forwards one call to
+ * /api/v1<path> — path is `/<scopeEntity>/<id>/exchange/<format>/<action>` — and
+ * returns the raw Response even when not OK, so the route relays Go's status,
+ * error envelope, the export stream and its Content-Disposition untouched. The
+ * export is a download and the preview/apply are uploads, so nothing here reads
+ * or buffers a body. Only a failed session refresh throws.
+ */
+export async function proxyExchange(method: 'GET' | 'POST', path: string, body?: unknown): Promise<Response> {
+  return fetchWithRefresh(method, path, null, body)
+}
+
 export async function deleteAttachment(id: string): Promise<void> {
   const res = await fetchWithRefresh('DELETE', `/attachments/${id}`, null)
   if (!res.ok) throw await parseError(res)

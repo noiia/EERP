@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- basic.gan: the file EERP's own encoder writes, by hand. Two parents with
+     three children, one finish to start dependency between two of them, one
+     milestone produced by a task, one assignee. Fixture of
+     TestGanDecode_Basic. -->
+<project name="House build" version="3.3" locale="en_US">
+    <description/>
+    <calendars>
+        <day-types>
+            <day-type id="0"/>
+            <day-type id="1"/>
+            <default-week id="1" name="default" sun="1" mon="0" tue="0" wed="0" thu="0" fri="0" sat="1"/>
+        </day-types>
+    </calendars>
+    <tasks empty-milestones="true">
+        <taskproperties>
+            <taskproperty id="tpc0" name="eerp_id" type="custom" valuetype="text"/>
+            <taskproperty id="tpc1" name="planned_hours" type="custom" valuetype="double"/>
+        </taskproperties>
+        <task id="1" name="Foundation" meeting="false" start="2026-01-05" duration="5" complete="0" expand="true">
+            <customproperty taskproperty-id="tpc0" value="11111111-1111-4111-8111-111111111111"/>
+            <customproperty taskproperty-id="tpc1" value="24"/>
+            <task id="2" name="Excavation" meeting="false" start="2026-01-05" duration="3" complete="0" expand="true">
+                <customproperty taskproperty-id="tpc0" value="22222222-2222-4222-8222-222222222222"/>
+                <customproperty taskproperty-id="tpc1" value="12"/>
+            </task>
+            <task id="3" name="Concrete pour" meeting="false" start="2026-01-08" duration="2" complete="100" expand="true">
+                <customproperty taskproperty-id="tpc0" value="33333333-3333-4333-8333-333333333333"/>
+                <customproperty taskproperty-id="tpc1" value="8"/>
+                <depend id="5" type="2" difference="0" hardness="Rubber"/>
+            </task>
+        </task>
+        <task id="4" name="Superstructure" meeting="false" start="2026-01-12" duration="10" complete="0" expand="true">
+            <customproperty taskproperty-id="tpc0" value="44444444-4444-4444-8444-444444444444"/>
+            <customproperty taskproperty-id="tpc1" value="40"/>
+            <task id="5" name="Framing" meeting="false" start="2026-01-12" duration="6" complete="0" expand="true">
+                <customproperty taskproperty-id="tpc0" value="55555555-5555-4555-8555-555555555555"/>
+                <customproperty taskproperty-id="tpc1" value="32"/>
+                <depend id="6" type="2" difference="0" hardness="Rubber"/>
+            </task>
+        </task>
+        <task id="6" name="Structure approved" meeting="true" start="2026-02-02" duration="0" complete="0" expand="true">
+            <customproperty taskproperty-id="tpc0" value="milestone:66666666-6666-4666-8666-666666666666"/>
+            <customproperty taskproperty-id="tpc1" value="0"/>
+        </task>
+    </tasks>
+    <resources>
+        <resource id="1" name="Ann Lee" function="Default:0" contacts="ann@x.com" phone=""/>
+    </resources>
+    <allocations>
+        <allocation task-id="5" resource-id="1" function="Default:0" responsible="true" load="100.0"/>
+    </allocations>
+</project>
