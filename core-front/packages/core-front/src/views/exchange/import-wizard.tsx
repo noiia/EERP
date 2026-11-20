@@ -270,7 +270,7 @@ export function ImportWizard({ open, onClose, onApplied, config, scopeId, format
     >
       <BannerScope>
         <DialogTitle id="exchange-import-title">
-          {t('Import')} {format.label}
+          {t('Import')} {t(format.label)}
         </DialogTitle>
         <DialogContent dividers>
           <BannerSlot />

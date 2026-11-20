@@ -1356,14 +1356,14 @@ export function GanttRenderer<T extends HasId>({
                 download
                 onClick={() => setExportAnchor(null)}
               >
-                {f.label}
+                {t(f.label)}
               </MenuItem>
             ))}
           </Menu>
           <Menu open={!!importAnchor} anchorEl={importAnchor} onClose={() => setImportAnchor(null)}>
             {exchange.formats.map((f) => (
               <MenuItem key={f.key} onClick={() => { setImportAnchor(null); setImportFormat(f) }}>
-                {f.label}
+                {t(f.label)}
               </MenuItem>
             ))}
           </Menu>

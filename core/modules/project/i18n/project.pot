@@ -474,3 +474,9 @@ msgstr ""
 
 msgid "Red"
 msgstr ""
+
+# ── Plan exchange (docs/adr/ADR-042-project-plan-exchange.md): the format
+# label the Gantt toolbar's Export/Import menus show ────────────────────────
+
+msgid "GanttProject (.gan)"
+msgstr ""

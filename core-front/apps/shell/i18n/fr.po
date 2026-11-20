@@ -3248,3 +3248,120 @@ msgstr "Abandonner les modifications"
 
 msgid "Records: {n}"
 msgstr "Enregistrements : {n}"
+
+# ── Plan exchange with GanttProject: the Gantt toolbar menus and the import
+# wizard (docs/adr/ADR-042-project-plan-exchange.md) ─────────────────────────
+
+msgid "Import"
+msgstr "Importer"
+
+msgid "Choose a plan file to compare with this project."
+msgstr "Choisissez un fichier de plan à comparer avec ce projet."
+
+msgid "Plan file"
+msgstr "Fichier de plan"
+
+msgid "The file is too large."
+msgstr "Le fichier est trop volumineux."
+
+msgid "1 warning"
+msgstr "1 avertissement"
+
+msgid "{n} warnings"
+msgstr "{n} avertissements"
+
+msgid "Select all"
+msgstr "Tout sélectionner"
+
+msgid "Select all removals"
+msgstr "Sélectionner les suppressions"
+
+msgid "{n} of {m} selected"
+msgstr "{n} sur {m} sélectionnées"
+
+msgid "No changes"
+msgstr "Aucune modification"
+
+msgid "new"
+msgstr "nouveau"
+
+msgid "Select change"
+msgstr "Sélectionner la modification"
+
+msgid "(was unscheduled)"
+msgstr "(était non planifié)"
+
+msgid "has"
+msgstr "comporte"
+
+msgid "{n} timesheet"
+msgstr "{n} feuille de temps"
+
+msgid "{n} timesheets"
+msgstr "{n} feuilles de temps"
+
+msgid "{n} risk link"
+msgstr "{n} lien de risque"
+
+msgid "{n} risk links"
+msgstr "{n} liens de risque"
+
+msgid "{n} subtask"
+msgstr "{n} sous-tâche"
+
+msgid "{n} subtasks"
+msgstr "{n} sous-tâches"
+
+msgid "The project changed since the preview"
+msgstr "Le projet a changé depuis l’aperçu"
+
+msgid "1 change applied"
+msgstr "1 modification appliquée"
+
+msgid "{n} changes applied"
+msgstr "{n} modifications appliquées"
+
+msgid "Apply 1 change"
+msgstr "Appliquer 1 modification"
+
+msgid "Apply {n} changes"
+msgstr "Appliquer {n} modifications"
+
+msgid "Preview again"
+msgstr "Recalculer l’aperçu"
+
+msgid "under"
+msgstr "sous"
+
+msgid "after"
+msgstr "après"
+
+msgid "Update"
+msgstr "Mettre à jour"
+
+msgid "Depends on"
+msgstr "Dépend de"
+
+msgid "Remove dependency"
+msgstr "Supprimer la dépendance"
+
+msgid "Assign"
+msgstr "Assigner"
+
+msgid "Unassign"
+msgstr "Désassigner"
+
+msgid "Create milestone"
+msgstr "Créer un jalon"
+
+msgid "Update milestone"
+msgstr "Mettre à jour le jalon"
+
+msgid "Delete milestone"
+msgstr "Supprimer le jalon"
+
+msgid "Dates"
+msgstr "Dates"
+
+msgid "Planned h."
+msgstr "H planifiées"
