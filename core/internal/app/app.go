@@ -308,7 +308,10 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		// raising request_body_limit for every JSON route.
 		// /api/v1/teams/channels holds only the chat message routes and /api/v1/teams/<id>/files
 		// the team file routes; their body-reading routes get uploadLimit.
-		BodyLimitExempt: []string{"/api/v1/pictures", "/api/v1/attachments", "/api/v1/teams/channels", "/api/v1/teams/*/files", dbRestorePath},
+		// /api/v1/project/<id>/exchange holds the GanttProject import: a plan of a
+		// few thousand tasks is far past the JSON cap, and its two POSTs get
+		// uploadLimit from MountExchange.
+		BodyLimitExempt: []string{"/api/v1/pictures", "/api/v1/attachments", "/api/v1/teams/channels", "/api/v1/teams/*/files", "/api/v1/project/*/exchange", dbRestorePath},
 	}
 	uploadLimit := ormserver.BodyLimit(configContent.UploadBodyLimitOrDefault())
 	if len(configContent.AllowedOrigins) == 0 {
@@ -885,8 +888,14 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	// project tables: visible same-project references, manager-only project/
 	// member/stage writes, timesheet authorship, delete guards, task move,
 	// and GET /project/:id/can_manage (project:project:read).
-	projectmodule.NewHandler(app.DB, permRepo).Mount(srv.Echo(),
+	projectHandler := projectmodule.NewHandler(app.DB, permRepo)
+	projectHandler.Mount(srv.Echo(),
 		func(t string) projectmodule.Generic { return handlers[t] }, jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
+	// The GanttProject exchange (GET /project/:id/exchange/:format/export and the
+	// two imports): the same gates, plus the upload cap the two POSTs need
+	// (BodyLimitExempt above keeps the server-wide JSON cap off this route family).
+	projectHandler.MountExchange(srv.Echo(), uploadLimit,
+		jwtMw, permMw, moduleRuntime.ActiveGateMiddleware())
 
 	// Public website reads (ADR-024) — no JWT, no permission middleware: the
 	// published scope is the only gate. The active gate lives in the resolver

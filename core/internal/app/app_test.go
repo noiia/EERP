@@ -84,6 +84,19 @@ func (c *client) do(method, path string, body any) (int, []byte) {
 	return rec.Code, rec.Body.Bytes()
 }
 
+// getFile serves a GET and hands the headers back too: a download's
+// Content-Disposition is part of its contract, and do() throws the headers away.
+func (c *client) getFile(path string) (int, http.Header, []byte) {
+	c.t.Helper()
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	rec := httptest.NewRecorder()
+	c.h.ServeHTTP(rec, req)
+	return rec.Code, rec.Header(), rec.Body.Bytes()
+}
+
 // decode unmarshals a JSON response body into a map.
 func decode(t *testing.T, body []byte) map[string]any {
 	t.Helper()
@@ -167,6 +180,7 @@ func TestApp_Routes(t *testing.T) {
 		{http.MethodGet, "/api/v1/project", nil, http.StatusOK},
 		{http.MethodGet, "/api/v1/project_task", nil, http.StatusOK},
 		{http.MethodGet, "/api/v1/project/00000000-0000-0000-0000-000000000000/metrics", nil, http.StatusNotFound},
+		{http.MethodGet, "/api/v1/project/00000000-0000-0000-0000-000000000000/exchange/gan/export", nil, http.StatusNotFound},
 		{http.MethodGet, "/api/v1/project_pbs_item", nil, http.StatusOK},
 		{http.MethodGet, "/api/v1/nope", nil, http.StatusNotFound},
 	}
@@ -211,6 +225,22 @@ func TestApp_ProjectFlow(t *testing.T) {
 	}
 	task = f.createAt("/api/v1/project_task", "project_task", map[string]any{"project_id": project, "name": "T"})
 	f.createAt("/api/v1/project_timesheet", "project_timesheet", map[string]any{"task_id": task, "hours": 2, "date": "2026-11-10"})
+	// The exchange routes ride the module's own gates: app.go mounts them with the
+	// JWT, permission and active-gate middlewares and gives the two POSTs the upload
+	// cap. The route table above can only ask for a 404, which an unmounted route
+	// answers just as well, so this is the one place that says the download really
+	// reaches the handler through the real server: the file arrives, named for the
+	// project, behind the same project:project:read the other reads need.
+	code, head, file := f.getFile("/api/v1/project/" + project + "/exchange/gan/export")
+	if code != http.StatusOK {
+		t.Errorf("exchange export: %d %s, want 200", code, file)
+	}
+	if got, want := head.Get("Content-Disposition"), `attachment; filename="App test project.gan"`; got != want {
+		t.Errorf("Content-Disposition = %q, want %q", got, want)
+	}
+	if !bytes.Contains(file, []byte("name=\"T\"")) {
+		t.Errorf("the exported plan does not hold the project's task: %s", file)
+	}
 	f.expect(http.MethodPut, "/api/v1/project_task/"+task, map[string]any{"name": "Renamed"}, http.StatusOK)
 	f.expect(http.MethodPost, "/api/v1/project_timesheet", map[string]any{"task_id": task, "hours": 0, "date": "2026-11-10"}, http.StatusUnprocessableEntity)
 	f.expect(http.MethodDelete, "/api/v1/project/"+project, nil, http.StatusConflict)
