@@ -220,8 +220,10 @@ contacts, CRM, sales, invoices, product catalog, inventory, property management,
 events, website pages and workflows, and all project entities. The operation
 catalog also includes dedicated routes for teams, conversations, notes,
 attachments, images, PDF reports, mail, filters, preferences, settings, users,
-roles and module management, depending on the services available in the
-deployment.
+roles, module management and automated backups (`/api/v1/backups`: status,
+settings, history, run, cancel and clean-up, [ADR-044](adr/ADR-044-automated-backups.md);
+only `*:*:*` holds `backups:backups:*` by default), depending on the services
+available in the deployment.
 
 Schemas respect field exclusions and group restrictions. Accounts and roles
 use their dedicated administration routes; their internal tables remain

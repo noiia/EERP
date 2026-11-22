@@ -196,6 +196,10 @@ fi
 for key in euro_office_url euro_office_internal_url euro_office_storage_url euro_office_jwt_secret mcp_oauth_issuer; do
   rg -q "\"$key\"" "$CONFIG" || sed -i "1a\\    \"$key\": \"\"," "$CONFIG"
 done
+# Automated backups (ADR-044) write into the eerp-backups volume compose.prod.yml
+# mounts at /app/backups; a config predating them gets the key once, never again,
+# so an admin's "" (backups off) or other path survives re-runs.
+rg -q '"backup_dir"' "$CONFIG" || sed -i '1a\    "backup_dir": "/app/backups",' "$CONFIG"
 say "writing secrets and settings into $CONFIG"
 set_json master_key "$EERP_MASTER_KEY"
 set_json db_password "$POSTGRES_PASSWORD"
