@@ -158,6 +158,22 @@ lower(name)` over live rows) enforce it. Their migration first renames older cla
   unlinked folder has no access list of its own, so it has no such entry. Dialogs send one request
   at a time.
 
+### Files pane: drag and drop, icons, dates (2026-11-22)
+
+The files pane (`FilesPane.tsx`, also the conversation's folder panel) works like a desktop file
+manager, with no new route — every gesture calls the existing upload/update endpoints, so Go's role
+rules still decide:
+
+- **Drag and drop**: desktop files dropped on the pane upload into the open folder, dropped on a
+  folder row into that folder. A row the caller may edit can be dragged onto a folder row or a
+  breadcrumb (*All files* = the root) to move it. Guests can do neither.
+- **Icons**: row and toolbar actions are icon buttons with a tooltip; every file row has a
+  *Download* button, for every role.
+- **Narrow layout**: on a phone and in the side panel, the actions fold into a ⋮ menu and only the
+  name column is shown.
+- **Dates**: folders and files carry `created_at` and `updated_at` (a rename, move or document save
+  bumps it), shown as *Created* / *Last modified* columns.
+
 ## Consequences
 
 - Teams has no admin override: an administrator who isn't a member can't read a team. Recovering a

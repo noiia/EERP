@@ -6,6 +6,7 @@ import (
 	"mime/multipart"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"core/internal/teams"
 
@@ -98,21 +99,29 @@ func TestFiles_ListingWithPath(t *testing.T) {
 		Path   []struct{ Name string }
 		Files  []struct {
 			Name           string
-			UploadedByName string `json:"uploaded_by_name"`
-			SharedWith     int    `json:"shared_with"`
+			UploadedByName string    `json:"uploaded_by_name"`
+			SharedWith     int       `json:"shared_with"`
+			CreatedAt      time.Time `json:"created_at"`
+			UpdatedAt      time.Time `json:"updated_at"`
 		}
 	}
 	if err := jsonDecode(rec, &out); err != nil || rec.Code != 200 || out.Folder == nil || out.Folder.ID != b ||
+		len(out.Files) != 1 || out.Files[0].CreatedAt.IsZero() || out.Files[0].UpdatedAt.IsZero() ||
 		len(out.Path) != 2 || out.Path[0].Name != "A" || out.Path[1].Name != "B" || len(out.Files) != 1 || out.Files[0].Name != "in-b.txt" {
 		t.Fatalf("listing: %d %s", rec.Code, rec.Body)
 	}
 	rec = serve(t, f.h.ListFiles, "GET", "", f.as(f.guest), map[string]string{"id": f.team.String()})
 	var root struct {
 		Folder  *struct{}
-		Folders []struct{ Name string }
-		Files   []struct{}
+		Folders []struct {
+			Name      string
+			CreatedAt time.Time `json:"created_at"`
+			UpdatedAt time.Time `json:"updated_at"`
+		}
+		Files []struct{}
 	}
-	if err := jsonDecode(rec, &root); err != nil || root.Folder != nil || len(root.Folders) != 1 || len(root.Files) != 0 {
+	if err := jsonDecode(rec, &root); err != nil || root.Folder != nil || len(root.Folders) != 1 || len(root.Files) != 0 ||
+		root.Folders[0].CreatedAt.IsZero() || root.Folders[0].UpdatedAt.IsZero() {
 		t.Fatalf("root: %s", rec.Body)
 	}
 }

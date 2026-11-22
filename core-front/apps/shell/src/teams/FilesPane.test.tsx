@@ -48,7 +48,8 @@ const listing = {
       size: 2048,
       uploaded_by: 'me',
       uploaded_by_name: 'Me',
-      created_at: '',
+      created_at: '2026-01-02T10:00:00Z',
+      updated_at: '2026-03-04T10:00:00Z',
       shared_with: 0,
     },
     {
@@ -291,5 +292,95 @@ describe('FilesPane', () => {
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Plans' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(onFoldersChanged).toHaveBeenCalledTimes(1))
+  })
+
+  it('shows the created and last modified dates', async () => {
+    render(<FilesPane teamId="t1" role="owner" />)
+    const row = (await screen.findByText('mine.pdf')).closest('tr') as HTMLElement
+    expect(
+      within(row).getByText(new Date('2026-01-02T10:00:00Z').toLocaleString()),
+    ).toBeInTheDocument()
+    expect(
+      within(row).getByText(new Date('2026-03-04T10:00:00Z').toLocaleString()),
+    ).toBeInTheDocument()
+  })
+
+  it('offers a download on every file, guests included', async () => {
+    render(<FilesPane teamId="t1" role="guest" />)
+    const row = (await screen.findByText('theirs.pdf')).closest('tr') as HTMLElement
+    expect(within(row).getByRole('link', { name: 'Download' })).toHaveAttribute(
+      'href',
+      '/api/teams/files/b/download',
+    )
+  })
+
+  it('folds the row actions into a ⋮ menu when narrow', async () => {
+    render(<FilesPane teamId="t1" role="owner" compact />)
+    const row = (await screen.findByText('theirs.pdf')).closest('tr') as HTMLElement
+    expect(within(row).queryByRole('button', { name: 'Delete' })).toBeNull()
+    fireEvent.click(within(row).getByRole('button', { name: 'More actions theirs.pdf' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Delete' }))
+    fireEvent.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete' }),
+    )
+    await waitFor(() => expect(c.deleteFile).toHaveBeenCalledWith('t1', 'b'))
+  })
+
+  const dt = (data: Record<string, string>, files: File[] = []) => ({
+    types: [...Object.keys(data), ...(files.length ? ['Files'] : [])],
+    getData: (k: string) => data[k] ?? '',
+    setData: (k: string, v: string) => {
+      data[k] = v
+    },
+    files,
+  })
+
+  it('uploads desktop files dropped on the pane or on a folder', async () => {
+    render(<FilesPane teamId="t1" folderId="f1" role="member" />)
+    const pane = await screen.findByTestId('teams-files-pane')
+    await screen.findByText('mine.pdf')
+    const file = new File(['x'], 'one.txt')
+    fireEvent.dragOver(pane, { dataTransfer: dt({}, [file]) })
+    fireEvent.drop(pane, { dataTransfer: dt({}, [file]) })
+    await waitFor(() => expect(c.uploadFile).toHaveBeenCalledWith('t1', file, 'f1'))
+    fireEvent.drop(screen.getByText('Specs').closest('tr') as HTMLElement, {
+      dataTransfer: dt({}, [file]),
+    })
+    await waitFor(() => expect(c.uploadFile).toHaveBeenCalledWith('t1', file, 'f2'))
+  })
+
+  it('moves a dragged row into the folder it is dropped on', async () => {
+    const onFoldersChanged = vi.fn()
+    render(<FilesPane teamId="t1" folderId="f1" role="owner" onFoldersChanged={onFoldersChanged} />)
+    const data: Record<string, string> = {}
+    fireEvent.dragStart((await screen.findByText('mine.pdf')).closest('tr') as HTMLElement, {
+      dataTransfer: dt(data),
+    })
+    const specs = screen.getByText('Specs').closest('tr') as HTMLElement
+    fireEvent.drop(specs, { dataTransfer: dt(data) })
+    await waitFor(() => expect(c.updateFile).toHaveBeenCalledWith('t1', 'a', { folder_id: 'f2' }))
+    // A folder dropped on itself stays put.
+    const self: Record<string, string> = {}
+    fireEvent.dragStart(specs, { dataTransfer: dt(self) })
+    fireEvent.drop(specs, { dataTransfer: dt(self) })
+    expect(c.updateFolder).not.toHaveBeenCalled()
+    // Onto a breadcrumb: up to that folder.
+    fireEvent.dragStart(specs, { dataTransfer: dt(self) })
+    fireEvent.drop(
+      within(screen.getByRole('navigation', { name: 'Path' })).getByText('All files'),
+      { dataTransfer: dt(self) },
+    )
+    await waitFor(() => expect(c.updateFolder).toHaveBeenCalledWith('t1', 'f2', { parent_id: '' }))
+    await waitFor(() => expect(onFoldersChanged).toHaveBeenCalled())
+  })
+
+  it('lets a guest neither drag rows nor drop files', async () => {
+    render(<FilesPane teamId="t1" folderId="f1" role="guest" />)
+    const row = (await screen.findByText('mine.pdf')).closest('tr') as HTMLElement
+    expect(row).not.toHaveAttribute('draggable')
+    fireEvent.drop(await screen.findByTestId('teams-files-pane'), {
+      dataTransfer: dt({}, [new File(['x'], 'x')]),
+    })
+    expect(c.uploadFile).not.toHaveBeenCalled()
   })
 })

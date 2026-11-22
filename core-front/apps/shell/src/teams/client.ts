@@ -86,6 +86,8 @@ export interface Folder {
   name: string
   parent_id: string | null
   created_by: string
+  created_at?: string
+  updated_at?: string
 }
 export interface TeamFile {
   id: string
@@ -96,6 +98,7 @@ export interface TeamFile {
   uploaded_by: string
   uploaded_by_name: string
   created_at: string
+  updated_at?: string
   shared_with: number
 }
 export interface FolderListing {

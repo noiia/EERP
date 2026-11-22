@@ -3561,3 +3561,9 @@ msgstr "Hebdomadaire"
 
 msgid "Writing {db}…"
 msgstr "Écriture de {db}…"
+
+msgid "Last modified"
+msgstr "Dernière modification"
+
+msgid "More actions"
+msgstr "Plus d’actions"

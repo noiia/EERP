@@ -24,6 +24,8 @@ type folderJSON struct {
 	Name      string     `json:"name"`
 	ParentID  *uuid.UUID `json:"parent_id"`
 	CreatedBy uuid.UUID  `json:"created_by"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
 }
 
 type crumbJSON struct {
@@ -40,13 +42,16 @@ type fileJSON struct {
 	UploadedBy     uuid.UUID  `json:"uploaded_by"`
 	UploadedByName string     `json:"uploaded_by_name"`
 	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 	SharedWith     int        `json:"shared_with"`
 }
 
-func toFolderJSON(f Folder) folderJSON { return folderJSON{f.ID, f.Name, f.ParentID, f.CreatedBy} }
+func toFolderJSON(f Folder) folderJSON {
+	return folderJSON{f.ID, f.Name, f.ParentID, f.CreatedBy, f.CreatedAt, f.UpdatedAt}
+}
 
 func (h *Handler) toFileJSON(f File, users map[uuid.UUID]auth.Users, shared int) fileJSON {
-	return fileJSON{f.ID, f.Name, f.FolderID, f.Mime, f.Size, f.UploadedBy, displayName(users[f.UploadedBy]), f.CreatedAt, shared}
+	return fileJSON{f.ID, f.Name, f.FolderID, f.Mime, f.Size, f.UploadedBy, displayName(users[f.UploadedBy]), f.CreatedAt, f.UpdatedAt, shared}
 }
 
 // nameTaken answers 409: the target folder already holds a folder (or file) of that name.

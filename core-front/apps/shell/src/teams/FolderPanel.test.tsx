@@ -59,7 +59,9 @@ describe('FolderPanel', () => {
     createFolder.mockResolvedValue({ id: 'f2' })
     const onFoldersChanged = vi.fn()
     render(<FolderPanel teamId="t1" channelId="c1" folderId="f1" role="owner" onLinked={() => {}} onFoldersChanged={onFoldersChanged} />)
-    fireEvent.click(await screen.findByRole('button', { name: 'New folder' }))
+    // The side panel is narrow: the toolbar sits in its ⋮ menu.
+    fireEvent.click(await screen.findByRole('button', { name: 'More actions' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'New folder' }))
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Sub' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(onFoldersChanged).toHaveBeenCalledTimes(1))

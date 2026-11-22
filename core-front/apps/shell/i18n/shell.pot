@@ -3427,3 +3427,9 @@ msgstr ""
 
 msgid "Writing {db}…"
 msgstr ""
+
+msgid "Last modified"
+msgstr ""
+
+msgid "More actions"
+msgstr ""
