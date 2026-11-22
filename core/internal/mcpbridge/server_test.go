@@ -100,6 +100,7 @@ func fixture(t *testing.T, writes bool) *testFixture {
 		}
 		return c.JSON(201, map[string]any{"name": file.Filename, "table": c.FormValue("table_name"), "type": file.Header.Get("Content-Type")})
 	}, jwt)
+	e.GET("/api/v1/backups", func(c *echo.Context) error { return c.JSON(200, map[string]any{}) }, jwt)
 	for _, path := range []string{"/api/v1/auth/login", "/api/v1/public/data", "/api/v1/database-management/databases", "/api/v1/website/me", "/api/v1/dev_seed", "/api/v1/unknown"} {
 		e.GET(path, func(c *echo.Context) error { return c.JSON(200, "must not be exposed") })
 	}
@@ -280,6 +281,9 @@ func TestReadOnlyAndPermissions(t *testing.T) {
 			if out["isError"] != true || out["structuredContent"].(map[string]any)["status"] != float64(403) {
 				t.Fatalf("permission middleware bypassed: %v", out)
 			}
+		}
+		if _, ok := f.b.operations["GET /api/v1/backups"]; !ok {
+			t.Error("automated backups are not admitted")
 		}
 		for _, op := range f.b.catalog("") {
 			if !writes && !op.ReadOnly {

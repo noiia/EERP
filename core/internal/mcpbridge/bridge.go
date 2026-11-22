@@ -82,7 +82,8 @@ func New(e *echo.Echo, perms permissionChecker, isActive func(string) bool, allo
 	}
 	for _, root := range []string{"me", "settings", "company", "pictures", "avatars", "attachments", "reports",
 		"notebook_pages", "saved_filters", "mail_outbox", "graph_fields", "notifications", "chatter_messages",
-		"teams", "presence", "cron_history", "modules", "views", "users", "roles", "website_admin", "geo", "versions"} {
+		"teams", "presence", "cron_history", "modules", "views", "users", "roles", "website_admin", "geo", "versions",
+		"backups"} {
 		roots[root] = true
 	}
 	for _, r := range e.Router().Routes() {

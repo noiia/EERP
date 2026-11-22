@@ -11,12 +11,14 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"sync/atomic"
 	"time"
 
 	"core/internal/attachments"
 	"core/internal/auth"
 	"core/internal/auth/providers"
+	"core/internal/backup"
 	"core/internal/chatter"
 	"core/internal/common"
 	"core/internal/company"
@@ -83,6 +85,7 @@ type App struct {
 	cache       *orm.QueryCache // nil when redis_url is unset/unreachable
 	extAuth     *providers.Handler
 	rates       *website.LiveRates // the site's live exchange rates, refreshed by Run
+	backups     *backup.Service    // nil when backup_dir is unset
 }
 
 // Build validates cfg (relative paths already resolved — types.Config.ResolvePaths),
@@ -803,6 +806,21 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	// (BodyLimitExempt above), capped like nginx's 2g on this location.
 	dbManageGroup.POST("/databases/restore", dbManageHandler.Restore, ormserver.BodyLimit(dbRestoreBodyLimit))
 
+	// ── Automated backups ─────────────────────────────────────────────────────
+	// Scheduled bundles of the selected databases (dbmanage's extract zip,
+	// written to files) into backup_dir, which Backrest snapshots
+	// (docs/adr/ADR-044-automated-backups.md). Off without backup_dir. The
+	// routes act on every database of the server: backups:backups:* derive
+	// from them and only *:*:* holds them by default.
+	if configContent.BackupDir != "" {
+		if err := os.MkdirAll(configContent.BackupDir, 0o755); err != nil {
+			return fmt.Errorf("backup_dir: %w", err)
+		}
+		a.backups = backup.NewService(configContent.BackupDir, dbManageManager,
+			backup.PGLocker(dbManageManager.MaintenanceConn), a.notify, version.Version, app.Logger)
+		backup.Mount(srv.Echo().Group("/api/v1/backups", jwtMw, permMw), backup.NewHandler(a.backups))
+	}
+
 	// ── Cron ──────────────────────────────────────────────────────────────────
 	// Background scheduled actions (docs/adr/ADR-016-cron-scheduler.md). Unlike
 	// chatter/notebook/savedfilter, cron/cron_history ride the GENERIC CRUD
@@ -1251,6 +1269,11 @@ func (a *App) Run(ctx context.Context) error {
 	cronScheduler := cron.NewScheduler(app.DB, a.userRepo, a.permRepo, chatter.NewRepository(app.DB), a.cfg.CronLogDir)
 	cronScheduler.SetNotifier(a.notify)
 	go cronScheduler.Run(ctx)
+
+	// Automated backups: a one-minute schedule check (internal/backup).
+	if a.backups != nil {
+		go a.backups.Run(ctx)
+	}
 
 	// Quote expiry sweep (modules/sale/expiry.go): "if the valid until date
 	// is reached, the quote's status goes to expired" is unconditional
