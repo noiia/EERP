@@ -21,6 +21,7 @@ vi.mock('@/lib/backups', () => ({
   cleanupBackups: () => m.cleanupBackups(),
 }))
 
+import { BannerScope, BannerSlot } from '@eerp/core-front'
 import BackupSettings from './BackupSettings'
 
 const status = (over: Partial<BackupStatus> = {}): BackupStatus => ({
@@ -101,6 +102,38 @@ describe('BackupSettings', () => {
     expect(screen.getByRole('button', { name: 'Run now' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: 'Cancel backup' }))
     await waitFor(() => expect(m.cancelBackup).toHaveBeenCalled())
+  })
+
+  it('runs with the databases on screen: Run now saves them first', async () => {
+    const order: string[] = []
+    m.saveBackupSettings.mockImplementation(async () => { order.push('save'); return { ok: true } })
+    m.runBackupNow.mockImplementation(async () => { order.push('run'); return { ok: true } })
+    render(<BackupSettings />)
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'poc' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Run now' }))
+    await waitFor(() => expect(order).toEqual(['save', 'run']))
+    expect(m.saveBackupSettings.mock.calls[0][0]).toMatchObject({ databases: ['poc'] })
+  })
+
+  it('does not run when saving the settings is refused', async () => {
+    m.saveBackupSettings.mockResolvedValue({ ok: false, message: 'select at least one database' })
+    render(<BackupSettings />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Run now' }))
+    expect(await screen.findByText('select at least one database')).toBeInTheDocument()
+    expect(m.runBackupNow).not.toHaveBeenCalled()
+  })
+
+  it('shows its messages inside the section, not in the page\'s banner slot', async () => {
+    m.runBackupNow.mockResolvedValue({ ok: false, message: 'a run is already in progress' })
+    render(
+      <BannerScope>
+        <div data-testid="page-slot"><BannerSlot /></div>
+        <BackupSettings />
+      </BannerScope>,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'Run now' }))
+    const msg = await screen.findByText('a run is already in progress')
+    expect(screen.getByTestId('page-slot')).not.toContainElement(msg)
   })
 
   it('runs now and reports a refusal', async () => {
