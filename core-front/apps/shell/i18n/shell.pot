@@ -3270,3 +3270,160 @@ msgstr ""
 
 msgid "Filter the list on one {name} to see this."
 msgstr ""
+
+# Settings → Developer → Automated backups
+msgid "Action failed."
+msgstr ""
+
+msgid "Automated backups"
+msgstr ""
+
+msgid "Automated backups are not configured on this server (backup_dir in the configuration file)."
+msgstr ""
+
+msgid "Backup history"
+msgstr ""
+
+msgid "Backup running."
+msgstr ""
+
+msgid "Backup started."
+msgstr ""
+
+msgid "Backups"
+msgstr ""
+
+msgid "Cancel backup"
+msgstr ""
+
+msgid "Cancelled"
+msgstr ""
+
+msgid "Clean up now"
+msgstr ""
+
+msgid "Daily"
+msgstr ""
+
+msgid "Day of the month"
+msgstr ""
+
+msgid "Days"
+msgstr ""
+
+msgid "Details"
+msgstr ""
+
+msgid "Each run writes one restorable zip per database (S3 files included) into"
+msgstr ""
+
+msgid "Enable automated backups"
+msgstr ""
+
+msgid "Enabled"
+msgstr ""
+
+msgid "Ended"
+msgstr ""
+
+msgid "Every (hours)"
+msgstr ""
+
+msgid "Every X hours"
+msgstr ""
+
+msgid "Frequency"
+msgstr ""
+
+msgid "Friday"
+msgstr ""
+
+msgid "ID"
+msgstr ""
+
+msgid "Include S3 files"
+msgstr ""
+
+msgid "Keep local backups (days)"
+msgstr ""
+
+msgid "Keep this well above Backrest's snapshot interval. The newest backup is always kept."
+msgstr ""
+
+msgid "Last failure"
+msgstr ""
+
+msgid "Last success"
+msgstr ""
+
+msgid "Local backups"
+msgstr ""
+
+msgid "Monday"
+msgstr ""
+
+msgid "Monthly"
+msgstr ""
+
+msgid "Next run"
+msgstr ""
+
+msgid "No backup has run yet."
+msgstr ""
+
+msgid "Nothing to cancel."
+msgstr ""
+
+msgid "Point Backrest at that folder, mounted read-only: its snapshots are separate from these runs."
+msgstr ""
+
+msgid "Removed {n} expired backups."
+msgstr ""
+
+msgid "Run now"
+msgstr ""
+
+msgid "Running"
+msgstr ""
+
+msgid "Saturday"
+msgstr ""
+
+msgid "Scheduler"
+msgstr ""
+
+msgid "Size"
+msgstr ""
+
+msgid "Started"
+msgstr ""
+
+msgid "Starting at"
+msgstr ""
+
+msgid "Success"
+msgstr ""
+
+msgid "Sunday"
+msgstr ""
+
+msgid "Thursday"
+msgstr ""
+
+msgid "Time"
+msgstr ""
+
+msgid "Timezone"
+msgstr ""
+
+msgid "Tuesday"
+msgstr ""
+
+msgid "Wednesday"
+msgstr ""
+
+msgid "Weekly"
+msgstr ""
+
+msgid "Writing {db}…"
+msgstr ""

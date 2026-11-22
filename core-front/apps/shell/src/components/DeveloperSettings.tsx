@@ -21,6 +21,7 @@ import Typography from '@mui/material/Typography'
 import { byPrefixAndName, erpPath, FontAwesomeIcon, useNotificationStore, useT, ViewBanner, IntentLink } from '@eerp/core-front'
 import { getSeedGroups, seedDemoData, type SeedEntityResult, type SeedGroup, type SeedVolume } from '@/lib/dev-seed'
 import { revalidateSeededEntities } from '@/lib/notification-actions'
+import BackupSettings from './BackupSettings'
 
 // Settings → Developer: dev-only tools for testing the software. Two
 // collapsible sections (the same Accordion component Settings -> Global
@@ -181,6 +182,17 @@ export default function DeveloperSettings({ isDev }: { isDev: boolean }) {
                 </Button>
               </Stack>
             </Stack>
+          </AccordionDetails>
+        </Accordion>
+
+        <Accordion defaultExpanded disableGutters>
+          <AccordionSummary
+            expandIcon={<FontAwesomeIcon icon={byPrefixAndName.fas['chevron-down']} />}
+          >
+            <Typography variant="subtitle1">{t('Automated backups')}</Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <BackupSettings />
           </AccordionDetails>
         </Accordion>
 

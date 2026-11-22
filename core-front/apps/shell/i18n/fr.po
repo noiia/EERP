@@ -3404,3 +3404,160 @@ msgstr "PERT - chemin critique"
 
 msgid "Filter the list on one {name} to see this."
 msgstr "Filtrez la liste sur un seul {name} pour voir ceci."
+
+# Settings → Developer → Automated backups
+msgid "Action failed."
+msgstr "L'action a échoué."
+
+msgid "Automated backups"
+msgstr "Sauvegardes automatiques"
+
+msgid "Automated backups are not configured on this server (backup_dir in the configuration file)."
+msgstr "Les sauvegardes automatiques ne sont pas configurées sur ce serveur (backup_dir dans le fichier de configuration)."
+
+msgid "Backup history"
+msgstr "Historique des sauvegardes"
+
+msgid "Backup running."
+msgstr "Sauvegarde en cours."
+
+msgid "Backup started."
+msgstr "Sauvegarde lancée."
+
+msgid "Backups"
+msgstr "Sauvegardes"
+
+msgid "Cancel backup"
+msgstr "Annuler la sauvegarde"
+
+msgid "Cancelled"
+msgstr "Annulée"
+
+msgid "Clean up now"
+msgstr "Nettoyer maintenant"
+
+msgid "Daily"
+msgstr "Quotidienne"
+
+msgid "Day of the month"
+msgstr "Jour du mois"
+
+msgid "Days"
+msgstr "Jours"
+
+msgid "Details"
+msgstr "Détails"
+
+msgid "Each run writes one restorable zip per database (S3 files included) into"
+msgstr "Chaque exécution écrit un zip restaurable par base de données (fichiers S3 inclus) dans"
+
+msgid "Enable automated backups"
+msgstr "Activer les sauvegardes automatiques"
+
+msgid "Enabled"
+msgstr "Activé"
+
+msgid "Ended"
+msgstr "Fin"
+
+msgid "Every (hours)"
+msgstr "Toutes les (heures)"
+
+msgid "Every X hours"
+msgstr "Toutes les X heures"
+
+msgid "Frequency"
+msgstr "Fréquence"
+
+msgid "Friday"
+msgstr "Vendredi"
+
+msgid "ID"
+msgstr "ID"
+
+msgid "Include S3 files"
+msgstr "Inclure les fichiers S3"
+
+msgid "Keep local backups (days)"
+msgstr "Conserver les sauvegardes locales (jours)"
+
+msgid "Keep this well above Backrest's snapshot interval. The newest backup is always kept."
+msgstr "Gardez cette durée bien au-dessus de l'intervalle des instantanés Backrest. La sauvegarde la plus récente est toujours conservée."
+
+msgid "Last failure"
+msgstr "Dernier échec"
+
+msgid "Last success"
+msgstr "Dernier succès"
+
+msgid "Local backups"
+msgstr "Sauvegardes locales"
+
+msgid "Monday"
+msgstr "Lundi"
+
+msgid "Monthly"
+msgstr "Mensuelle"
+
+msgid "Next run"
+msgstr "Prochaine exécution"
+
+msgid "No backup has run yet."
+msgstr "Aucune sauvegarde n'a encore été exécutée."
+
+msgid "Nothing to cancel."
+msgstr "Rien à annuler."
+
+msgid "Point Backrest at that folder, mounted read-only: its snapshots are separate from these runs."
+msgstr "Faites pointer Backrest vers ce dossier, monté en lecture seule : ses instantanés sont indépendants de ces exécutions."
+
+msgid "Removed {n} expired backups."
+msgstr "{n} sauvegardes expirées supprimées."
+
+msgid "Run now"
+msgstr "Lancer maintenant"
+
+msgid "Running"
+msgstr "En cours"
+
+msgid "Saturday"
+msgstr "Samedi"
+
+msgid "Scheduler"
+msgstr "Planificateur"
+
+msgid "Size"
+msgstr "Taille"
+
+msgid "Started"
+msgstr "Début"
+
+msgid "Starting at"
+msgstr "À partir de"
+
+msgid "Success"
+msgstr "Succès"
+
+msgid "Sunday"
+msgstr "Dimanche"
+
+msgid "Thursday"
+msgstr "Jeudi"
+
+msgid "Time"
+msgstr "Heure"
+
+msgid "Timezone"
+msgstr "Fuseau horaire"
+
+msgid "Tuesday"
+msgstr "Mardi"
+
+msgid "Wednesday"
+msgstr "Mercredi"
+
+msgid "Weekly"
+msgstr "Hebdomadaire"
+
+msgid "Writing {db}…"
+msgstr "Écriture de {db}…"

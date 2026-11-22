@@ -29,6 +29,8 @@ const groups = [
 ]
 const box = (name: RegExp) => screen.getByRole('checkbox', { name }) as HTMLInputElement
 
+vi.mock('./BackupSettings', () => ({ default: () => <div>backup settings</div> }))
+
 import DeveloperSettings from './DeveloperSettings'
 
 beforeEach(() => {
@@ -39,6 +41,12 @@ beforeEach(() => {
 })
 
 describe('DeveloperSettings', () => {
+  it('hosts the automated backups section, in production too', () => {
+    render(<DeveloperSettings isDev={false} />)
+    expect(screen.getByText('Automated backups')).toBeInTheDocument()
+    expect(screen.getByText('backup settings')).toBeInTheDocument()
+  })
+
   it('links to the database manager at the root, outside the ERP', () => {
     render(<DeveloperSettings isDev />)
     expect(screen.getByRole('link', { name: 'Open database management' })).toHaveAttribute('href', '/database/management')
