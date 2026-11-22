@@ -23,10 +23,14 @@ func TestNextSlot(t *testing.T) {
 		{"daily before the time", set(func(*Settings) {}), "2026-11-22T01:59:00Z", "2026-11-22T02:00:00Z"},
 		{"daily exactly at the time is strictly after", set(func(*Settings) {}), "2026-11-22T02:00:00Z", "2026-11-23T02:00:00Z"},
 		{"weekly Mon+Thu in Paris from a Saturday",
-			set(func(s *Settings) { s.Frequency, s.Weekdays, s.Time, s.Timezone = "weekly", []int{1, 4}, "03:00", "Europe/Paris" }),
+			set(func(s *Settings) {
+				s.Frequency, s.Weekdays, s.Time, s.Timezone = "weekly", []int{1, 4}, "03:00", "Europe/Paris"
+			}),
 			"2026-11-21T12:00:00Z", "2026-11-23T02:00:00Z"},
 		{"weekly Mon+Thu from a Monday after the slot",
-			set(func(s *Settings) { s.Frequency, s.Weekdays, s.Time, s.Timezone = "weekly", []int{1, 4}, "03:00", "Europe/Paris" }),
+			set(func(s *Settings) {
+				s.Frequency, s.Weekdays, s.Time, s.Timezone = "weekly", []int{1, 4}, "03:00", "Europe/Paris"
+			}),
 			"2026-11-23T05:00:00Z", "2026-11-26T02:00:00Z"},
 		{"monthly 28th rolls into the next month",
 			set(func(s *Settings) { s.Frequency, s.MonthDay = "monthly", 28 }),

@@ -38,7 +38,8 @@ type Run struct {
 	Slot       *time.Time `json:"slot,omitempty"`
 	StartedAt  time.Time  `json:"started_at"`
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
-	Status     string     `json:"status"` // running|success|failed|cancelled
+	Status     string     `json:"status"`            // running|success|failed|cancelled
+	Current    string     `json:"current,omitempty"` // database being written, while running
 	Error      string     `json:"error,omitempty"`
 	Path       string     `json:"path,omitempty"` // "YYYY/MM/<stamp>", success only
 	Databases  []DBResult `json:"databases"`
