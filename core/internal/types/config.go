@@ -31,6 +31,7 @@ func (c *Config) ResolvePaths(dir string) {
 		c.CronLogDir = "cron_logs"
 	}
 	c.CronLogDir = resolve(c.CronLogDir)
+	c.BackupDir = resolve(c.BackupDir)
 }
 
 // DSN is the PostgreSQL connection URL, credentials URL-escaped.
@@ -207,6 +208,11 @@ type Config struct {
 	// Relative paths resolve the same way ModuleRoot does (anchored to the
 	// config file's directory). Defaults to "cron_logs".
 	CronLogDir string `json:"cron_log_dir" needed:"false"`
+
+	// BackupDir is where automated backups (internal/backup) write their
+	// settings, history and published bundles — the folder Backrest snapshots.
+	// Empty = automated backups are off (routes and scheduler not mounted).
+	BackupDir string `json:"backup_dir" needed:"false"`
 	// RedisURL enables the OPTIONAL read cache between the generic CRUD API
 	// and Postgres (docs/adr/ADR-022-optional-redis-query-cache.md), e.g.
 	// "redis://redis:6379/0". Empty = no cache, no Redis needed. Set but

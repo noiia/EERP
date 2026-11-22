@@ -78,6 +78,9 @@ func TestConfig_ResolvePaths(t *testing.T) {
 		{"absolute and empty paths are left alone",
 			Config{ApiConfigPath: "", ModuleRoot: []string{"/abs/modules"}, CronLogDir: "/var/log/cron"},
 			Config{ApiConfigPath: "", ModuleRoot: []string{"/abs/modules"}, CronLogDir: "/var/log/cron"}},
+		{"a relative backup dir anchors to the config dir and has no default",
+			Config{ModuleRoot: []string{}, CronLogDir: "/c", BackupDir: "backups"},
+			Config{ModuleRoot: []string{}, CronLogDir: "/c", BackupDir: "/repo/backups"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

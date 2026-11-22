@@ -1,6 +1,7 @@
 package dbmanage
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"core/orm"
 
 	"github.com/bytecodealliance/wasmtime-go/v50"
+	"github.com/jackc/pgx/v5"
 )
 
 // Manager holds everything a database-management action needs: the live app
@@ -89,4 +91,24 @@ func (m *Manager) setActiveName(name string) {
 	m.mu.Lock()
 	m.active = name
 	m.mu.Unlock()
+}
+
+// DatabaseNames lists the EERP databases on this server (ListDatabases).
+func (m *Manager) DatabaseNames(ctx context.Context) ([]string, error) {
+	dbs, err := ListDatabases(ctx, m.conn, m.ActiveName())
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, len(dbs))
+	for i, d := range dbs {
+		names[i] = d.Name
+	}
+	return names, nil
+}
+
+// MaintenanceConn opens a connection to the server's `postgres` database —
+// one that no database switch, delete or restore ever touches (server-wide
+// advisory locks).
+func (m *Manager) MaintenanceConn(ctx context.Context) (*pgx.Conn, error) {
+	return pgx.Connect(ctx, m.conn.dsn("postgres"))
 }

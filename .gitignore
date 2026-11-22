@@ -56,3 +56,6 @@ infra/nginx/realip/*.conf
 # Go coverage profiles written by `make test` / CI
 core/cover.out
 tools/pdf-service/cover.out
+
+# Automated backups (internal/backup, backup_dir in the dev config).
+/backups/
