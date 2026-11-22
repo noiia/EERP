@@ -10,6 +10,7 @@ const source = { kind: 'team-file' as const, id: '6c603285-c6ed-42a7-9ba0-ab2f5f
 
 async function session(editable: boolean) {
   const destroy = vi.fn()
+  const downloadAs = vi.fn()
   const calls: Array<Record<string, unknown>> = []
   const apiUrl = `https://office.example/${Math.random()}/api.js`
   const config = {
@@ -31,15 +32,66 @@ async function session(editable: boolean) {
       ;(value.events as { onAppReady(): void }).onAppReady()
     }
     destroyEditor = destroy
+    downloadAs = downloadAs
   }
   Object.assign(window, { DocsAPI: { DocEditor } })
   await act(async () => {
     fireEvent.load(document.querySelector(`script[src="${apiUrl}"]`)!)
   })
-  return { destroy, calls, fetch, config }
+  return { destroy, downloadAs, calls, fetch, config }
+}
+
+type Events = {
+  onDocumentReady(): void
+  onDownloadAs(event: { data: { url: string } }): void
 }
 
 describe('Euro-Office integration', () => {
+  it('downloads the live document from the editor, named after the file', async () => {
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const { calls, downloadAs } = await session(true)
+    const events = calls[0]!.events as Events
+    act(() => events.onDocumentReady())
+    fireEvent.click(screen.getByRole('link', { name: 'Download' }))
+    expect(downloadAs).toHaveBeenCalledWith('docx')
+    expect(click).not.toHaveBeenCalled()
+    act(() =>
+      events.onDownloadAs({
+        data: {
+          url: 'http://localhost/euro-office/cache/files/k/output.docx?md5=x&filename=output.docx',
+        },
+      }),
+    )
+    const a = click.mock.contexts[0] as HTMLAnchorElement
+    expect(a.download).toBe('Plan.docx')
+    expect(new URL(a.href).searchParams.get('filename')).toBe('Plan.docx')
+    expect(new URL(a.href).searchParams.get('md5')).toBe('x')
+    // The editor's own File menu download is not ours to save.
+    act(() => events.onDownloadAs({ data: { url: 'http://localhost/other' } }))
+    expect(click).toHaveBeenCalledOnce()
+  })
+
+  it('falls back to the stored copy when the editor never answers', async () => {
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const { calls } = await session(true)
+    act(() => (calls[0]!.events as Events).onDocumentReady())
+    vi.useFakeTimers()
+    try {
+      fireEvent.click(screen.getByRole('link', { name: 'Download' }))
+      act(() => vi.advanceTimersByTime(20000))
+    } finally {
+      vi.useRealTimers()
+    }
+    expect((click.mock.contexts[0] as HTMLAnchorElement).getAttribute('href')).toBe('/download')
+  })
+
+  it('downloads the stored copy before the document is ready', async () => {
+    const { downloadAs } = await session(true)
+    const link = screen.getByRole('link', { name: 'Download' })
+    expect(fireEvent.click(link)).toBe(true) // not prevented: the browser follows href
+    expect(downloadAs).not.toHaveBeenCalled()
+  })
+
   it.each([
     'Plan.DOCX',
     'Budget.xlsx',

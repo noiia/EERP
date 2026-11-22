@@ -32,6 +32,24 @@ export const isOfficeFile = (name: string) =>
 
 interface OfficeInstance {
   destroyEditor(): void
+  downloadAs?(format?: string): void
+}
+
+/** Saves a same-origin URL under name without leaving the page (no beforeunload prompt). */
+function saveURL(href: string, name: string) {
+  const a = document.createElement('a')
+  a.href = href
+  a.download = name
+  document.body.append(a)
+  a.click()
+  a.remove()
+}
+
+/** Euro-Office's cache links take their file name from ?filename= (outside the signed part). */
+export function namedDownloadURL(raw: string, name: string): string {
+  const u = new URL(raw, window.location.href)
+  u.searchParams.set('filename', name)
+  return u.toString()
 }
 interface OfficeAPI {
   DocEditor: new (id: string, config: Record<string, unknown>) => OfficeInstance
@@ -98,6 +116,30 @@ export function OfficeDialog({
   const [dirty, setDirty] = useState(false)
   const [confirmAction, setConfirmAction] = useState<'close' | 'retry' | null>(null)
   const [revision, setRevision] = useState(0)
+  // A live download in progress: the stored file lags the editor until every editor leaves.
+  const [preparing, setPreparing] = useState(false)
+  const pending = useRef(false)
+  const fallback = useRef<number | undefined>(undefined)
+  const finishDownload = useRef<(href?: string) => void>(() => {})
+  finishDownload.current = (href) => {
+    window.clearTimeout(fallback.current)
+    if (!pending.current) return // the editor's own File menu download, not ours
+    pending.current = false
+    setPreparing(false)
+    saveURL(href ? namedDownloadURL(href, name) : url, name)
+  }
+  const download = (event: { preventDefault(): void }) => {
+    const editor = instance.current
+    if (!documentReady || !editor?.downloadAs) return // the stored copy is all there is
+    event.preventDefault()
+    if (pending.current) return
+    pending.current = true
+    setPreparing(true)
+    editor.downloadAs(name.split('.').pop()?.toLowerCase())
+    // No answer (conversion failed, older server): fall back to the stored copy.
+    fallback.current = window.setTimeout(() => finishDownload.current(), 20000)
+  }
+  useEffect(() => () => window.clearTimeout(fallback.current), [])
   const diagrams = useDiagramBridge(
     host,
     editable && documentReady,
@@ -172,6 +214,11 @@ export function OfficeDialog({
             },
             onDocumentReady: () => {
               if (!cancelled) setDocumentReady(true)
+            },
+            onDownloadAs: (event: { data?: { url?: string } | string }) => {
+              const data = event.data
+              const href = typeof data === 'string' ? data : data?.url
+              if (!cancelled) finishDownload.current(href || undefined)
             },
             onDocumentStateChange: (event: { data: boolean }) => {
               if (!cancelled) setDirty(event.data)
@@ -257,7 +304,11 @@ export function OfficeDialog({
           <Button
             component="a"
             href={url}
-            startIcon={<FontAwesomeIcon icon={faArrowDown} />}
+            onClick={download}
+            aria-busy={preparing}
+            startIcon={
+              preparing ? <CircularProgress size={14} /> : <FontAwesomeIcon icon={faArrowDown} />
+            }
             sx={{ display: { xs: 'none', sm: 'inline-flex' } }}
           >
             {t('Download')}
