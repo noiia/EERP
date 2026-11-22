@@ -50,10 +50,11 @@ type Service struct {
 	version  string
 	log      *zap.Logger
 
-	mu      sync.Mutex
-	current *Run
-	cancel  context.CancelFunc
-	done    chan struct{}
+	mu       sync.Mutex
+	starting bool // a Start is taking the lock
+	current  *Run
+	cancel   context.CancelFunc
+	done     chan struct{}
 }
 
 // NewService builds a Service writing into dir (Config.BackupDir).
@@ -86,14 +87,30 @@ func (s *Service) Cancel() bool {
 	return true
 }
 
+// lockTimeout bounds taking the cross-process lock (a new Postgres connection).
+const lockTimeout = 15 * time.Second
+
 // Start launches a run in the background and returns it as started.
-// tenant/user (uuid.Nil = none) receive its notification.
+// tenant/user (uuid.Nil = none) receive its notification. The slot is reserved
+// under s.mu, but the lock — a network call — is taken outside it, so a slow
+// or unreachable Postgres never blocks Current/Cancel (the status page).
 func (s *Service) Start(trigger string, slot *time.Time, tenant, user uuid.UUID) (Run, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.current != nil {
+	if s.current != nil || s.starting {
+		s.mu.Unlock()
 		return Run{}, ErrBusy
 	}
+	s.starting = true
+	s.mu.Unlock()
+	reserved := true
+	defer func() {
+		if reserved {
+			s.mu.Lock()
+			s.starting = false
+			s.mu.Unlock()
+		}
+	}()
+
 	settings, err := LoadSettings(s.dir)
 	if err != nil {
 		return Run{}, err
@@ -101,19 +118,26 @@ func (s *Service) Start(trigger string, slot *time.Time, tenant, user uuid.UUID)
 	if len(settings.Databases) == 0 {
 		return Run{}, ErrNoDatabases
 	}
-	unlock, ok, err := s.locker.TryLock(context.Background())
+	lockCtx, cancelLock := context.WithTimeout(context.Background(), lockTimeout)
+	unlock, ok, err := s.locker.TryLock(lockCtx)
+	cancelLock()
 	if err != nil {
 		return Run{}, err
 	}
 	if !ok {
 		return Run{}, ErrBusy
 	}
+
 	start := time.Now().UTC().Truncate(time.Second)
 	run := Run{ID: start.Format(stampLayout), Trigger: trigger, Slot: slot, StartedAt: start,
 		Status: "running", Databases: []DBResult{}, Version: s.version}
 	ctx, cancel := context.WithCancel(context.Background())
-	s.current, s.cancel, s.done = &run, cancel, make(chan struct{})
+	s.mu.Lock()
+	s.starting, reserved = false, false
+	current := run // the service's own copy: execute's progress writes never touch the returned value
+	s.current, s.cancel, s.done = &current, cancel, make(chan struct{})
 	go s.execute(ctx, run, settings, unlock, tenant, user, s.done)
+	s.mu.Unlock()
 	return run, nil
 }
 

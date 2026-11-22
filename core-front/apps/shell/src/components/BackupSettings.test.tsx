@@ -65,6 +65,16 @@ describe('BackupSettings', () => {
     expect(m.saveBackupSettings.mock.calls[0][0]).toMatchObject({ enabled: true, databases: ['poc'], retention_days: 30 })
   })
 
+  it('drops a selected database that no longer exists, so saving still works', async () => {
+    const st = status()
+    st.settings.databases = ['poc', 'gone']
+    m.getBackups.mockResolvedValue(st)
+    render(<BackupSettings />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(m.saveBackupSettings).toHaveBeenCalled())
+    expect(m.saveBackupSettings.mock.calls[0][0]).toMatchObject({ databases: ['poc'] })
+  })
+
   it('shows Go\'s refusal of the settings', async () => {
     m.saveBackupSettings.mockResolvedValue({ ok: false, message: 'select at least one database' })
     render(<BackupSettings />)

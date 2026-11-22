@@ -41,6 +41,8 @@ func TestValidate(t *testing.T) {
 		{"timezone empty", ok(func(s *Settings) { s.Timezone = "" }), true},
 		{"timezone Paris", ok(func(s *Settings) { s.Timezone = "Europe/Paris" }), false},
 		{"retention 0", ok(func(s *Settings) { s.RetentionDays = 0 }), true},
+		{"retention 3650", ok(func(s *Settings) { s.RetentionDays = 3650 }), false},
+		{"retention 3651", ok(func(s *Settings) { s.RetentionDays = 3651 }), true},
 		{"unknown database", ok(func(s *Settings) { s.Databases = []string{"ghost"} }), true},
 		{"duplicate database", ok(func(s *Settings) { s.Databases = []string{"poc", "poc"} }), true},
 		{"enabled without databases", ok(func(s *Settings) { s.Databases = nil }), true},

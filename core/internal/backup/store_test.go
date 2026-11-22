@@ -121,3 +121,15 @@ func TestRetention_NeverTouchesTmp(t *testing.T) {
 		t.Errorf(".tmp entry removed: %v", err)
 	}
 }
+
+// A huge retention must keep everything, never wrap into "all expired".
+func TestRetention_HugeDaysKeepsAll(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Date(2026, 11, 22, 2, 0, 0, 0, time.UTC)
+	publish(t, dir, now, 24*time.Hour)
+	publish(t, dir, now, 0)
+	removed, err := Retain(dir, 999999, now, zap.NewNop())
+	if err != nil || len(removed) != 0 {
+		t.Errorf("removed %v, %v", removed, err)
+	}
+}

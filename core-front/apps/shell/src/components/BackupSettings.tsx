@@ -86,7 +86,8 @@ export default function BackupSettings() {
     setStatus(s)
     setDatabases(dbs)
     setRuns(history)
-    if (withDraft && s) setDraft(s.settings)
+    // A selected database deleted since has no checkbox to untick: drop it, or Go refuses every save.
+    if (withDraft && s) setDraft({ ...s.settings, databases: (s.settings.databases ?? []).filter((d) => dbs.includes(d)) })
   }, [])
 
   useEffect(() => {
@@ -258,7 +259,7 @@ export default function BackupSettings() {
         value={draft.retention_days}
         onChange={(e) => set({ retention_days: Number(e.target.value) })}
         helperText={t("Keep this well above Backrest's snapshot interval. The newest backup is always kept.")}
-        slotProps={{ htmlInput: { min: 1 } }}
+        slotProps={{ htmlInput: { min: 1, max: 3650 } }}
         sx={{ maxWidth: 420 }}
       />
 

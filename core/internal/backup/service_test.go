@@ -304,3 +304,49 @@ func TestNextRun(t *testing.T) {
 		t.Errorf("next = %v", got)
 	}
 }
+
+// slowLocker hangs in TryLock until release is closed (an unreachable Postgres).
+type slowLocker struct{ release chan struct{} }
+
+func (l *slowLocker) TryLock(ctx context.Context) (func(), bool, error) {
+	select {
+	case <-l.release:
+		return func() {}, true, nil
+	case <-ctx.Done():
+		return nil, false, ctx.Err()
+	}
+}
+
+// A hanging lock call must not freeze Current/Cancel (the status page), and a
+// second start meanwhile is refused at once.
+func TestStart_SlowLockDoesNotBlockStatus(t *testing.T) {
+	dir := t.TempDir()
+	s := Defaults()
+	s.Databases = []string{"poc"}
+	_ = SaveSettings(dir, s)
+	lock := &slowLocker{release: make(chan struct{})}
+	svc := NewService(dir, &fakeBundler{dbs: []string{"poc"}}, lock, nil, "test", zap.NewNop())
+	started := make(chan error, 1)
+	go func() { _, err := svc.Start("manual", nil, uuid.Nil, uuid.Nil); started <- err }()
+	time.Sleep(20 * time.Millisecond)
+
+	answered := make(chan struct{})
+	go func() {
+		_ = svc.Current()
+		_ = svc.Cancel()
+		if _, err := svc.Start("manual", nil, uuid.Nil, uuid.Nil); !errors.Is(err, ErrBusy) {
+			t.Errorf("start while another is starting: %v, want ErrBusy", err)
+		}
+		close(answered)
+	}()
+	select {
+	case <-answered:
+	case <-time.After(time.Second):
+		t.Fatal("Current/Cancel/Start blocked behind the lock call")
+	}
+	close(lock.release)
+	if err := <-started; err != nil {
+		t.Fatal(err)
+	}
+	waitIdle(t, svc)
+}

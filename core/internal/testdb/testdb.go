@@ -38,6 +38,9 @@ func Config(t testing.TB) *types.Config {
 		t.Fatalf("testdb: read %s: %v", path, err)
 	}
 	cfg.ResolvePaths(filepath.Dir(path))
+	// The config templates set backup_dir; a booted test app must not write
+	// backups into the repo. A test opts in with its own temp dir.
+	cfg.BackupDir = ""
 	if dsn != "" {
 		u, err := url.Parse(dsn)
 		if err != nil {

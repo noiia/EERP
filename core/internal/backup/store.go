@@ -139,7 +139,7 @@ func Retain(dir string, days int, now time.Time, log *zap.Logger) ([]string, err
 	if err != nil {
 		return nil, err
 	}
-	cutoff := now.Add(-time.Duration(days) * 24 * time.Hour)
+	cutoff := now.AddDate(0, 0, -days) // never overflows, unlike a Duration of days
 	removed := []string{}
 	for i, p := range pub {
 		if i == len(pub)-1 || !p.Stamp.Before(cutoff) {

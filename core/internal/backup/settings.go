@@ -81,8 +81,8 @@ func (s Settings) Validate(known []string) error {
 	if _, err := time.LoadLocation(s.Timezone); err != nil {
 		return fmt.Errorf("unknown timezone %q", s.Timezone)
 	}
-	if s.RetentionDays < 1 {
-		return errors.New("retention_days must be at least 1")
+	if s.RetentionDays < 1 || s.RetentionDays > 3650 {
+		return errors.New("retention_days must be between 1 and 3650")
 	}
 	if s.Enabled && len(s.Databases) == 0 {
 		return errors.New("select at least one database")
