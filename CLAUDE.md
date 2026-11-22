@@ -6,8 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Whole dev Docker stack in one run: generates missing secrets into the gitignored
-# .env (POSTGRES_PASSWORD, EERP_MASTER_KEY, S3 key pair, GARAGE_RPC_SECRET), fills
-# master_key/db_password/s3_* in the gitignored eerp-config.json + eerp-config.docker.json
+# .env (POSTGRES_PASSWORD, EERP_MASTER_KEY, S3 key pair, GARAGE_RPC_SECRET,
+# EERP_EURO_OFFICE_JWT_SECRET), fills master_key/db_password/s3_*/euro_office_* in the gitignored eerp-config.json + eerp-config.docker.json
 # (created from the *.example.json templates), starts + waits on every service,
 # installs pg_trgm (app database + template1; postgis comes with the postgis image),
 # bootstraps Garage. Idempotent; ROTATE=1 regenerates secrets (data kept — the DB
@@ -16,7 +16,7 @@ make bootstrap   # = infra/bootstrap.sh
 
 # Production on one Docker host, one command (run on the server, in a checkout):
 # prompts for (or reads) ERP_HOST, ACME_EMAIL, optional SITE_HOST / EERP_IMAGE_TAG /
-# SMTP_*, checks up front that every tool/file it needs is there (and lists all
+# SMTP_* / MCP_ENABLED, checks up front that every tool/file it needs is there (and lists all
 # that's missing), generates secrets into .env, writes eerp-config.prod.json, pulls
 # only the images this host lacks, starts everything, gets a Let's Encrypt
 # certificate and schedules its renewal. Idempotent. Upgrade with a new

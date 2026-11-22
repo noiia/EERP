@@ -78,8 +78,8 @@ sequenceDiagram
 
 Prerequisites on the server: `mcp_enabled: true`, `mcp_oauth_issuer` set to the
 public HTTPS origin (for example `https://erp.example.com`; `make bootstrap-prod`
-writes `https://<ERP_HOST>` there, so in production only `mcp_enabled` is left to
-turn on), the backend restarted, and EERP reachable from the internet over HTTPS with a valid
+writes `https://<ERP_HOST>` there, and `MCP_ENABLED=true make bootstrap-prod` turns
+`mcp_enabled` on and restarts the backend), the backend restarted, and EERP reachable from the internet over HTTPS with a valid
 certificate (the assistant's servers call it). Check it with:
 
 ```bash

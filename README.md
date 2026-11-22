@@ -75,9 +75,9 @@ make bootstrap   # = infra/bootstrap.sh — safe to re-run; ROTATE=1 regenerates
 ```
 
 It generates any missing secret into the gitignored `.env` (`POSTGRES_PASSWORD`,
-`EERP_MASTER_KEY`, the S3 key pair, `GARAGE_RPC_SECRET`), creates `eerp-config.json` and
-`eerp-config.docker.json` from their `*.example.json` templates and fills their
-`master_key` / `db_password` / `s3_*` fields, starts the stack waiting on each service's
+`EERP_MASTER_KEY`, the S3 key pair, `GARAGE_RPC_SECRET`, `EERP_EURO_OFFICE_JWT_SECRET`),
+creates `eerp-config.json` and `eerp-config.docker.json` from their `*.example.json`
+templates and fills their `master_key` / `db_password` / `s3_*` / `euro_office_*` fields, starts the stack waiting on each service's
 healthcheck, and provisions Garage (layout, key, bucket) — no second `docker compose up`.
 
 ### Production (one command, on the server)
@@ -112,6 +112,7 @@ CERT_MODE=proxy ERP_HOST=erp.example.com TRUSTED_PROXIES=127.0.0.1 \
 | `SITE_HOST` | no | the public website's own domain |
 | `EERP_IMAGE_TAG` | no (`latest`) | the CI build to run, e.g. `0.105.0` |
 | `SMTP_HOST`, `SMTP_*` | no | outgoing email relay |
+| `MCP_ENABLED` | no (`false`) | `true` turns on the [MCP server](docs/mcp.md) and its OAuth (issuer `https://<ERP_HOST>`) |
 
 Settings come from the environment, else the `.env` of a previous run, else a prompt, and
 are saved — a re-run needs no arguments. First sign-in: `admin@eerp.local` / `admin`

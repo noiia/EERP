@@ -6,16 +6,20 @@
 #   ROTATE=1 infra/bootstrap.sh   # regenerate every secret (data is kept)
 #
 # 1. Secrets live in the gitignored .env: POSTGRES_PASSWORD, EERP_MASTER_KEY, the S3 key
-#    pair (EERP_S3_ACCESS_KEY/EERP_S3_SECRET_KEY) and GARAGE_RPC_SECRET. A missing key is
-#    generated, an existing one kept, so a re-run never changes a live password.
-# 2. They are written into every place that needs them: master_key, db_password and
-#    s3_* in the gitignored eerp-config.json (host-native go run/tests) and
+#    pair (EERP_S3_ACCESS_KEY/EERP_S3_SECRET_KEY), GARAGE_RPC_SECRET and
+#    EERP_EURO_OFFICE_JWT_SECRET (docs/euro-office.md). A missing key is generated, an
+#    existing one kept, so a re-run never changes a live password. MCP and its OAuth
+#    (docs/mcp.md) need no secret of their own: their tokens are signed with master_key.
+# 2. They are written into every place that needs them: master_key, db_password, s3_*
+#    and euro_office_* in the gitignored eerp-config.json (host-native go run/tests) and
 #    eerp-config.docker.json (compose), each created from its committed *.example.json
-#    template when missing; compose reads POSTGRES_PASSWORD and GARAGE_RPC_SECRET from
-#    .env itself, and infra/garage/init.sh imports the S3 pair. eerp-config.prod.json is
+#    template when missing (an older config gains the keys added since); compose reads
+#    POSTGRES_PASSWORD, GARAGE_RPC_SECRET and EERP_EURO_OFFICE_JWT_SECRET from .env
+#    itself, and infra/garage/init.sh imports the S3 pair. eerp-config.prod.json is
 #    never touched: production must not share dev secrets.
 # 3. Infra services start first and are waited on until healthy, Garage gets its
-#    layout/key/bucket, then the app services start and are waited on too — one run
+#    layout/key/bucket, then the app services (euro-office included — its first boot
+#    takes a few minutes) start and are waited on too — one run
 #    instead of several `docker compose up -d`.
 #
 # Postgres only applies POSTGRES_PASSWORD when it initializes an empty data dir, and the
@@ -62,6 +66,8 @@ for f in eerp-config.json eerp-config.docker.json; do
   for key in euro_office_url euro_office_internal_url euro_office_storage_url euro_office_jwt_secret; do
     rg -q "\"$key\"" "$f" || sed -i "1a\\    \"$key\": \"\"," "$f"
   done
+  # Automated backups (ADR-044): a config predating them gets the key once.
+  rg -q '"backup_dir"' "$f" || sed -i '1a\    "backup_dir": "backups",' "$f"
   set_json "$f" euro_office_jwt_secret "$EERP_EURO_OFFICE_JWT_SECRET"
   set_json "$f" euro_office_url "https://localhost/euro-office"
   if [ "$f" = eerp-config.docker.json ]; then

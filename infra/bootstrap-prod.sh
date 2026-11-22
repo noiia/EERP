@@ -12,12 +12,16 @@
 # 1. Collects the settings — ERP_HOST (required), ACME_EMAIL, SITE_HOST (the public
 #    website's own host, optional), EERP_IMAGE_TAG (default latest; a CI build number
 #    such as 0.101.0 pins a release), CERT_MODE (letsencrypt | proxy), optional
-#    SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASSWORD/SMTP_FROM/SMTP_TLS — from the
+#    SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASSWORD/SMTP_FROM/SMTP_TLS, MCP_ENABLED
+#    (true turns on the MCP server and its OAuth for claude.ai/ChatGPT) — from the
 #    environment, else the .env of a previous run, else a prompt, and saves them in
 #    .env so a re-run needs nothing.
 # 2. Generates the secrets (database password, master key, S3 key pair, Garage RPC
-#    secret) into .env when missing — never rotated by a re-run (ROTATE=1 does).
-# 3. Writes eerp-config.prod.json from its template (secrets, site_url, SMTP).
+#    secret, Euro-Office JWT secret) into .env when missing — never rotated by a re-run
+#    (ROTATE=1 does). MCP OAuth has no secret of its own (signed with master_key).
+# 3. Writes eerp-config.prod.json from its template (secrets, site_url, SMTP, the
+#    Euro-Office URLs, mcp_enabled + mcp_oauth_issuer, backup_dir); an older config
+#    gains the keys added since.
 # 4. Pulls only the images this host doesn't have yet (every run reuses the local
 #    ones; PULL=1 refreshes them all), starts the infrastructure, sets the database
 #    password, installs pg_trgm, initializes Garage, starts the app and waits until
@@ -60,6 +64,10 @@ for f in compose.yml compose.prod.yml eerp-config.prod.example.json \
   infra/garage/init.sh infra/garage/garage.toml infra/nginx/nginx.conf \
   infra/nginx/gen-certs.sh infra/certbot/install-cert.sh; do
   [ -f "$f" ] || missing+=("file: $f")
+done
+# Bind-mounted directories: a missing source becomes an empty directory, silently.
+for d in infra/euro-office/plugins/erp-diagrams infra/nginx/realip; do
+  [ -d "$d" ] || missing+=("directory: $d")
 done
 if [ ${#missing[@]} -gt 0 ]; then
   echo "error: can't bootstrap, missing:" >&2
@@ -130,6 +138,10 @@ if [ -n "${SMTP_HOST:-}" ]; then
   setting SMTP_PASSWORD "SMTP password (empty = none)" "" optional
   setting SMTP_FROM "Sender address" "no-reply@$ERP_HOST"
 fi
+# Default: what the config already says, so a hand-set mcp_enabled survives re-runs.
+mcp_current=$(sed -nE 's/.*"mcp_enabled"[[:space:]]*:[[:space:]]*(true|false).*/\1/p' eerp-config.prod.json 2>/dev/null || true)
+setting MCP_ENABLED "Enable the MCP server for AI assistants (true/false)" "${mcp_current:-false}"
+case "$MCP_ENABLED" in true | false) ;; *) die "MCP_ENABLED must be true or false." ;; esac
 
 if [ "$CERT_MODE" = letsencrypt ]; then
   for host in "$ERP_HOST" ${SITE_HOST:+"$SITE_HOST"}; do
@@ -187,6 +199,7 @@ set_json() {
   sed -i -E "s${d}(\"$1\"[[:space:]]*:[[:space:]]*\")([^\"\\\\]|\\\\.)*\"${d}\\1$v\"${d}" "$CONFIG"
 }
 set_json_number() { sed -i -E "s|(\"$1\"[[:space:]]*:[[:space:]]*)[0-9]+|\1$2|" "$CONFIG"; }
+set_json_bool() { sed -i -E "s/(\"$1\"[[:space:]]*:[[:space:]]*)(true|false)/\1$2/" "$CONFIG"; }
 # A bind mount whose source is missing makes Docker create an empty DIRECTORY there.
 [ -d "$CONFIG" ] && rmdir "$CONFIG"
 if [ ! -f "$CONFIG" ]; then
@@ -196,6 +209,7 @@ fi
 for key in euro_office_url euro_office_internal_url euro_office_storage_url euro_office_jwt_secret mcp_oauth_issuer; do
   rg -q "\"$key\"" "$CONFIG" || sed -i "1a\\    \"$key\": \"\"," "$CONFIG"
 done
+rg -q '"mcp_enabled"' "$CONFIG" || sed -i '1a\    "mcp_enabled": false,' "$CONFIG"
 # Automated backups (ADR-044) write into the eerp-backups volume compose.prod.yml
 # mounts at /app/backups; a config predating them gets the key once, never again,
 # so an admin's "" (backups off) or other path survives re-runs.
@@ -212,6 +226,7 @@ set_json euro_office_storage_url "http://core-back:8080"
 set_json site_url "https://${SITE_HOST:-$ERP_HOST}"
 # OAuth for MCP clients (ADR-043): only used once mcp_enabled is true.
 set_json mcp_oauth_issuer "https://${ERP_HOST}"
+set_json_bool mcp_enabled "$MCP_ENABLED"
 if [ -n "${SMTP_HOST:-}" ]; then
   set_json smtp_host "$SMTP_HOST"
   # shellcheck disable=SC2153 # assigned by setting() through printf -v
@@ -325,5 +340,6 @@ else
 fi
 
 say "up: https://$ERP_HOST/app"
+[ "$MCP_ENABLED" = true ] && echo "    MCP: add https://$ERP_HOST/api/v1/mcp as a connector (docs/mcp.md)."
 echo "    first sign-in: admin@eerp.local / admin — you'll be asked to change the password at once."
 echo "    upgrade later: EERP_IMAGE_TAG=<new build> make bootstrap-prod (or PULL=1 to refresh the current tag)."
