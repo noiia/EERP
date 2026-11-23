@@ -42,6 +42,20 @@ func trigger(name, table, timing, when, fn string) []string {
 	}
 }
 
+const raciSingleRoleMigration = `DO $$ BEGIN
+		 LOCK TABLE project_task_raci IN SHARE ROW EXCLUSIVE MODE;
+		 WITH ranked AS (
+		   SELECT id, row_number() OVER (PARTITION BY task_id, user_id ORDER BY created_at, id) AS n
+		   FROM project_task_raci WHERE deleted_at IS NULL
+		 )
+		 UPDATE project_task_raci r SET deleted_at = now(), updated_at = now()
+		 FROM ranked d WHERE r.id = d.id AND d.n > 1;
+		 DROP INDEX IF EXISTS idx_project_task_raci_role_live;
+		 DROP INDEX IF EXISTS idx_project_task_raci_one_accountable;
+		 CREATE UNIQUE INDEX IF NOT EXISTS idx_project_task_raci_live
+		 ON project_task_raci (task_id, user_id) WHERE deleted_at IS NULL;
+		END $$`
+
 var migrations = slices.Concat(
 	[]string{
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_project_member_live ON project_member (project_id, user_id) WHERE deleted_at IS NULL`,
@@ -54,12 +68,10 @@ var migrations = slices.Concat(
 		check("project", "project_visibility", "visibility IN ('everyone', 'members')"),
 		check("project_timesheet", "project_timesheet_hours", "hours > 0"),
 
-		// ── RACI and capacities: a user may hold several roles on a task, one
-		// row per role. Several accountables are allowed (the matrix warns);
-		// the older one-role and one-accountable indexes are dropped.
-		`DROP INDEX IF EXISTS idx_project_task_raci_live`,
-		`DROP INDEX IF EXISTS idx_project_task_raci_one_accountable`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_project_task_raci_role_live ON project_task_raci (task_id, user_id, role) WHERE deleted_at IS NULL`,
+		// One explicit role per task/person. Archive legacy duplicates (oldest
+		// assignment wins), retaining their rows for audit. Lock writes until
+		// the replacement index is in place, including during rolling upgrades.
+		raciSingleRoleMigration,
 		check("project_task_raci", "project_task_raci_role", "role IN ('R', 'A', 'C', 'I')"),
 		check("project_capacity", "project_capacity_hours_per_week", "hours_per_week > 0 AND hours_per_week <= 168"),
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_project_capacity_live ON project_capacity (tenant_id, user_id) WHERE deleted_at IS NULL`,
