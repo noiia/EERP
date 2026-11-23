@@ -324,6 +324,7 @@ export function PertRenderer<T extends HasId>({
           autoLayout={() => criticalPositions}
           positions={criticalPositions}
           readOnly
+          simpleExport
           legend={[{ color: red, label: t('Critical path') }]}
           toolbarExtra={
             <ToolButton icon="route" label={t('Critical path only')} aria-pressed onClick={() => setCriticalOnly(false)} />
@@ -346,6 +347,7 @@ export function PertRenderer<T extends HasId>({
         canInsert={canInsert}
         history={history}
         notes
+        simpleExport
         legend={[
           { color: red, label: t('Critical path') },
           { color: theme.palette.warning.main, label: t('No estimate') },

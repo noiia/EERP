@@ -33,6 +33,8 @@ export const LABEL_BOX_SIZE = { w: 240, h: 64 }
 export const DETAIL_ZOOM = 0.6
 /** True while the canvas exports, so the image always gets the full boxes. */
 export const ForceDetail = createContext(false)
+/** True during a "simple" export: task boxes print as their zoomed-out face (color bar + title). */
+export const SimpleExport = createContext(false)
 
 /** The zone around the camera where boxes draw in full, as a share of the visible width and
  * height added on each side: boxes just off screen are ready before a pan reaches them. */
@@ -137,18 +139,19 @@ export const TaskBox = memo(function TaskBox({ data, sourcePosition, targetPosit
   const t = useT()
   const detailed = useDetailed({ x: positionAbsoluteX, y: positionAbsoluteY, ...TASK_BOX_SIZE })
   const exporting = useContext(ForceDetail)
+  const simple = useContext(SimpleExport)
   const [error, setError] = useState<SerializedError | null>(null)
   const { record, chevron } = data
   const onDoubleClick = (e: MouseEvent) => {
     if (!(e.target as HTMLElement).closest('input, textarea, [role="combobox"]')) data.onOpen()
   }
-  if (!detailed) {
+  if (!detailed || simple) {
     // Same size and handles as the full box: the layout and the arrows don't move.
     return (
       <Paper variant="outlined" data-testid="task-box-far" onDoubleClick={data.onOpen} sx={{ position: 'relative', width: TASK_BOX_SIZE.w, height: TASK_BOX_SIZE.h, boxSizing: 'border-box', overflow: 'hidden', p: 1.5, pt: data.colors?.length ? 4 : 1.5 }}>
         <ColorRibbon colors={data.colors} height={20} />
         <Handle type="target" position={targetPosition ?? Position.Top} />
-        {data.onRemove ? <RemoveButton onRemove={data.onRemove} size={40} /> : null}
+        {data.onRemove && !exporting ? <RemoveButton onRemove={data.onRemove} size={40} /> : null}
         <Typography sx={FAR_TITLE_SX}>{data.title ?? String(record.name ?? record.title ?? '')}</Typography>
         <Handle type="source" position={sourcePosition ?? Position.Bottom} />
         <StackHandle />

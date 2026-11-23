@@ -39,7 +39,7 @@ import { DeliverableBox } from './deliverable-box'
 import { ExportMenu, ToolButton } from './toolbar'
 import { BusEdge, ObsBox } from './obs-box'
 import { PbsBox } from './pbs-box'
-import { compactTheme, ForceDetail, LabelBox, NOTE_BOX_SIZE, NOTE_LIMIT, NOTE_LINK_LIMIT, NoteBox, TASK_BOX_SIZE, TaskBox, type NoteBoxData } from './task-box'
+import { compactTheme, ForceDetail, LabelBox, SimpleExport, NOTE_BOX_SIZE, NOTE_LIMIT, NOTE_LINK_LIMIT, NoteBox, TASK_BOX_SIZE, TaskBox, type NoteBoxData } from './task-box'
 
 // The canvas WBS and PERT share: React Flow plus the user's own saved arrangement
 // (RelationOps.getViewLayout/saveViewLayout, optional and fail-open). Saved boxes keep
@@ -281,6 +281,8 @@ export interface DiagramCanvasProps {
    * from the FINAL placed boxes on every render (never stored), and they stay out of the
    * saved layout, the collision pass, the drag/move and insert paths and the history. */
   extraNodes?: (placed: Record<string, Point>) => Node[]
+  /** Also offer "simple" PNG/PDF exports: task boxes print as color bar + title only. */
+  simpleExport?: boolean
 }
 
 const nodeTypes: NodeTypes = { task: TaskBox, label: LabelBox, note: NoteBox, obs: ObsBox, pbs: PbsBox, deliverable: DeliverableBox }
@@ -326,6 +328,7 @@ function Canvas(props: DiagramCanvasProps) {
   const [saveError, setSaveError] = useState<SerializedError | null>(null)
   const [exportError, setExportError] = useState<SerializedError | null>(null)
   const [exporting, setExporting] = useState(false)
+  const [simple, setSimple] = useState(false)
   const phone = usePhone()
   // CSS only on the same element: no remount, so unsaved notes and positions stay.
   const [fullscreen, setFullscreen] = useState(false)
@@ -727,12 +730,15 @@ function Canvas(props: DiagramCanvasProps) {
     if (rest.length) props.onEdgesDelete?.(rest)
   }
 
-  const exportAs = async (kind: 'png' | 'pdf') => {
+  const exportAs = async (kind: 'png' | 'pdf', simpleBoxes = false) => {
     const viewport = container.current?.querySelector<HTMLElement>('.react-flow__viewport')
     if (!viewport) return
     setExportError(null)
     // Full boxes in the image even when zoomed out: drawn before the capture starts.
-    flushSync(() => setExporting(true))
+    flushSync(() => {
+      setExporting(true)
+      setSimple(simpleBoxes)
+    })
     try {
       // Export boxes grow to their content: let React Flow re-measure them before bounding.
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
@@ -747,6 +753,7 @@ function Canvas(props: DiagramCanvasProps) {
       setExportError(serializeError(toApiError(e)))
     } finally {
       setExporting(false)
+      setSimple(false)
     }
   }
 
@@ -767,6 +774,12 @@ function Canvas(props: DiagramCanvasProps) {
           options={[
             { key: 'png', label: t('Export PNG'), icon: 'file-image', onClick: () => void exportAs('png') },
             { key: 'pdf', label: t('Export PDF'), icon: 'file-pdf', onClick: () => void exportAs('pdf') },
+            ...(props.simpleExport
+              ? [
+                  { key: 'png-simple', label: t('Export PNG (simple)'), icon: 'file-image', onClick: () => void exportAs('png', true) },
+                  { key: 'pdf-simple', label: t('Export PDF (simple)'), icon: 'file-pdf', onClick: () => void exportAs('pdf', true) },
+                ]
+              : []),
           ]}
         />
         <ToolButton icon="maximize" label={t('Fit view')} onClick={() => instance.current?.fitView()} />
@@ -802,6 +815,7 @@ function Canvas(props: DiagramCanvasProps) {
           <BoxOps ops={boxOps}>
           <ThemeProvider theme={compact}>
           <ForceDetail.Provider value={exporting}>
+          <SimpleExport.Provider value={simple}>
           <ReactFlow
             nodes={rfNodes}
             edges={rfEdges}
@@ -841,6 +855,7 @@ function Canvas(props: DiagramCanvasProps) {
             ) : null}
             <HandleScale target={container} />
           </ReactFlow>
+          </SimpleExport.Provider>
           </ForceDetail.Provider>
           </ThemeProvider>
           </BoxOps>

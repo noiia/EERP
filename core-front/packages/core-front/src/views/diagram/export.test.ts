@@ -24,10 +24,10 @@ describe('pdfFormat', () => {
 })
 
 describe('diagramToPng', () => {
-  it('renders the viewport at 150 dpi (150/96 image pixels per CSS pixel)', async () => {
+  it('renders the viewport at 600 dpi (600/96 image pixels per CSS pixel)', async () => {
     const el = document.createElement('div')
     expect(await diagramToPng(el, bounds)).toBe('data:image/png;base64,AAA')
-    expect(vi.mocked(toPng).mock.calls[0][1]).toMatchObject({ pixelRatio: 150 / 96 })
+    expect(vi.mocked(toPng).mock.calls[0][1]).toMatchObject({ pixelRatio: 600 / 96 })
   })
 
   it('lowers the ratio just enough to fit the side or area limit', () => {
@@ -51,7 +51,7 @@ describe('elementToPng', () => {
     Object.defineProperty(el, 'scrollHeight', { value: 120 })
     await elementToPng(el, '#000')
     const o = vi.mocked(toPng).mock.calls[0][1]!
-    expect(o).toMatchObject({ width: 300, height: 120, pixelRatio: 150 / 96, backgroundColor: '#000' })
+    expect(o).toMatchObject({ width: 300, height: 120, pixelRatio: 600 / 96, backgroundColor: '#000' })
     expect(o.style).toBeUndefined()
   })
 })
@@ -97,7 +97,7 @@ describe('exportPdf', () => {
     expect(pdf.save).toHaveBeenCalledWith('plan.pdf')
   })
 
-  it('renders the image at 150 dpi of its printed size, small or huge', async () => {
+  it('renders the image at 600 dpi of its printed size, small or huge', async () => {
     for (const width of [200, 20000]) {
       vi.mocked(toPng).mockClear()
       pdf.addImage.mockClear()
@@ -105,7 +105,7 @@ describe('exportPdf', () => {
       await exportPdf(document.createElement('div'), b, { title: 'T', date: new Date(), legend: [] }, 'p')
       const { width: w, pixelRatio } = vi.mocked(toPng).mock.calls[0][1]!
       const printedMm = pdf.addImage.mock.calls[0][4] as number
-      expect(w! * pixelRatio!).toBeCloseTo((printedMm / 25.4) * 150)
+      expect(w! * pixelRatio!).toBeCloseTo((printedMm / 25.4) * 600)
     }
   })
 })

@@ -10,12 +10,12 @@ const PAD = 40
 // pixels (less on some): a bigger image exports at whatever lower ratio still fits.
 const MAX_CANVAS_SIDE = 16000
 const MAX_CANVAS_AREA = 150_000_000
-/** Export resolution: a PNG holds 150 pixels per inch of the diagram at its natural size (a CSS
- * pixel is 1/96 in), a PDF 150 pixels per inch of the printed page, whatever the diagram's size. */
-export const EXPORT_DPI = 150
+/** Export resolution: a PNG holds 600 pixels per inch of the diagram at its natural size (a CSS
+ * pixel is 1/96 in), a PDF 600 pixels per inch of the printed page, whatever the diagram's size. */
+export const EXPORT_DPI = 600
 const CSS_DPI = 96
 const MM_PER_INCH = 25.4
-/** The pixel ratio for an image of w × h CSS pixels: the wanted one (150 dpi by default),
+/** The pixel ratio for an image of w × h CSS pixels: the wanted one (600 dpi by default),
  * lowered as far as needed to fit the canvas limits. */
 export const pixelRatioFor = (w: number, h: number, wanted = EXPORT_DPI / CSS_DPI) =>
   Math.min(wanted, MAX_CANVAS_SIDE / Math.max(w, h), Math.sqrt(MAX_CANVAS_AREA / (w * h)))
@@ -131,7 +131,7 @@ export function prepareEdgesForCapture(node: HTMLElement, bounds: DiagramBounds)
 }
 
 /** PNG data URL of the whole diagram (not just the visible part), via the xyflow export recipe;
- * at `ratio` image pixels per CSS pixel (default 150 dpi), capped by the canvas limits (pixelRatioFor). */
+ * at `ratio` image pixels per CSS pixel (default 600 dpi), capped by the canvas limits (pixelRatioFor). */
 export async function diagramToPng(viewport: HTMLElement, bounds: DiagramBounds, background = WHITE, ratio?: number): Promise<string> {
   const { w, h } = size(bounds)
   const v = getViewportForBounds(bounds, w, h, 0.1, 4, 0.05)

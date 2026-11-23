@@ -3,7 +3,7 @@ import { cleanup, render, screen, within } from '@testing-library/react'
 import type { ComponentProps } from 'react'
 import type { FieldDescriptor } from '../descriptor'
 import { useFormatStore } from '../format-store'
-import { ForceDetail, TaskBox, type TaskBoxData } from './task-box'
+import { ForceDetail, SimpleExport, TaskBox, type TaskBoxData } from './task-box'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }), usePathname: () => '/', useSearchParams: () => new URLSearchParams() }))
 vi.mock('@xyflow/react', () => ({
@@ -21,7 +21,7 @@ const fields: FieldDescriptor[] = [
 ]
 const long = 'A very long task name that an input would clip, wrapped on several lines in the export'
 
-function box(exporting: boolean, data: Partial<TaskBoxData> = {}) {
+function box(exporting: boolean, data: Partial<TaskBoxData> = {}, simple = false) {
   const props = {
     id: 'A',
     data: {
@@ -37,7 +37,9 @@ function box(exporting: boolean, data: Partial<TaskBoxData> = {}) {
   } as unknown as ComponentProps<typeof TaskBox>
   render(
     <ForceDetail.Provider value={exporting}>
-      <TaskBox {...props} />
+      <SimpleExport.Provider value={simple}>
+        <TaskBox {...props} />
+      </SimpleExport.Provider>
     </ForceDetail.Provider>,
   )
 }
@@ -66,5 +68,13 @@ describe('TaskBox export', () => {
     box(false)
     expect(screen.queryByTestId('export-field-name')).toBeNull()
     expect(screen.getByLabelText('Remove from diagram')).toBeInTheDocument()
+  })
+
+  it('a simple export prints only the title box, with no field and no trash', () => {
+    box(true, { title: '1.2 - Build' }, true)
+    expect(screen.getByTestId('task-box-far')).toBeInTheDocument()
+    expect(screen.getByText('1.2 - Build')).toBeInTheDocument()
+    expect(screen.queryByTestId('export-field-name')).toBeNull()
+    expect(screen.queryByLabelText('Remove from diagram')).toBeNull()
   })
 })
