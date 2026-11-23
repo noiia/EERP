@@ -417,8 +417,8 @@ describe('MatrixRenderer RACI tab', () => {
     expect(screen.getByTestId('raci-cell-t1-u2').textContent).toBe('')
   })
 
-  it('With write permission, a click opens a role menu: ticking roles creates one row each (a user may hold A and R), unticking deletes it; a rejection shows the message and keeps what committed. A row without an `A` is flagged `No one accountable`.', async () => {
-    const { ops, create, remove } = opsFixture({ tasks: RACI_TASKS, members: RACI_MEMBERS, raci: RACI_ROWS })
+  it('With write permission, a click opens a role menu: choosing another role updates the same row, clicking the selected role clears it; a rejection shows the message and keeps what committed. A row without an `A` is flagged `No one accountable`.', async () => {
+    const { ops, create, update, remove } = opsFixture({ tasks: RACI_TASKS, members: RACI_MEMBERS, raci: RACI_ROWS })
     renderRenderer(ops)
     fireEvent.click(await screen.findByRole('tab', { name: 'RACI' }))
     await screen.findByTestId('raci-cell-t1-u2')
@@ -432,21 +432,36 @@ describe('MatrixRenderer RACI tab', () => {
     expect(cellT1().textContent).toBe('A')
     await settle()
     fireEvent.click(item('R'))
-    expect(create).toHaveBeenLastCalledWith('project_task_raci', { task_id: 't1', user_id: 'u2', role: 'R' })
-    await settle()
-    expect(cellT1().textContent).toBe('R/A')
-    fireEvent.click(item('A'))
-    expect(remove).toHaveBeenCalledWith('project_task_raci', 'new-raci')
+    expect(update).toHaveBeenLastCalledWith('project_task_raci', 'new-raci', { role: 'R' })
     await settle()
     expect(cellT1().textContent).toBe('R')
+    fireEvent.click(item('R'))
+    expect(remove).toHaveBeenCalledWith('project_task_raci', 'new-raci')
+    await settle()
+    expect(cellT1().textContent).toBe('')
+    fireEvent.click(item('R'))
+    await settle()
 
-    create.mockRejectedValueOnce(new ApiError({ code: 'FORBIDDEN', message: 'nope', status: 403 }))
+    update.mockRejectedValueOnce(new ApiError({ code: 'FORBIDDEN', message: 'nope', status: 403 }))
     fireEvent.click(item('C'))
     expect(await screen.findByText('nope')).toBeInTheDocument()
     expect(cellT1().textContent).toBe('R')
 
     expect(screen.getByTestId('raci-row-t1')).toHaveTextContent('No one accountable')
     expect(screen.getByTestId('raci-row-t2')).not.toHaveTextContent('No one accountable')
+  })
+
+  it('removes the previous role before creating its replacement when update is unavailable', async () => {
+    const { ops, remove, create } = opsFixture({ tasks: RACI_TASKS, members: RACI_MEMBERS, raci: RACI_ROWS })
+    renderRenderer({ ...ops, update: undefined })
+    fireEvent.click(await screen.findByRole('tab', { name: 'RACI' }))
+    fireEvent.click(await screen.findByTestId('raci-cell-t2-u9'))
+    fireEvent.click(within(screen.getByRole('menu')).getByText('R'))
+    await act(async () => {})
+    expect(remove).toHaveBeenCalledWith('project_task_raci', 'r1')
+    expect(create).toHaveBeenCalledWith('project_task_raci', { task_id: 't2', user_id: 'u9', role: 'R' })
+    expect(remove.mock.invocationCallOrder[0]).toBeLessThan(create.mock.invocationCallOrder[0])
+    expect(screen.getByTestId('raci-cell-t2-u9')).toHaveTextContent('R')
   })
 
   it('A second accountable is accepted and listed in a warning on top.', async () => {
@@ -472,7 +487,6 @@ describe('MatrixRenderer RACI tab', () => {
     fireEvent.click(within(screen.getByRole('listbox')).getByText('member'))
     fireEvent.mouseDown(within(screen.getByTestId('raci-bulk-roles').parentElement!).getByRole('combobox'))
     fireEvent.click(within(screen.getByRole('listbox')).getByText('I'))
-    fireEvent.keyDown(screen.getByRole('listbox'), { key: 'Escape' })
     fireEvent.click(screen.getByRole('button', { name: 'Apply (2)' }))
     await act(async () => {})
     expect(create).toHaveBeenCalledWith('project_task_raci', { task_id: 't1', user_id: 'u2', role: 'I' })
@@ -497,7 +511,7 @@ describe('MatrixRenderer RACI tab', () => {
 
   it('On phone the grid becomes a per-task card listing `R: …, A: …, C: …, I: …`, and an `Edit` button opens a dialog with one select per person.', async () => {
     setViewportWidth(390)
-    const { ops } = opsFixture({ tasks: RACI_TASKS, members: RACI_MEMBERS, raci: RACI_ROWS })
+    const { ops, update } = opsFixture({ tasks: RACI_TASKS, members: RACI_MEMBERS, raci: RACI_ROWS })
     renderRenderer(ops)
     fireEvent.click(await screen.findByRole('tab', { name: 'RACI' }))
     const card = await screen.findByTestId('raci-card-t2')
@@ -511,6 +525,14 @@ describe('MatrixRenderer RACI tab', () => {
     expect(within(dialog).getAllByRole('combobox')).toHaveLength(4) // one roles select per person
     expect(within(dialog).getByRole('button', { name: 'Save' })).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
+    fireEvent.mouseDown(within(dialog).getByRole('combobox', { name: 'holder' }))
+    expect(screen.getByRole('listbox')).not.toHaveAttribute('aria-multiselectable', 'true')
+    fireEvent.click(within(screen.getByRole('listbox')).getByText('R'))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+    await act(async () => {})
+    expect(update).toHaveBeenCalledWith('project_task_raci', 'r1', { role: 'R' })
+    expect(within(card).getByText('R: holder')).toBeInTheDocument()
+    expect(within(card).getByText('A: –')).toBeInTheDocument()
   })
 })
 
@@ -569,15 +591,13 @@ describe('MatrixRenderer RACI task tree', () => {
     fireEvent.click(within(screen.getByRole('menu')).getByText('C'))
     await act(async () => {})
     expect(create.mock.calls.map((c) => c[1])).toEqual([
-      { task_id: 'P', user_id: 'u2', role: 'R' },
-      { task_id: 'P', user_id: 'u2', role: 'A' },
       { task_id: 'P', user_id: 'u2', role: 'C' },
     ])
-    expect(screen.getByTestId('raci-cell-P-u2').textContent).toBe('R/A/C')
+    expect(screen.getByTestId('raci-cell-P-u2').textContent).toBe('C')
     expect(screen.getByTestId('raci-cell-P-u2')).not.toHaveAttribute('data-computed')
     fireEvent.click(within(screen.getByRole('menu')).getByText('Use computed values'))
     await act(async () => {})
-    expect(remove).toHaveBeenCalledTimes(3)
+    expect(remove).toHaveBeenCalledTimes(1)
     expect(screen.getByTestId('raci-cell-P-u2').textContent).toBe('R/A')
     expect(screen.getByTestId('raci-cell-P-u2')).toHaveAttribute('data-computed', 'true')
   })

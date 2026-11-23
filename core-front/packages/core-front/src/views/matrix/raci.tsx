@@ -1,9 +1,10 @@
 'use client'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
+import Radio from '@mui/material/Radio'
 import Dialog from '@mui/material/Dialog'
 import IconButton from '@mui/material/IconButton'
 import ListItemText from '@mui/material/ListItemText'
@@ -104,17 +105,18 @@ export function effectiveRoles(
 /**
  * The RACI accountability matrix (ADR-041): rows are the tasks in WBS order,
  * columns are the project's manager plus its members (the `project_member`
- * rows, plus anyone already holding a RACI role). A cell is the set of
- * `project_task_raci` rows of one task x user (one row per role, so a user
- * may be both A and R). With write permission a click opens a menu of the
- * four roles to tick, saved at once through create / delete (optimistic,
+ * rows, plus anyone already holding a RACI role). A cell holds the
+ * `project_task_raci` row of one task x user (one explicit role per person).
+ * With write permission a click opens a menu of the
+ * four roles to choose, saved at once through update or create / delete (optimistic,
  * reverted on a rejection). A task with several accountables is listed in a
  * warning on top, one without an `A` is flagged "No one accountable". Bulk
- * edit ticks several rows and sets one person's roles on all of them.
+ * edit ticks several rows and sets one person's role on all of them.
  * Read-only users see the letters only. On phone the grid becomes a per-task
  * card listing `R / A / C / I` and an `Edit` dialog with one select per person.
  */
 export function Raci({ tasks, config, projectId }: RaciProps) {
+  const pendingCells = useRef(new Set<string>())
   const t = useT()
   const th = useTheme()
   const ops = useRelationOps()
@@ -211,23 +213,32 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
     }).length ?? 0
   const put = (key: string, value: Roles) => setCells((cs) => ({ ...cs, [key]: value }))
 
-  // Make one cell hold exactly `next`: delete the dropped roles' rows, create
-  // the added ones. Optimistic; on a failure the cell keeps what did commit.
+  // Change an existing role atomically when update is available. Otherwise,
+  // remove before creating. On failure the cell keeps only what committed.
   async function setRoles(taskId: string, userId: string, next: RaciRole[]): Promise<boolean> {
-    if (!ops) return false
+    if (!ops || next.length > 1) return false
     const key = `${taskId}:${userId}`
+    if (pendingCells.current.has(key)) return false
+    pendingCells.current.add(key)
     const current = rolesOf(taskId, userId)
     const done: Roles = { ...current }
     setError(null)
     put(key, Object.fromEntries(next.map((role) => [role, current[role] ?? ''])))
     try {
-      for (const role of RACI_ROLES) {
-        const id = current[role]
-        if (id !== undefined && !next.includes(role)) {
-          if (id) await ops.remove(raciEntity, id)
+      const existing = lettersOf(current)
+      if (existing.length === 1 && next.length === 1 && existing[0] !== next[0] && ops.update) {
+        const row = await ops.update(raciEntity, current[existing[0]]!, { role: next[0] })
+        delete done[existing[0]]
+        done[next[0]] = row.id
+      } else {
+        // Remove before creating, regardless of R/A/C/I sort order.
+        for (const role of existing) {
+          if (next.includes(role)) continue
+          if (current[role]) await ops.remove(raciEntity, current[role]!)
           delete done[role]
-        } else if (id === undefined && next.includes(role)) {
-          done[role] = (await ops.create(raciEntity, { task_id: taskId, user_id: userId, role })).id
+        }
+        for (const role of next) {
+          if (done[role] === undefined) done[role] = (await ops.create(raciEntity, { task_id: taskId, user_id: userId, role })).id
         }
       }
       put(key, done)
@@ -236,13 +247,15 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
       put(key, done)
       setError(serializeError(toApiError(e)))
       return false
+    } finally {
+      pendingCells.current.delete(key)
     }
   }
 
   // Ticking a computed cell writes its roles by hand from then on; "Use computed values" goes back.
   function toggle(taskId: string, userId: string, role: RaciRole) {
     const have = shown(taskId, userId).roles
-    void setRoles(taskId, userId, have.includes(role) ? have.filter((r) => r !== role) : [...have, role])
+    void setRoles(taskId, userId, have.length === 1 && have[0] === role ? [] : [role])
   }
 
   async function applyBulk() {
@@ -277,18 +290,18 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
     ) : null
   const rolesSelect = (value: RaciRole[], onChange: (v: RaciRole[]) => void, label: string, testId?: string) => (
     <Select
-      multiple
       displayEmpty
       size="small"
-      value={value}
-      onChange={(e) => onChange(RACI_ROLES.filter((r) => (e.target.value as string[]).includes(r)))}
-      renderValue={(v) => (v.length ? v.join(', ') : '–')}
+      value={value.length === 1 ? value[0] : ''}
+      onChange={(e) => onChange(e.target.value ? [e.target.value as RaciRole] : [])}
+      renderValue={(v) => v || '–'}
       inputProps={{ 'aria-label': label, 'data-testid': testId }}
       sx={{ minWidth: 96, minHeight: phone ? 48 : 40 }}
     >
+      <MenuItem value="">–</MenuItem>
       {RACI_ROLES.map((role) => (
         <MenuItem key={role} value={role}>
-          <Checkbox size="small" checked={value.includes(role)} sx={{ p: 0.5, mr: 1 }} />
+          <Radio size="small" checked={value.length === 1 && value.includes(role)} sx={{ p: 0.5, mr: 1 }} />
           <ListItemText primary={role} />
         </MenuItem>
       ))}
@@ -397,7 +410,7 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
                   </MenuItem>
                 ))}
               </Select>
-              {rolesSelect(bulkRoles, setBulkRoles, t('Roles'), 'raci-bulk-roles')}
+              {rolesSelect(bulkRoles, setBulkRoles, t('Role'), 'raci-bulk-roles')}
               <Button size="small" variant="contained" disabled={!bulkUser || picked.length === 0} onClick={() => void applyBulk()}>
                 {`${t('Apply')} (${picked.length})`}
               </Button>
@@ -508,7 +521,7 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
       <Menu anchorEl={menu?.anchor ?? null} open={Boolean(menu)} onClose={() => setMenu(null)} data-testid="raci-menu">
         {RACI_ROLES.map((role) => (
           <MenuItem key={role} onClick={() => menu && toggle(menu.taskId, menu.userId, role)}>
-            <Checkbox size="small" checked={menuRoles.includes(role)} sx={{ p: 0.5, mr: 1 }} />
+            <Radio size="small" checked={menuRoles.length === 1 && menuRoles.includes(role)} sx={{ p: 0.5, mr: 1 }} />
             <ListItemText primary={role} />
           </MenuItem>
         ))}

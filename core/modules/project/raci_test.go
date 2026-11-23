@@ -8,28 +8,30 @@ import (
 )
 
 // A task may have several accountables (the matrix warns, Go accepts), and
-// a user may hold several roles on one task — one row per role.
-func TestRaci_SeveralRoles(t *testing.T) {
+// a user may hold only one role on each task.
+func TestRaci_OneRolePerPerson(t *testing.T) {
 	f := newFixture(t)
 	m := uuid.New()
 	alice, bob := f.user(""), f.user("")
 	me := f.caller(m)
 	p := f.project(m, "everyone")
 	task := f.task(p, nil, nil)
+	otherTask := f.task(p, nil, nil)
 
 	f.run(t, []writeCase{
 		{"alice accountable", me, http.MethodPost, "project_task_raci", map[string]any{"task_id": task, "user_id": alice, "role": "A"}, 201},
-		{"alice also responsible", me, http.MethodPost, "project_task_raci", map[string]any{"task_id": task, "user_id": alice, "role": "R"}, 201},
+		{"alice cannot also be responsible", me, http.MethodPost, "project_task_raci", map[string]any{"task_id": task, "user_id": alice, "role": "R"}, 409},
 		{"bob accountable too", me, http.MethodPost, "project_task_raci", map[string]any{"task_id": task, "user_id": bob, "role": "A"}, 201},
+		{"alice responsible on another task", me, http.MethodPost, "project_task_raci", map[string]any{"task_id": otherTask, "user_id": alice, "role": "R"}, 201},
 	})
-	if n := f.total(me, "project_task_raci?filter[task_id]="+task.String()); n != 3 {
-		t.Errorf("rows on the task: %d, want 3", n)
+	if n := f.total(me, "project_task_raci?filter[task_id]="+task.String()); n != 2 {
+		t.Errorf("rows on the task: %d, want 2", n)
 	}
 }
 
-// One live row per (task, user, role): the same role twice is a 409, on a
-// create and on an update, and the triple is free again once deleted.
-func TestRaci_OneRowPerRole(t *testing.T) {
+// One live row per (task, user), regardless of role, including updates.
+// A role can be changed in place; deletion frees the pair.
+func TestRaci_UniqueTaskPerson(t *testing.T) {
 	f := newFixture(t)
 	m := uuid.New()
 	alice, bob := f.user(""), f.user("")
@@ -48,9 +50,11 @@ func TestRaci_OneRowPerRole(t *testing.T) {
 	}
 	f.run(t, []writeCase{
 		{"same user, same role", me, http.MethodPost, "project_task_raci", map[string]any{"task_id": task, "user_id": alice, "role": "R"}, 409},
+		{"same user, different role", me, http.MethodPost, "project_task_raci", map[string]any{"task_id": task, "user_id": alice, "role": "C"}, 409},
+		{"change alice role in place", me, http.MethodPut, "project_task_raci/" + aliceRow, map[string]any{"role": "A"}, 200},
 		{"retarget the row to bob", me, http.MethodPut, "project_task_raci/" + aliceRow, map[string]any{"user_id": bob}, 409},
 		{"delete alice's row", me, http.MethodDelete, "project_task_raci/" + aliceRow, nil, 204},
-		{"triple free after the delete", me, http.MethodPost, "project_task_raci", map[string]any{"task_id": task, "user_id": alice, "role": "R"}, 201},
+		{"pair free after the delete", me, http.MethodPost, "project_task_raci", map[string]any{"task_id": task, "user_id": alice, "role": "R"}, 201},
 	})
 }
 
