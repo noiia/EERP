@@ -281,7 +281,7 @@ type ProjectBaselineTask struct {
 }
 
 // ProjectTaskRaci gives a staff user one R/A/C/I role on a task (the RACI
-// matrix); a user holding several roles has one row per role. project_id is
+// matrix); each task/person pair has at most one live row. project_id is
 // the task's, set server-side like project_task_user. Unique live
 // (task_id, user_id, role) is hand-written in migrate.go.
 type ProjectTaskRaci struct {

@@ -195,16 +195,18 @@ its own extras on top of the shared task set:
 - **RACI** (`raci.tsx`): rows are the tasks in `wbs_number` order, columns
   are the project's manager plus its `project_member` rows (plus anyone
   already holding a role). A cell holds the task x user's
-  `project_task_raci` rows, one per role, so one person can be both `A`
-  and `R` (unique live `(task_id, user_id, role)`). With write permission a
-  click opens a menu of the four roles as checkboxes, each tick a create or
-  delete, optimistic and reverted on a rejection. Several accountables are
+  `project_task_raci` row: one explicit role per person and task
+  (unique live `(task_id, user_id)`). Legacy duplicates are soft-deleted
+  during migration, keeping the oldest assignment (then ID as a tie-breaker). With write permission a
+  click opens a single-choice role menu. Changing role updates the existing
+  row atomically; clicking the selected role clears it. Changes are optimistic
+  and reverted on a rejection. Several accountables are
   allowed: rather than blocking the edit (the former 422 `ONE_ACCOUNTABLE`),
   the tasks with more than one `A` are listed in a warning above the grid,
   since the matrix is a planning aid and a temporary double assignment
   during a hand-over is legitimate. A row without an `A` is flagged "No one
   accountable". *Bulk edit* adds a checkbox per row and sets one person's
-  roles on every ticked row. The task form hosts the same rows as a `raci` one2many page.
+  role on every ticked row. The task form hosts the same rows as a `raci` one2many page.
   Read-only users see the letters only. On phone the grid becomes a per-task
   card listing `R / A / C / I` and an `Edit` dialog with one select per
   person.
@@ -214,7 +216,7 @@ its own extras on top of the shared task set:
     grid to one parent and its subtree. A parent's cell is **computed** by
     default: the union of its subtasks' shown roles for that person, drawn
     muted and italic ("Computed from subtasks"; `*` on phone) and never
-    stored. Ticking roles on a computed cell stores that cell's roles as a
+    stored. Choosing a role on a computed cell stores that single role as a
     hand-set override (ordinary `project_task_raci` rows); *Use computed
     values* deletes them. Why computed, not stored: a parent's RACI is a
     summary of who works on its children, so storing it would go stale with

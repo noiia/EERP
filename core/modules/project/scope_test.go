@@ -12,6 +12,7 @@ import (
 	"core/internal/testdb"
 	_ "core/modules/auth"
 	_ "core/modules/chatter"
+	_ "core/modules/company"
 	_ "core/modules/contact"
 	"core/orm"
 	"core/orm/access"
@@ -48,7 +49,7 @@ func newFixture(t *testing.T) *fixture {
 	app := testdb.Open(t)
 	// chatter is not a project module, but an exchange import posts its one activity
 	// log line there, so the table has to exist for the project tests to cover it.
-	testdb.MigrateModules(t, app, "auth", "contact", "project", "chatter")
+	testdb.MigrateModules(t, app, "auth", "company", "contact", "project", "chatter")
 	SetPermissions(auth.NewPermissionRepository(app.DB))
 	s := ormserver.New(app, ormserver.Config{})
 	handlers := ormserver.BuildHandlers(app)
