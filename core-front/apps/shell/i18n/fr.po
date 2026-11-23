@@ -2911,6 +2911,9 @@ msgstr "Actuel"
 msgid "After remediation"
 msgstr "Après remédiation"
 
+msgid "Temperature"
+msgstr "Température"
+
 msgid "Now"
 msgstr "Maintenant"
 

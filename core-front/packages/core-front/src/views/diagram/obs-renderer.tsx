@@ -65,6 +65,8 @@ export function ObsRenderer({ config, projectId }: ObsRendererProps) {
   const [reloads, setReloads] = useState(0)
   const [canEdit, setCanEdit] = useState(false)
   const [draft, setDraft] = useState<Draft | null>(null)
+  // shortcut: folds live in this view only (the chart is shared, no per-user layout); persist if asked.
+  const [folded, setFolded] = useState<string[]>([])
   const update = ops?.update
   // Undo/redo of moves, parent links, insertions, colors, text edits and box create/delete.
   const history = useUndoHistory((e) => setError(serializeError(toApiError(e))))
@@ -162,7 +164,10 @@ export function ObsRenderer({ config, projectId }: ObsRendererProps) {
   }
 
   const lines = treeGridEdges(rows, positions)
-  const nodes: Node[] = rows.map((row) => ({
+  const tree = buildWbs(rows.map((r) => ({ id: r.id, parentId: r.parent_id && ids.has(r.parent_id) ? r.parent_id : null })), new Set(folded))
+  const shown = new Set(tree.visible)
+  const toggle = (id: string) => setFolded((f) => (f.includes(id) ? f.filter((x) => x !== id) : [...f, id]))
+  const nodes: Node[] = rows.filter((row) => shown.has(row.id)).map((row) => ({
     id: row.id,
     type: 'obs',
     targetPosition: lines.inGrid(row.id) ? Position.Left : Position.Top,
@@ -180,19 +185,19 @@ export function ObsRenderer({ config, projectId }: ObsRendererProps) {
         void history.perform(() => removeBox(row.id), () => recreate(kept, row.id, children))
       },
       onEdit: () => setDraft({ kind: row.kind, row }),
+      chevron: tree.nodes[row.id].children.length
+        ? { folded: folded.includes(row.id), hidden: tree.nodes[row.id].hiddenCount, onToggle: () => toggle(row.id) }
+        : undefined,
     } satisfies ObsBoxData,
   }))
   const edges: Edge[] = rows
-    .filter((r) => r.parent_id && ids.has(r.parent_id))
+    .filter((r) => r.parent_id && ids.has(r.parent_id) && shown.has(r.id))
     .map((r) => ({
       id: `${r.parent_id}->${r.id}`, source: r.parent_id!, target: r.id, deletable: editable,
       ...lines.edge(r.id),
     }))
 
-  const autoLayout = () => {
-    const tree = buildWbs(rows.map((r) => ({ id: r.id, parentId: r.parent_id && ids.has(r.parent_id) ? r.parent_id : null })), new Set())
-    return layoutTreeGrid(tree.nodes, tree.roots, tree.visible, OBS_BOX_SIZE)
-  }
+  const autoLayout = () => layoutTreeGrid(tree.nodes, tree.roots, tree.visible, OBS_BOX_SIZE)
 
   const onConnect = ({ source, target }: Connection) => {
     if (source !== target) void change(target, { parent_id: source })

@@ -11,7 +11,8 @@ import TableRow from '@mui/material/TableRow'
 import { useT } from '../../i18n/translate'
 import type { FieldDescriptor } from '../descriptor'
 import { usePhone } from '../use-phone'
-import { band, type RiskRow } from './scoring'
+import { alpha } from '@mui/material/styles'
+import { band, heatRgb, type RiskRow } from './scoring'
 import { bandMain } from './risk-matrix'
 import { registerTable } from './register-table'
 
@@ -20,12 +21,20 @@ export const USER_FIELD = { name: 'responsible_id', type: 'relation', relation: 
 
 const dash = (v: unknown) => (v == null || v === '' ? '—' : String(v))
 
-export function RiskRegister({ rows, categories, responsible, onOpen }: {
+// The temperature view's row background: the criticity's heat color, translucent so text reads in both themes.
+const heatBg = (r: RiskRow) => {
+  const c = heatRgb(r.criticity)
+  return c ? alpha(`rgb(${c.join(',')})`, 0.35) : undefined
+}
+
+export function RiskRegister({ rows, categories, responsible, onOpen, heat = false }: {
   rows: RiskRow[]
   categories: { id: string; name: string }[]
   /** The responsible user's name (the renderer resolves them once, for the exports too). */
   responsible: (r: RiskRow) => string | undefined
   onOpen: (id: string) => void
+  /** Temperature view: each row tinted by its criticity. */
+  heat?: boolean
 }) {
   const t = useT()
   const phone = usePhone()
@@ -39,7 +48,7 @@ export function RiskRegister({ rows, categories, responsible, onOpen }: {
             <ButtonBase
               component="div"
               onClick={() => onOpen(r.id)}
-              sx={{ width: '100%', minHeight: 40, p: 1.5, border: 1, borderColor: 'divider', borderRadius: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, textAlign: 'left' }}
+              sx={{ width: '100%', minHeight: 40, p: 1.5, border: 1, borderColor: 'divider', borderRadius: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, textAlign: 'left', bgcolor: heat ? heatBg(r) : undefined }}
             >
               <Box sx={{ minWidth: 0 }}>
                 <Box sx={{ fontWeight: 600, overflowWrap: 'anywhere' }}>{r.name}</Box>
@@ -60,7 +69,7 @@ export function RiskRegister({ rows, categories, responsible, onOpen }: {
         </TableHead>
         <TableBody>
           {rows.map((r, i) => (
-            <TableRow key={r.id} hover sx={{ cursor: 'pointer' }} onClick={() => onOpen(r.id)}>
+            <TableRow key={r.id} hover data-heat={heat ? (heatRgb(r.criticity)?.join(',') ?? '') : undefined} sx={{ cursor: 'pointer', bgcolor: heat ? heatBg(r) : undefined }} onClick={() => onOpen(r.id)}>
               {table.rows[i].map((v, j) => <TableCell key={j}>{dash(v)}</TableCell>)}
             </TableRow>
           ))}

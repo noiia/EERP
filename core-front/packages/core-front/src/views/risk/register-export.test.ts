@@ -46,6 +46,17 @@ describe('registerXlsx', () => {
     expect(sheet).toContain('Cycle &lt;&amp;&gt;')
     expect(sheet).not.toContain('r="F2"') // empty cell omitted
   })
+  it('fills each row with its temperature color, one style per distinct color', () => {
+    const files = unzipSync(registerXlsx({ ...table, fills: [[255, 0, 0], null] }))
+    const styles = strFromU8(files['xl/styles.xml'])
+    expect(styles).toContain('<fills count="3">')
+    expect(styles).toContain('<fgColor rgb="FFFF0000"/>')
+    expect(styles).toContain('<xf fillId="2" applyFill="1"/>')
+    const sheet = strFromU8(files['xl/worksheets/sheet1.xml'])
+    expect(sheet).toContain('<row r="2" customFormat="1" s="2">')
+    expect(sheet).toContain('<c r="D2" s="2"><v>2</v></c>')
+    expect(sheet).toContain('<row r="3">')
+  })
   it('cleans an invalid sheet name', () => {
     expect(strFromU8(unzipSync(registerXlsx(table, 'a/b:c*'.repeat(9)))['xl/workbook.xml'])).toMatch(/name="a b c [^"]{0,25}"/)
   })
@@ -55,6 +66,12 @@ describe('registerPdf', () => {
   it('pages a long register', () => {
     const long = { ...table, rows: Array.from({ length: 80 }, () => table.rows[0]) }
     expect(registerPdf(long, 'Apollo', new Date('2026-11-20')).getNumberOfPages()).toBeGreaterThan(1)
+  })
+  it('paints the temperature fills', () => {
+    const date = new Date('2026-11-20')
+    const ops = (t: typeof table) => registerPdf(t, 'Apollo', date).output().match(/ rg\b/g)?.length ?? 0
+    // The tinted row adds fill-color operators; an untinted row has none.
+    expect(ops({ ...table, fills: [[10, 20, 30], null] }) - ops(table)).toBeGreaterThanOrEqual(1)
   })
 })
 

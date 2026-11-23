@@ -54,3 +54,22 @@ export function ishikawaBones(rows: RiskRow[], categories: { id: string; name: s
   if (rest.length) bones.push({ id: null, name: 'Uncategorized', risks: rest })
   return bones
 }
+
+export type Rgb = [number, number, number]
+const MAX_CRITICITY = 36 // 3 likelihood x 4 severity x 3 detectability
+
+/** The register's temperature color for a criticity: blue (1) through green and yellow to red (36). */
+export function heatRgb(criticity: number | null): Rgb | null {
+  if (criticity == null) return null
+  const t = Math.min(1, Math.max(0, (criticity - 1) / (MAX_CRITICITY - 1)))
+  // HSL(hue, 80%, 50%) to RGB, hue 220 -> 0.
+  const h = 220 * (1 - t)
+  const f = (n: number) => {
+    const k = (n + h / 30) % 12
+    return Math.round(255 * (0.5 - 0.4 * Math.max(-1, Math.min(k - 3, 9 - k, 1))))
+  }
+  return [f(0), f(8), f(4)]
+}
+
+/** `c` blended with white (`amount` 0 = c, 1 = white): the readable row tint of the exports. */
+export const tint = ([r, g, b]: Rgb, amount = 0.65): Rgb => [r, g, b].map((v) => Math.round(v + (255 - v) * amount)) as Rgb

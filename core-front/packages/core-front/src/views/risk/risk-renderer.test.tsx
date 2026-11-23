@@ -155,6 +155,25 @@ describe('RiskRenderer', () => {
     expect(table.rows[0].slice(0, 3)).toEqual(['Late vendor', 'Internal', 'Delay'])
   })
 
+  it('tints the register by criticity with the Temperature toggle, and exports the colors', async () => {
+    setup(rows())
+    fireEvent.click(await screen.findByRole('tab', { name: 'Register' }))
+    const toggle = screen.getByRole('button', { name: 'Temperature' })
+    expect(document.querySelector('[data-heat]')).toBeNull()
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    const heat = [...document.querySelectorAll('[data-heat]')].map((e) => e.getAttribute('data-heat'))
+    expect(heat[0]).toMatch(/^\d+,\d+,\d+$/)
+    expect(heat[1]).toBe('') // no criticity, no color
+    fireEvent.click(screen.getByRole('button', { name: 'Export' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Export XLSX' }))
+    await waitFor(() => expect(downloadRegister).toHaveBeenCalled())
+    const { fills } = vi.mocked(downloadRegister).mock.calls[0][1]
+    expect(fills).toHaveLength(2)
+    expect(fills![0]).toHaveLength(3)
+    expect(fills![1]).toBeNull()
+  })
+
   it('exports the matrix with the current and after-remediation versions in one image', async () => {
     let captured = ''
     vi.mocked(exportPng).mockImplementationOnce(async (el: HTMLElement) => {

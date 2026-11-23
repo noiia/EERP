@@ -124,6 +124,19 @@ describe('ObsRenderer', () => {
     expect(await screen.findByText('no read')).toBeInTheDocument()
   })
 
+  it('collapses and expands a branch', async () => {
+    setup({ edit: false })
+    await ready()
+    expect(within(screen.getByTestId('node-b2')).queryByRole('button', { name: 'Collapse' })).toBeNull() // leaf
+    fireEvent.click(within(screen.getByTestId('node-b1')).getByRole('button', { name: 'Collapse' }))
+    expect(screen.queryByTestId('node-b2')).toBeNull()
+    expect(screen.queryByTestId('node-b3')).toBeNull()
+    expect(rf.props.edges.some((e) => e.source === 'b1')).toBe(false)
+    expect(within(screen.getByTestId('node-b1')).getByText('+2')).toBeInTheDocument()
+    fireEvent.click(within(screen.getByTestId('node-b1')).getByRole('button', { name: 'Expand' }))
+    expect(screen.getByTestId('node-b2')).toBeInTheDocument()
+  })
+
   it('inserts a lone box dropped on a line, and undoes it', async () => {
     const { ops } = setup()
     await editable()

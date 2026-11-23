@@ -26,7 +26,7 @@ import { RiskMatrix } from './risk-matrix'
 import { RiskRegister, USER_FIELD } from './risk-register'
 import { registerTable } from './register-table'
 import { useRelationLabels } from '../use-relation-labels'
-import { type RiskRow } from './scoring'
+import { heatRgb, tint, type RiskRow } from './scoring'
 
 export interface RiskRendererProps {
   config: RiskConfig
@@ -46,6 +46,8 @@ export function RiskRenderer({ config, projectId }: RiskRendererProps) {
   const phone = usePhone()
   const [tab, setTab] = useState<Tab>('matrix')
   const [residual, setResidual] = useState(false)
+  // Register temperature view: rows tinted by criticity, on screen and in the XLSX/PDF exports.
+  const [heat, setHeat] = useState(false)
   const [rows, setRows] = useState<RiskRow[] | null>(null)
   const [categories, setCategories] = useState<Category[]>([])
   const [project, setProject] = useState('')
@@ -100,7 +102,8 @@ export function RiskRenderer({ config, projectId }: RiskRendererProps) {
   const open = (id: string) => router.push(erpPath(config.formPath.replace(':id', id)))
   const responsible = (r: RiskRow) => userLabel('responsible_id', r.responsible_id)
   const exportRegister = (kind: 'csv' | 'xlsx' | 'pdf') => {
-    const table = registerTable(rows, categories, responsible, t)
+    const base = registerTable(rows, categories, responsible, t)
+    const table = heat ? { ...base, fills: rows.map((r) => { const c = heatRgb(r.criticity); return c && tint(c) }) } : base
     import('./register-export')
       .then((m) => m.downloadRegister(kind, table, `${project} — ${t('Risk register')}`, `register-${projectId}`, t('Risk register')))
       .catch((e: unknown) => setError(serializeError(toApiError(e))))
@@ -138,6 +141,11 @@ export function RiskRenderer({ config, projectId }: RiskRendererProps) {
               <ToggleButton value="after">{phone ? t('After') : t('After remediation')}</ToggleButton>
             </ToggleButtonGroup>
           )}
+          {tab === 'register' && (
+            <ToggleButton size="small" value="heat" selected={heat} onChange={() => setHeat((h) => !h)} aria-label={t('Temperature')}>
+              {t('Temperature')}
+            </ToggleButton>
+          )}
           <ExportMenu
             options={
               tab === 'register'
@@ -158,7 +166,7 @@ export function RiskRenderer({ config, projectId }: RiskRendererProps) {
         {/* The diagrams fill the view (centred, scaled to fit) instead of floating small in an empty zone. */}
         {tab === 'matrix' && <Box ref={area} sx={{ width: '100%', height: { xs: fill ?? '70vh', sm: '70vh' } }}><RiskMatrix rows={rows} residual={residual} onOpen={open} /></Box>}
         {tab === 'ishikawa' && <Box ref={area} sx={{ width: '100%', height: { xs: fill ?? '70vh', sm: '70vh' }, bgcolor: 'background.paper' }}><Ishikawa rows={rows} categories={categories} project={project} onOpen={open} /></Box>}
-        {tab === 'register' && <RiskRegister rows={rows} categories={categories} responsible={responsible} onOpen={open} />}
+        {tab === 'register' && <RiskRegister rows={rows} categories={categories} responsible={responsible} onOpen={open} heat={heat} />}
       </Box>
       {exportingBoth && (
         // Off screen, but laid out at a fixed size; the inner box is the one captured (no offset in the image).

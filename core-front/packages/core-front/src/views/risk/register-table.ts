@@ -1,4 +1,4 @@
-import type { RiskRow } from './scoring'
+import type { Rgb, RiskRow } from './scoring'
 
 // The AMDEC register as one table: what the Register tab shows, what its CSV/XLSX/PDF exports
 // write, and what the Office "Risk register" object draws — one source for all of them.
@@ -6,7 +6,12 @@ import type { RiskRow } from './scoring'
 export const REGISTER_HEADS = ['Risk', 'Category', 'Impact on', 'Likelihood', 'Severity', 'Detectability', 'Criticity', 'Remediation', 'Responsible', 'Deadline', 'Residual criticity']
 
 export type RegisterCell = string | number | null
-export interface RegisterTable { heads: string[]; rows: RegisterCell[][] }
+export interface RegisterTable {
+  heads: string[]
+  rows: RegisterCell[][]
+  /** The temperature view: one row background per row (null = none), written by the XLSX and PDF exports. */
+  fills?: (Rgb | null)[]
+}
 
 export function registerTable(
   rows: RiskRow[],

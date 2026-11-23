@@ -2776,6 +2776,9 @@ msgstr ""
 msgid "After remediation"
 msgstr ""
 
+msgid "Temperature"
+msgstr ""
+
 msgid "Now"
 msgstr ""
 

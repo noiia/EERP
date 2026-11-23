@@ -39,6 +39,8 @@ export interface ObsBoxData extends Record<string, unknown> {
   onColor: (color: string | null) => Promise<void>
   onDelete: () => void
   onEdit: () => void
+  /** Set when the box has children: folds or unfolds its branch (`hidden` boxes under it while folded). */
+  chevron?: { folded: boolean; hidden: number; onToggle: () => void }
 }
 
 /** The lines under the title: the contact's name and email, the user's name, or the text. */
@@ -76,7 +78,7 @@ export const ObsBox = memo(function ObsBox({ data, positionAbsoluteX, positionAb
   const [menu, setMenu] = useState<HTMLElement | null>(null)
   // The color being picked shows at once; one write goes out when the pick is committed.
   const [draft, setDraft] = useState<string | null>(null)
-  const { row, editable } = data
+  const { row, editable, chevron } = data
   const commit = (color: string | null) => {
     setDraft(color)
     void data.onColor(color).finally(() => setDraft(null))
@@ -99,7 +101,7 @@ export const ObsBox = memo(function ObsBox({ data, positionAbsoluteX, positionAb
       variant="outlined"
       data-testid="obs-box"
       onDoubleClick={editable ? data.onEdit : undefined}
-      sx={{ width: OBS_BOX_SIZE.w, height: OBS_BOX_SIZE.h, boxSizing: 'border-box', overflow: 'hidden', position: 'relative', p: 1, pr: editable ? 4 : 1 }}
+      sx={{ width: OBS_BOX_SIZE.w, height: OBS_BOX_SIZE.h, boxSizing: 'border-box', overflow: 'hidden', position: 'relative', p: 1, pr: editable || chevron ? 4 : 1 }}
       style={{ backgroundColor: bg, color: fg }}
     >
       {/* A box in a grid of siblings is entered from the left (the renderer sets targetPosition). */}
@@ -124,6 +126,14 @@ export const ObsBox = memo(function ObsBox({ data, positionAbsoluteX, positionAb
                 </Box>
                 <MenuItem onClick={() => { setMenu(null); commit(null) }}>{t('Clear color')}</MenuItem>
               </Menu>
+            </Box>
+          ) : null}
+          {chevron ? (
+            <Box className="nodrag" onDoubleClick={stop} sx={{ position: 'absolute', bottom: 2, right: 2, display: 'flex', alignItems: 'center' }}>
+              {chevron.folded ? <Typography variant="caption" sx={{ fontWeight: 600 }}>{`+${chevron.hidden}`}</Typography> : null}
+              <IconButton size="small" aria-label={chevron.folded ? t('Expand') : t('Collapse')} onClick={chevron.onToggle} sx={{ color: 'inherit' }}>
+                <FontAwesomeIcon icon={byPrefixAndName.fas[chevron.folded ? 'chevron-right' : 'chevron-down']} />
+              </IconButton>
             </Box>
           ) : null}
         </>

@@ -23,13 +23,16 @@ const xml = (s: string) =>
   s.replace(forbidden, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 const column = (i: number): string => (i < 26 ? '' : column(Math.floor(i / 26) - 1)) + String.fromCharCode(65 + (i % 26))
 
-/** A minimal XLSX workbook (one sheet, inline strings, numbers as numbers, bold header row). */
+const hex = (c: [number, number, number]) => c.map((v) => v.toString(16).padStart(2, '0')).join('').toUpperCase()
+
+/** A minimal XLSX workbook (one sheet, inline strings, numbers as numbers, bold header row,
+ * each row filled with its `fills` color when set). */
 export function registerXlsx(table: RegisterTable, sheet = 'Risk register'): Uint8Array {
   const NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
   const REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
   const PKG = 'http://schemas.openxmlformats.org/package/2006/relationships'
   const row = (cells: RegisterCell[], r: number, style: string) =>
-    `<row r="${r}">${cells
+    `<row r="${r}"${style && ` customFormat="1"${style}`}>${cells
       .map((v, i) => {
         const ref = `${column(i)}${r}`
         if (v == null) return ''
@@ -38,6 +41,14 @@ export function registerXlsx(table: RegisterTable, sheet = 'Risk register'): Uin
       })
       .join('')}</row>`
   const cols = table.heads.map((_, i) => `<col min="${i + 1}" max="${i + 1}" width="${i === 0 || i === 7 ? 40 : 16}" customWidth="1"/>`).join('')
+  // One fill + cell style per distinct row color: style 2 + i uses fill 2 + i.
+  const colors = [...new Set((table.fills ?? []).filter((c) => c).map((c) => hex(c!)))]
+  const fills = colors.map((c) => `<fill><patternFill patternType="solid"><fgColor rgb="FF${c}"/><bgColor indexed="64"/></patternFill></fill>`).join('')
+  const xfs = colors.map((_, i) => `<xf fillId="${i + 2}" applyFill="1"/>`).join('')
+  const rowStyle = (i: number) => {
+    const c = table.fills?.[i]
+    return c ? ` s="${colors.indexOf(hex(c)) + 2}"` : ''
+  }
   const name = xml(sheet.replace(/[[\]:*?/\\]/g, ' ').slice(0, 31))
   return zipSync({
     '[Content_Types].xml': strToU8(
@@ -53,10 +64,10 @@ export function registerXlsx(table: RegisterTable, sheet = 'Risk register'): Uin
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="${PKG}"><Relationship Id="rId1" Type="${REL}/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="${REL}/styles" Target="styles.xml"/></Relationships>`,
     ),
     'xl/styles.xml': strToU8(
-      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="${NS}"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="2"><xf/><xf fontId="1" applyFont="1"/></cellXfs></styleSheet>`,
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="${NS}"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="${2 + colors.length}"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>${fills}</fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="${2 + colors.length}"><xf/><xf fontId="1" applyFont="1"/>${xfs}</cellXfs></styleSheet>`,
     ),
     'xl/worksheets/sheet1.xml': strToU8(
-      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="${NS}"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>${cols}</cols><sheetData>${row(table.heads, 1, ' s="1"')}${table.rows.map((r, i) => row(r, i + 2, '')).join('')}</sheetData></worksheet>`,
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="${NS}"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>${cols}</cols><sheetData>${row(table.heads, 1, ' s="1"')}${table.rows.map((r, i) => row(r, i + 2, rowStyle(i))).join('')}</sheetData></worksheet>`,
     ),
   })
 }
@@ -78,7 +89,7 @@ export function registerPdf(table: RegisterTable, title: string, date: Date): js
   doc.text(title, m, m + 4)
   doc.text(date.toLocaleDateString(), pageW - m, m + 4, { align: 'right' })
   let y = m + 10
-  const draw = (cells: RegisterCell[], bold: boolean) => {
+  const draw = (cells: RegisterCell[], bold: boolean, fill?: [number, number, number] | null) => {
     doc.setFont('helvetica', bold ? 'bold' : 'normal')
     doc.setFontSize(8)
     const wrapped = cells.map((v, i) => doc.splitTextToSize(v == null ? '—' : String(v), widths[i] - pad * 2) as string[])
@@ -90,8 +101,9 @@ export function registerPdf(table: RegisterTable, title: string, date: Date): js
     }
     let x = m
     wrapped.forEach((l, i) => {
-      if (bold) {
-        doc.setFillColor(241, 245, 249)
+      if (bold || fill) {
+        if (fill) doc.setFillColor(...fill)
+        else doc.setFillColor(241, 245, 249)
         doc.rect(x, y, widths[i], h, 'F')
       }
       doc.setDrawColor(203, 213, 225)
@@ -102,7 +114,7 @@ export function registerPdf(table: RegisterTable, title: string, date: Date): js
     y += h
   }
   draw(table.heads, true)
-  for (const r of table.rows) draw(r, false)
+  table.rows.forEach((r, i) => draw(r, false, table.fills?.[i]))
   return doc
 }
 

@@ -212,6 +212,10 @@ company field, a `canEdit` guard).
   the pin is lost.
 - *Controlled canvas.* `DiagramCanvas` takes `positions` + `onMove` (a rejected write snaps the box
   back) and never reads or saves a per-user layout in this mode; boxes never placed are laid out like WBS.
+- *Folding.* A box with children carries a chevron that hides its branch (a `+N` count shows how
+  many boxes are hidden); folded boxes and their lines leave the canvas, the auto-layout and the
+  export. Folds are a reading aid, not part of the shared chart: they live in the view and reset on
+  reload, since saving them per user would need the per-user layout this mode deliberately has none of.
 - *Balanced families.* An org chart grows sideways (many people per manager), which leaves the
   screen's height empty and shrinks every box once fitted. The OBS auto-layout (*Re-arrange*, and
   never-placed boxes) is `layoutTreeGrid`. Levels 1 and 2 each share one horizontal line (amended

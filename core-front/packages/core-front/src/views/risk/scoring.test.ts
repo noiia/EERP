@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { band, ishikawaBones, matrixCells, type RiskRow } from './scoring'
+import { band, heatRgb, ishikawaBones, matrixCells, tint, type RiskRow } from './scoring'
 
 const row = (id: string, o: Partial<RiskRow> = {}): RiskRow => ({
   id, name: id, category_id: null, impact_on: 'delay', likelihood: 2, severity_effective: 3, criticity: 6,
@@ -29,5 +29,18 @@ describe('ishikawaBones', () => {
     const bones = ishikawaBones(rows, [{ id: 'c2', name: 'Zeta' }, { id: 'c1', name: 'Alpha' }])
     expect(bones.map((b) => b.name)).toEqual(['Alpha', 'Zeta', 'Uncategorized'])
     expect(bones[1].risks.map((r) => r.id)).toEqual(['hi', 'lo', 'n'])
+  })
+})
+
+describe('heatRgb', () => {
+  it('runs from blue to red and leaves no criticity uncolored', () => {
+    expect(heatRgb(null)).toBeNull()
+    const [r1, , b1] = heatRgb(1)!
+    expect(b1).toBeGreaterThan(r1)
+    const [r, g, b] = heatRgb(36)!
+    expect(r).toBeGreaterThan(200)
+    expect(Math.max(g, b)).toBeLessThan(40)
+    expect(heatRgb(99)).toEqual(heatRgb(36))
+    expect(tint([0, 0, 0], 1)).toEqual([255, 255, 255])
   })
 })
