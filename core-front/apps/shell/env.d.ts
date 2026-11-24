@@ -1,3 +1,5 @@
+/// <reference types="next/image-types/global" /> // next-env.d.ts is gitignored, so CI needs this for *.svg imports
+
 // Environment for the BFF. API_BASE/API_VERSION are consumed server-side (the Next
 // service talks to Go) but API_VERSION is ALSO inlined into the client bundle by
 // next.config.mjs's `env` — it's what builds the versioned browser-facing auth BFF URL
