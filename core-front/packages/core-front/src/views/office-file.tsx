@@ -4,6 +4,7 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import Dialog from '@mui/material/Dialog'
+import { useDocumentTitle } from './document-title'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
@@ -101,6 +102,7 @@ export function OfficeDialog({
   source: OfficeSource
   onClose: () => void
 }) {
+  useDocumentTitle(name)
   const t = useT()
   const translations = useRef(t)
   translations.current = t

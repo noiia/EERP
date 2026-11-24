@@ -30,6 +30,7 @@ import {
   PresenceDot,
   setPresenceStatus,
   useBreadcrumbStore,
+  useDocumentTitle,
   usePresenceStore,
   useRecordLabelStore,
   useSessionStore,
@@ -158,6 +159,8 @@ function PathBreadcrumbs({ pathname }: { pathname: string }) {
     () => nextBreadcrumbTrail(storedTrail, currentCrumb),
     [storedTrail, currentCrumb],
   )
+  // The tab reads "EERP - <list name | record name>"; plain "EERP" on the menu root.
+  useDocumentTitle(currentCrumb ? (recordLabel ?? t(currentCrumb.label)) : null)
   useEffect(() => {
     // Also re-fires once recordLabel resolves (asynchronously, shortly after
     // a form route mounts) so the already-visited entry gets its baked-in
