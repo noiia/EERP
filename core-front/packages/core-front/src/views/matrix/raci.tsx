@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import Box from '@mui/material/Box'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
@@ -12,6 +13,7 @@ import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import Select from '@mui/material/Select'
 import Stack from '@mui/material/Stack'
+import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useTheme } from '@mui/material/styles'
 import { usePermission } from '../../auth/Can'
@@ -22,6 +24,7 @@ import { useT } from '../../i18n/translate'
 import { ErrorAlert } from '../error-alert'
 import { byPrefixAndName, FontAwesomeIcon } from '../icons'
 import { DiagramLoading } from '../diagram/diagram-canvas'
+import { ExportMenu } from '../diagram/toolbar'
 import { usePhone } from '../use-phone'
 import { useRelationOps, type RelationRecord } from '../relation-ops'
 import { dsmOrder } from './dsm'
@@ -134,6 +137,10 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
   const [bulkRoles, setBulkRoles] = useState<RaciRole[]>([])
   const [root, setRoot] = useState('')
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [projectName, setProjectName] = useState('')
+  // Width of the task column while exporting: full titles wrap inside it instead of widening it.
+  const [exportWidth, setExportWidth] = useState<number | null>(null)
+  const table = useRef<HTMLTableElement>(null)
 
   const listPage = ops?.listPage
   const get = ops?.get
@@ -168,13 +175,14 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
         const key = `${r.task_id}:${r.user_id}`
         map[key] = { ...map[key], [String(r.role)]: r.id }
       }
-      return { cols, map }
+      return { cols, map, name: String(proj?.name ?? '') }
     }
     load().then(
       (r) => {
         if (cancelled) return
         setPeople(r.cols)
         setCells(r.map)
+        setProjectName(r.name)
       },
       (e: unknown) => {
         if (cancelled) return
@@ -308,6 +316,21 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
     </Select>
   )
 
+  // The export shows every task title in full, wrapped at the on-screen column width.
+  const doExport = (kind: 'png' | 'pdf') => {
+    const el = table.current
+    const width = el?.querySelector('tbody th')?.getBoundingClientRect().width
+    if (!el || !width) return
+    flushSync(() => setExportWidth(width))
+    const name = `raci-${projectId}`
+    const bg = th.palette.background.paper
+    const meta = { title: [projectName, t('RACI')].filter(Boolean).join(' — '), date: new Date(), legend: [], background: bg }
+    import('../diagram/export')
+      .then((m) => (kind === 'png' ? m.exportElementPng(el, name, bg) : m.exportElementPdf(el, meta, name)))
+      .catch((e: unknown) => setError(serializeError(toApiError(e))))
+      .finally(() => setExportWidth(null))
+  }
+
   if (!people) return <DiagramLoading />
   const editingTask = editing ? rows.find((task) => task.id === editing) : null
   // A computed parent may sum several children's accountables: only hand-set ones warn.
@@ -418,6 +441,17 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
           ) : null}
         </Stack>
       ) : null}
+      {!phone && rows.length ? (
+        <Stack direction="row" sx={{ mb: 1, justifyContent: 'flex-end' }}>
+          <ExportMenu
+            disabled={exportWidth !== null}
+            options={[
+              { key: 'png', label: t('Export PNG'), icon: 'file-image', onClick: () => doExport('png') },
+              { key: 'pdf', label: t('Export PDF'), icon: 'file-pdf', onClick: () => doExport('pdf') },
+            ]}
+          />
+        </Stack>
+      ) : null}
       {phone ? (
         <Box data-testid="raci-cards">
           {rows.map((task) => (
@@ -454,7 +488,7 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
         </Box>
       ) : (
         <Box data-testid="raci-grid" sx={{ overflow: 'auto', maxHeight: 'calc(100dvh - 240px)', border: 1, borderColor: 'divider', borderRadius: 1 }}>
-          <table style={{ borderCollapse: 'collapse', width: 'max-content' }}>
+          <table ref={table} style={{ borderCollapse: 'collapse', width: 'max-content' }}>
             <thead data-testid="raci-header">
               <tr>
                 <th style={{ ...headerStyle, textAlign: 'left' }} aria-label="corner" />
@@ -468,12 +502,22 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
             <tbody>
               {rows.map((task) => (
                 <tr key={task.id}>
-                  <th data-testid={`raci-row-${task.id}`} style={{ ...headerStyle, textAlign: 'left', minWidth: 160, maxWidth: 280, fontWeight: 'normal' }}>
+                  <th data-testid={`raci-row-${task.id}`} style={{
+                      ...headerStyle,
+                      textAlign: 'left',
+                      minWidth: 160,
+                      maxWidth: 280,
+                      fontWeight: 'normal',
+                      ...(exportWidth ? { boxSizing: 'border-box', width: exportWidth, minWidth: exportWidth, maxWidth: exportWidth } : {}),
+                    }}
+                  >
                     <Stack direction="row" sx={{ alignItems: 'flex-start', ...indent(task) }}>
                       {chevron(task)}
                       {rowCheckbox(task.id, task.name)}
-                      <Box title={task.name}>
-                        {clip(task.name)}
+                      <Box>
+                        <Tooltip title={task.name} placement="right">
+                          <span data-testid={`raci-name-${task.id}`}>{exportWidth ? task.name : clip(task.name)}</span>
+                        </Tooltip>
                         {!accountables(task.id) ? (
                           <Typography variant="caption" color="warning.main" sx={{ display: 'block' }}>
                             {t('No one accountable')}
