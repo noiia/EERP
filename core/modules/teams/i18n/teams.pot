@@ -387,3 +387,30 @@ msgstr ""
 
 msgid "Ctrl+click to open"
 msgstr ""
+
+msgid "Search all files"
+msgstr ""
+
+msgid "Sort by"
+msgstr ""
+
+msgid "No files found."
+msgstr ""
+
+msgid "Name (A to Z)"
+msgstr ""
+
+msgid "Name (Z to A)"
+msgstr ""
+
+msgid "Last modified (newest)"
+msgstr ""
+
+msgid "Last modified (oldest)"
+msgstr ""
+
+msgid "Size (largest)"
+msgstr ""
+
+msgid "Size (smallest)"
+msgstr ""

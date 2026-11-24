@@ -19,6 +19,7 @@ import TableCell from '@mui/material/TableCell'
 import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import TextField from '@mui/material/TextField'
+import InputAdornment from '@mui/material/InputAdornment'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import {
@@ -27,6 +28,7 @@ import {
   faEllipsisVertical,
   faFileCirclePlus,
   faFolderPlus,
+  faMagnifyingGlass,
   faPen,
   faShareNodes,
   faTrash,
@@ -50,13 +52,18 @@ import {
   deleteFile,
   deleteFolder,
   listFiles,
+  searchFiles,
   createDocument,
   updateFile,
   updateFolder,
   uploadFile,
+  type FileSearch,
+  type Folder,
+  type TeamFile,
   type FolderListing,
   type Role,
 } from './client'
+import { FileIcon } from './FileIcon'
 import { FolderPicker } from './FolderPicker'
 import { ShareDialog } from './ShareDialog'
 
@@ -68,6 +75,33 @@ export const formatSize = (n: number) =>
       : `${(n / 1048576).toFixed(1)} MB`
 
 const when = (iso?: string) => (iso ? new Date(iso).toLocaleString() : '')
+
+type Hit = { path?: { id: string; name: string }[] }
+type Sortable = { name: string; size?: number; created_at?: string; updated_at?: string }
+const SORTS = {
+  name: 'Name (A to Z)',
+  '-name': 'Name (Z to A)',
+  '-updated': 'Last modified (newest)',
+  updated: 'Last modified (oldest)',
+  '-size': 'Size (largest)',
+  size: 'Size (smallest)',
+} as const
+export type SortKey = keyof typeof SORTS
+const byName = (a: Sortable, b: Sortable) =>
+  a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+const stamp = (x: Sortable) => Date.parse(x.updated_at ?? x.created_at ?? '') || 0
+/** A copy of items in key's order, ties broken by name. Folders have no size: they keep name order. */
+export function sortItems<T extends Sortable>(items: T[], key: SortKey): T[] {
+  const field = key.replace('-', '')
+  const dir = key.startsWith('-') ? -1 : 1
+  const cmp = (a: T, b: T) =>
+    field === 'size'
+      ? (a.size ?? 0) - (b.size ?? 0)
+      : field === 'updated'
+        ? stamp(a) - stamp(b)
+        : byName(a, b)
+  return [...items].sort((a, b) => dir * cmp(a, b) || byName(a, b))
+}
 
 // A row dragged inside the pane (to move it) carries this type; files from the desktop carry 'Files'.
 const ITEM = 'application/x-eerp-team-item'
@@ -178,6 +212,27 @@ export function FilesPane({
   const narrow = compact || phone
   // The folder a drag hovers ('' = the root, undefined = none): highlighted as the drop target.
   const [over, setOver] = useState<string | undefined>()
+  const [sort, setSort] = useState<SortKey>('name')
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<FileSearch | null>(null)
+  // Bumped after each change, so open search results refresh too.
+  const [changes, setChanges] = useState(0)
+  useEffect(() => setQuery(''), [folderId])
+  const searching = query.trim() !== ''
+  useEffect(() => {
+    const text = query.trim()
+    if (!text) return setResults(null)
+    let live = true
+    const timer = setTimeout(() => {
+      searchFiles(teamId, text)
+        .then((r) => live && setResults(r))
+        .catch((e: unknown) => live && setError(e instanceof Error ? e.message : String(e)))
+    }, 300)
+    return () => {
+      live = false
+      clearTimeout(timer)
+    }
+  }, [teamId, query, changes])
 
   const reload = useCallback(() => {
     listFiles(teamId, folderId)
@@ -205,6 +260,7 @@ export function FilesPane({
     p.then(() => {
       setDlg(null)
       reload()
+      setChanges((n) => n + 1)
       if (folders) onFoldersChanged?.()
     })
       .catch((e: unknown) =>
@@ -393,6 +449,34 @@ export function FilesPane({
       ]
     : []
   const cell = (node: ReactNode) => (narrow ? null : <TableCell>{node}</TableCell>)
+  // Rooted (a conversation's panel): only hits below the root.
+  const inRoot = (path: { id: string }[], id?: string) =>
+    !rootFolderId || id === rootFolderId || path.some((p) => p.id === rootFolderId)
+  const shownFolders: (Folder & Hit)[] = sortItems(
+    searching
+      ? (results?.folders.filter((f) => inRoot(f.path, f.id)) ?? [])
+      : (listing?.folders ?? []),
+    sort,
+  )
+  const shownFiles: (TeamFile & Hit)[] = sortItems(
+    searching ? (results?.files.filter((f) => inRoot(f.path)) ?? []) : (listing?.files ?? []),
+    sort,
+  )
+  const where = (path?: { name: string }[]) =>
+    searching && path ? (
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+        {path.length ? path.map((p) => p.name).join(' / ') : t('All files')}
+      </Typography>
+    ) : null
+  const named = (icon: ReactNode, link: ReactNode, path?: { name: string }[]) => (
+    <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+      {icon}
+      <Box sx={{ minWidth: 0 }}>
+        {link}
+        {where(path)}
+      </Box>
+    </Stack>
+  )
 
   return (
     <Box
@@ -446,10 +530,49 @@ export function FilesPane({
           </Stack>
         )}
       </Stack>
+      <Stack direction="row" spacing={1} sx={{ mb: 1, flexWrap: 'wrap', gap: 1 }}>
+        <TextField
+          size="small"
+          type="search"
+          placeholder={t('Search all files')}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          sx={{ flex: 1, minWidth: 160 }}
+          slotProps={{
+            htmlInput: { 'aria-label': t('Search all files') },
+            input: {
+              startAdornment: (
+                <InputAdornment position="start">
+                  <FontAwesomeIcon icon={faMagnifyingGlass} />
+                </InputAdornment>
+              ),
+            },
+          }}
+        />
+        <TextField
+          select
+          size="small"
+          label={t('Sort by')}
+          value={sort}
+          onChange={(e) => setSort(e.target.value as SortKey)}
+          sx={{ minWidth: 180 }}
+        >
+          {Object.entries(SORTS).map(([k, label]) => (
+            <MenuItem key={k} value={k}>
+              {t(label)}
+            </MenuItem>
+          ))}
+        </TextField>
+      </Stack>
       {error && (
         <Alert severity="error" sx={{ mb: 1 }}>
           {error}
         </Alert>
+      )}
+      {searching && results && !shownFolders.length && !shownFiles.length && (
+        <Typography color="text.secondary" sx={{ p: 1 }}>
+          <T text="No files found." />
+        </Typography>
       )}
       <Table size="small">
         <TableHead>
@@ -465,14 +588,16 @@ export function FilesPane({
           </TableRow>
         </TableHead>
         <TableBody>
-          {listing?.folders.map((f) => (
+          {shownFolders.map((f) => (
             <TableRow
               key={f.id}
               {...dragItem('folder', f.id, f.created_by)}
               {...dropOn(f.id)}
               sx={highlight(f.id)}
             >
-              <TableCell>{folderLink(f.id, f.name)}</TableCell>
+              <TableCell>
+                {named(<FileIcon name={f.name} folder />, folderLink(f.id, f.name), f.path)}
+              </TableCell>
               {cell(null)}
               {cell(null)}
               {cell(when(f.created_at))}
@@ -486,15 +611,19 @@ export function FilesPane({
               </TableCell>
             </TableRow>
           ))}
-          {listing?.files.map((f) => (
+          {shownFiles.map((f) => (
             <TableRow key={f.id} {...dragItem('file', f.id, f.uploaded_by)}>
               <TableCell>
-                <OfficeFileLink
-                  name={f.name}
-                  url={`/api/teams/files/${f.id}/download`}
-                  source={{ kind: 'team-file', id: f.id }}
-                  onClosed={reload}
-                />
+                {named(
+                  <FileIcon name={f.name} />,
+                  <OfficeFileLink
+                    name={f.name}
+                    url={`/api/teams/files/${f.id}/download`}
+                    source={{ kind: 'team-file', id: f.id }}
+                    onClosed={reload}
+                  />,
+                  f.path,
+                )}
               </TableCell>
               {cell(formatSize(f.size))}
               {cell(f.uploaded_by_name)}

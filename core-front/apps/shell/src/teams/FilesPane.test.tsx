@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), prefetch: vi.fn() }) }))
 const c = {
   listFiles: vi.fn(),
+  searchFiles: vi.fn(),
   deleteFile: vi.fn(),
   updateFile: vi.fn(),
   createDocument: vi.fn(),
@@ -14,6 +15,7 @@ const c = {
 }
 vi.mock('./client', () => ({
   listFiles: (...a: unknown[]) => c.listFiles(...a),
+  searchFiles: (...a: unknown[]) => c.searchFiles(...a),
   deleteFile: (...a: unknown[]) => c.deleteFile(...a),
   updateFile: (...a: unknown[]) => c.updateFile(...a),
   createDocument: (...a: unknown[]) => c.createDocument(...a),
@@ -27,7 +29,8 @@ vi.mock('./client', () => ({
 }))
 
 import { preloadLazyComponents, useSessionStore } from '@eerp/core-front'
-import { FilesPane } from './FilesPane'
+import { FilesPane, sortItems } from './FilesPane'
+import { fileIconSrc } from './FileIcon'
 
 beforeAll(() => preloadLazyComponents())
 afterEach(() => vi.unstubAllGlobals())
@@ -382,5 +385,94 @@ describe('FilesPane', () => {
       dataTransfer: dt({}, [new File(['x'], 'x')]),
     })
     expect(c.uploadFile).not.toHaveBeenCalled()
+  })
+
+  it('sorts the listing with the sort select', async () => {
+    render(<FilesPane teamId="t1" folderId="f1" role="owner" />)
+    await screen.findByRole('link', { name: 'mine.pdf' })
+    const names = () =>
+      screen
+        .getAllByRole('link')
+        .map((l) => l.textContent)
+        .filter((n) => n?.endsWith('.pdf'))
+    expect(names()).toEqual(['mine.pdf', 'theirs.pdf'])
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Sort by' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'Name (Z to A)' }))
+    expect(names()).toEqual(['theirs.pdf', 'mine.pdf'])
+  })
+
+  it('searches the whole tree and shows each hit with its folder path', async () => {
+    c.searchFiles.mockResolvedValue({
+      folders: [],
+      files: [
+        {
+          ...listing.files[0],
+          name: 'deep.docx',
+          path: [
+            { id: 'x', name: 'Reports' },
+            { id: 'y', name: '2026' },
+          ],
+        },
+      ],
+    })
+    render(<FilesPane teamId="t1" folderId="f1" role="owner" />)
+    await screen.findByRole('link', { name: 'mine.pdf' })
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search all files' }), {
+      target: { value: 'deep' },
+    })
+    expect(await screen.findByRole('link', { name: 'deep.docx' })).toBeInTheDocument()
+    expect(c.searchFiles).toHaveBeenCalledWith('t1', 'deep')
+    expect(screen.getByText('Reports / 2026')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'mine.pdf' })).toBeNull()
+    c.searchFiles.mockResolvedValue({ folders: [], files: [] })
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search all files' }), {
+      target: { value: 'nothing' },
+    })
+    expect(await screen.findByText('No files found.')).toBeInTheDocument()
+  })
+
+  it('keeps a conversation panel search below its root folder', async () => {
+    c.searchFiles.mockResolvedValue({
+      folders: [],
+      files: [
+        { ...listing.files[0], id: 'in', name: 'in.txt', path: [{ id: 'f1', name: 'Docs' }] },
+        { ...listing.files[0], id: 'out', name: 'out.txt', path: [] },
+      ],
+    })
+    render(<FilesPane teamId="t1" rootFolderId="f1" role="owner" compact />)
+    await screen.findByRole('link', { name: 'mine.pdf' })
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search all files' }), {
+      target: { value: 'txt' },
+    })
+    expect(await screen.findByRole('link', { name: 'in.txt' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'out.txt' })).toBeNull()
+  })
+})
+
+describe('sortItems', () => {
+  const items = [
+    { name: 'b10', size: 1, updated_at: '2026-01-03T00:00:00Z' },
+    { name: 'B2', size: 3, created_at: '2026-01-01T00:00:00Z' },
+    { name: 'a', size: 2 },
+  ]
+  it.each([
+    ['name', ['a', 'B2', 'b10']],
+    ['-name', ['b10', 'B2', 'a']],
+    ['-size', ['B2', 'a', 'b10']],
+    ['size', ['b10', 'a', 'B2']],
+    ['-updated', ['b10', 'B2', 'a']],
+    ['updated', ['a', 'B2', 'b10']],
+  ] as const)('%s', (key, want) => {
+    expect(sortItems(items, key).map((i) => i.name)).toEqual(want)
+  })
+})
+
+describe('fileIconSrc', () => {
+  it('maps extensions to the Euro-Office icons, unknown ones to neutral', () => {
+    const docx = fileIconSrc('a.docx')
+    expect(fileIconSrc('Plan.DOCX')).toBe(docx)
+    expect(fileIconSrc('photo.jpeg')).toBe(fileIconSrc('photo.jpg'))
+    expect(fileIconSrc('archive.zip')).not.toBe(docx)
+    expect(fileIconSrc('.hidden')).toBe(fileIconSrc('archive.zip'))
   })
 })

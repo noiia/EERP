@@ -107,6 +107,11 @@ export interface FolderListing {
   folders: Folder[]
   files: TeamFile[]
 }
+/** A search hit: path is its folders, root first (empty at the team's root). */
+export interface FileSearch {
+  folders: (Folder & { path: { id: string; name: string }[] })[]
+  files: (TeamFile & { path: { id: string; name: string }[] })[]
+}
 export interface Share {
   user_id: string
   display_name: string
@@ -126,7 +131,11 @@ export interface SharedFile {
 /** An HTTP failure. `code` is Go's own error code (NOT_FOUND, LAST_OWNER…): a 404 without one
  * is an unmounted route (e.g. file storage not configured), not a missing record. */
 export class TeamsApiError extends Error {
-  constructor(public status: number, message: string, public code?: string) {
+  constructor(
+    public status: number,
+    message: string,
+    public code?: string,
+  ) {
     super(message)
   }
 }
@@ -139,7 +148,9 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
     ...(body === undefined || isForm ? {} : { headers: { 'Content-Type': 'application/json' } }),
   })
   if (!res.ok) {
-    const err = (await res.json().catch(() => null)) as { error?: { message?: string; code?: string } } | null
+    const err = (await res.json().catch(() => null)) as {
+      error?: { message?: string; code?: string }
+    } | null
     throw new TeamsApiError(res.status, err?.error?.message ?? res.statusText, err?.error?.code)
   }
   const text = res.status === 204 ? '' : await res.text()
@@ -155,40 +166,62 @@ const q = (params: Record<string, string | number | undefined>) => {
 
 // Teams
 export const listTeams = () => list<Team>('')
-export const createTeam = (name: string, description = '') => call<Team>('POST', '', { name, description })
+export const createTeam = (name: string, description = '') =>
+  call<Team>('POST', '', { name, description })
 export const getTeam = (id: string) => call<Team>('GET', `/${id}`)
-export const updateTeam = (id: string, name: string, description = '') => call<Team>('PUT', `/${id}`, { name, description })
+export const updateTeam = (id: string, name: string, description = '') =>
+  call<Team>('PUT', `/${id}`, { name, description })
 export const deleteTeam = (id: string) => call<void>('DELETE', `/${id}`)
 
 // Members
 export const listMembers = (team: string) => list<Member>(`/${team}/members`)
-export const addMember = (team: string, userId: string, role: Role) => call<Member>('POST', `/${team}/members`, { user_id: userId, role })
-export const setMemberRole = (team: string, userId: string, role: Role) => call<void>('PUT', `/${team}/members/${userId}`, { user_id: userId, role })
-export const removeMember = (team: string, userId: string) => call<void>('DELETE', `/${team}/members/${userId}`)
+export const addMember = (team: string, userId: string, role: Role) =>
+  call<Member>('POST', `/${team}/members`, { user_id: userId, role })
+export const setMemberRole = (team: string, userId: string, role: Role) =>
+  call<void>('PUT', `/${team}/members/${userId}`, { user_id: userId, role })
+export const removeMember = (team: string, userId: string) =>
+  call<void>('DELETE', `/${team}/members/${userId}`)
 export const directory = () => list<DirectoryUser>('/directory')
 
 // Channels and direct chat
 export const listChannels = (team: string) => list<Channel>(`/${team}/channels`)
-export const createChannel = (team: string, name: string) => call<Channel>('POST', `/${team}/channels`, { name })
-export const renameChannel = (team: string, channel: string, name: string) => call<Channel>('PUT', `/${team}/channels/${channel}`, { name })
-export const deleteChannel = (team: string, channel: string) => call<void>('DELETE', `/${team}/channels/${channel}`)
+export const createChannel = (team: string, name: string) =>
+  call<Channel>('POST', `/${team}/channels`, { name })
+export const renameChannel = (team: string, channel: string, name: string) =>
+  call<Channel>('PUT', `/${team}/channels/${channel}`, { name })
+export const deleteChannel = (team: string, channel: string) =>
+  call<void>('DELETE', `/${team}/channels/${channel}`)
 /** folderId '' unlinks. */
 export const linkFolder = (team: string, channel: string, folderId: string) =>
   call<Channel>('PUT', `/${team}/channels/${channel}`, { folder_id: folderId })
 export const listDirect = () => list<DirectChat>('/direct')
-export const orderChannels = (team: string, ids: string[]) => call<void>('PUT', `/${team}/channels/order`, { ids })
+export const orderChannels = (team: string, ids: string[]) =>
+  call<void>('PUT', `/${team}/channels/order`, { ids })
 export const orderDirect = (ids: string[]) => call<void>('PUT', '/direct/order', { ids })
-export const openDirect = (userId: string) => call<DirectChat>('POST', '/direct', { user_id: userId })
+export const openDirect = (userId: string) =>
+  call<DirectChat>('POST', '/direct', { user_id: userId })
 /** Hides the conversation and clears its history for the caller only; a new message brings it back. */
 export const deleteDirect = (channel: string) => call<void>('DELETE', `/direct/${channel}`)
 /** The caller's own notification mute, team channel or direct conversation. */
-export const muteChannel = (channel: string, muted: boolean) => call<{ muted: boolean }>('PUT', `/channels/${channel}/mute`, { muted })
+export const muteChannel = (channel: string, muted: boolean) =>
+  call<{ muted: boolean }>('PUT', `/channels/${channel}/mute`, { muted })
 
 // Messages (newest first; `before` is an RFC3339 timestamp)
 export const listMessages = (channel: string, before?: string, limit?: number) =>
   list<Message>(`/channels/${channel}/messages${q({ before, limit })}`)
-export function postMessage(channel: string, body: string, mentions: string[] = [], files: File[] = [], replyTo?: string): Promise<Message> {
-  if (files.length === 0) return call<Message>('POST', `/channels/${channel}/messages`, { body, mentions, ...(replyTo && { reply_to: replyTo }) })
+export function postMessage(
+  channel: string,
+  body: string,
+  mentions: string[] = [],
+  files: File[] = [],
+  replyTo?: string,
+): Promise<Message> {
+  if (files.length === 0)
+    return call<Message>('POST', `/channels/${channel}/messages`, {
+      body,
+      mentions,
+      ...(replyTo && { reply_to: replyTo }),
+    })
   const form = new FormData()
   form.append('body', body)
   if (replyTo) form.append('reply_to', replyTo)
@@ -196,22 +229,31 @@ export function postMessage(channel: string, body: string, mentions: string[] = 
   for (const f of files) form.append('files', f)
   return call<Message>('POST', `/channels/${channel}/messages`, form)
 }
-export const editMessage = (message: string, body: string) => call<Message>('PUT', `/messages/${message}`, { body })
+export const editMessage = (message: string, body: string) =>
+  call<Message>('PUT', `/messages/${message}`, { body })
 export const deleteMessage = (message: string) => call<void>('DELETE', `/messages/${message}`)
 export const markRead = (channel: string) => call<void>('POST', `/channels/${channel}/read`)
 export const toggleReaction = (message: string, emoji: string) =>
   call<{ reactions: Reaction[] }>('POST', `/messages/${message}/reactions`, { emoji })
 
 // Files and folders
-export const listFiles = (team: string, folder?: string) => call<FolderListing>('GET', `/${team}/files${q({ folder })}`)
+export const searchFiles = (team: string, query: string) =>
+  call<FileSearch>('GET', `/${team}/files/search${q({ q: query })}`)
+export const listFiles = (team: string, folder?: string) =>
+  call<FolderListing>('GET', `/${team}/files${q({ folder })}`)
 export const createFolder = (team: string, name: string, parentId?: string) =>
   call<Folder>('POST', `/${team}/folders`, { name, parent_id: parentId ?? '' })
 /** parentId: undefined = unchanged, '' = move to the root. */
-export const updateFolder = (team: string, folder: string, patch: { name?: string; parent_id?: string }) =>
-  call<Folder>('PUT', `/${team}/folders/${folder}`, patch)
-export const deleteFolder = (team: string, folder: string) => call<void>('DELETE', `/${team}/folders/${folder}`)
+export const updateFolder = (
+  team: string,
+  folder: string,
+  patch: { name?: string; parent_id?: string },
+) => call<Folder>('PUT', `/${team}/folders/${folder}`, patch)
+export const deleteFolder = (team: string, folder: string) =>
+  call<void>('DELETE', `/${team}/folders/${folder}`)
 /** The folder and its subfolders the caller can see, as one zip. */
-export const folderDownloadUrl = (team: string, folder: string) => `/api/teams/${team}/folders/${folder}/download`
+export const folderDownloadUrl = (team: string, folder: string) =>
+  `/api/teams/${team}/folders/${folder}/download`
 export function uploadFile(team: string, file: File, folderId?: string): Promise<TeamFile> {
   const form = new FormData()
   form.append('file', file)
@@ -219,11 +261,15 @@ export function uploadFile(team: string, file: File, folderId?: string): Promise
   return call<TeamFile>('POST', `/${team}/files`, form)
 }
 /** folder_id: undefined = unchanged, '' = move to the root. */
-export const updateFile = (team: string, file: string, patch: { name?: string; folder_id?: string }) =>
-  call<TeamFile>('PUT', `/${team}/files/${file}`, patch)
+export const updateFile = (
+  team: string,
+  file: string,
+  patch: { name?: string; folder_id?: string },
+) => call<TeamFile>('PUT', `/${team}/files/${file}`, patch)
 export const createDocument = (team: string, name: string, kind: string, folderId?: string) =>
   call<TeamFile>('POST', `/${team}/documents`, { name, kind, folder_id: folderId ?? '' })
-export const deleteFile = (team: string, file: string) => call<void>('DELETE', `/${team}/files/${file}`)
+export const deleteFile = (team: string, file: string) =>
+  call<void>('DELETE', `/${team}/files/${file}`)
 export const getShares = (file: string) => list<Share>(`/files/${file}/shares`)
 export const setShares = async (file: string, userIds: string[]) =>
   (await call<{ data: Share[] }>('PUT', `/files/${file}/shares`, { user_ids: userIds })).data
@@ -231,8 +277,13 @@ export const listShared = () => list<SharedFile>('/shared')
 
 // Team groups and conversation access (owners)
 export const listGroups = (team: string) => list<Group>(`/${team}/groups`)
-export const createGroup = (team: string, g: { name: string; user_ids: string[] }) => call<Group>('POST', `/${team}/groups`, g)
-export const updateGroup = (team: string, id: string, g: { name: string; user_ids: string[] }) => call<Group>('PUT', `/${team}/groups/${id}`, g)
-export const deleteGroup = (team: string, id: string) => call<void>('DELETE', `/${team}/groups/${id}`)
-export const getAccess = (team: string, channel: string) => call<Access>('GET', `/${team}/channels/${channel}/access`)
-export const setAccess = (team: string, channel: string, a: Access) => call<Access>('PUT', `/${team}/channels/${channel}/access`, a)
+export const createGroup = (team: string, g: { name: string; user_ids: string[] }) =>
+  call<Group>('POST', `/${team}/groups`, g)
+export const updateGroup = (team: string, id: string, g: { name: string; user_ids: string[] }) =>
+  call<Group>('PUT', `/${team}/groups/${id}`, g)
+export const deleteGroup = (team: string, id: string) =>
+  call<void>('DELETE', `/${team}/groups/${id}`)
+export const getAccess = (team: string, channel: string) =>
+  call<Access>('GET', `/${team}/channels/${channel}/access`)
+export const setAccess = (team: string, channel: string, a: Access) =>
+  call<Access>('PUT', `/${team}/channels/${channel}/access`, a)

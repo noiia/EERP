@@ -66,6 +66,12 @@ flowchart LR
   The file manager creates DOCX, XLSX and PPTX documents. Shared files and attachments
   use the same integrated viewer. See [Euro-Office](../euro-office.md) for deployment,
   supported formats, collaboration, PDF export and the save lifecycle.
+- **Search and icons.** `GET /teams/:id/files/search?q=` searches folder and file names across the
+  team's whole tree (case-insensitive contains, ≤ 200 results per kind, each with its root-first
+  `path`), applying the same folder visibility rule as a listing, so a private folder's content
+  never shows up for someone who can't open it. The file list shows the Euro-Office format icons
+  (copied into `apps/shell/src/teams/file-icons/`) and sorts the current folder client-side
+  (name, size, modified; folders always first).
 
 ### v2: private conversations, linked folders, per-user order
 

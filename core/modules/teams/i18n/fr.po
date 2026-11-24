@@ -388,3 +388,30 @@ msgstr "Message supprimé"
 
 msgid "Ctrl+click to open"
 msgstr "Ctrl+clic pour ouvrir"
+
+msgid "Search all files"
+msgstr "Rechercher dans tous les fichiers"
+
+msgid "Sort by"
+msgstr "Trier par"
+
+msgid "No files found."
+msgstr "Aucun fichier trouvé."
+
+msgid "Name (A to Z)"
+msgstr "Nom (A à Z)"
+
+msgid "Name (Z to A)"
+msgstr "Nom (Z à A)"
+
+msgid "Last modified (newest)"
+msgstr "Dernière modification (récente)"
+
+msgid "Last modified (oldest)"
+msgstr "Dernière modification (ancienne)"
+
+msgid "Size (largest)"
+msgstr "Taille (la plus grande)"
+
+msgid "Size (smallest)"
+msgstr "Taille (la plus petite)"

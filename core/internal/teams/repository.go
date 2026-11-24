@@ -844,6 +844,23 @@ func (r *Repository) ListFolder(ctx context.Context, tenant, team uuid.UUID, fol
 	return fs, files, nil
 }
 
+// SearchTree returns every live folder of team (to build paths) and the files
+// whose name contains q, ignoring case, sorted by name.
+func (r *Repository) SearchTree(ctx context.Context, tenant, team uuid.UUID, q string) ([]Folder, []File, error) {
+	fs, err := r.folders.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("team_id = $1", team))
+	if err != nil {
+		return nil, nil, fmt.Errorf("teams: search folders: %w", err)
+	}
+	pattern := "%" + strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(q) + "%"
+	files, err := r.files.FindAll(ctx, orm.Cond("tenant_id = $1", tenant), orm.Cond("team_id = $1", team), orm.Cond("name ILIKE $1", pattern))
+	if err != nil {
+		return nil, nil, fmt.Errorf("teams: search files: %w", err)
+	}
+	sort.Slice(fs, func(i, j int) bool { return fs[i].Name < fs[j].Name })
+	sort.Slice(files, func(i, j int) bool { return files[i].Name < files[j].Name })
+	return fs, files, nil
+}
+
 // Ancestors returns folder and its parents up to the root, nearest first.
 func (r *Repository) Ancestors(ctx context.Context, tenant, folder uuid.UUID) ([]Folder, error) {
 	var chain []Folder

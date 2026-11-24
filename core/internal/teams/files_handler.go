@@ -171,6 +171,109 @@ func (h *Handler) ListFiles(c *echo.Context) error {
 	return c.JSON(http.StatusOK, out)
 }
 
+// searchLimit caps each list a search answers.
+const searchLimit = 200
+
+// SearchFiles serves GET /:id/files/search?q=: the folders and files of the whole
+// team whose name contains q (ignoring case) that the caller can see, each with
+// its path from the root (the folders holding it).
+func (h *Handler) SearchFiles(c *echo.Context) error {
+	team, role, err := h.access(c, CanRead)
+	if role == "" {
+		return err
+	}
+	ctx := c.Request().Context()
+	id := auth.MustIdentity(ctx)
+	q := strings.TrimSpace(c.QueryParam("q"))
+	type folderHit struct {
+		folderJSON
+		Path []crumbJSON `json:"path"`
+	}
+	type fileHit struct {
+		fileJSON
+		Path []crumbJSON `json:"path"`
+	}
+	out := map[string]any{"folders": []folderHit{}, "files": []fileHit{}}
+	if q == "" || len(q) > 200 {
+		return c.JSON(http.StatusOK, out)
+	}
+	all, files, err := h.repo.SearchTree(ctx, id.TenantID, team, q)
+	if err != nil {
+		return err
+	}
+	byID := make(map[uuid.UUID]Folder, len(all))
+	for _, f := range all {
+		byID[f.ID] = f
+	}
+	// path of folder (nil = root), root first; bounded against a corrupted cycle.
+	path := func(folder *uuid.UUID) []crumbJSON {
+		var p []crumbJSON
+		for folder != nil && len(p) < 1000 {
+			f, ok := byID[*folder]
+			if !ok {
+				break
+			}
+			p = append([]crumbJSON{{f.ID, f.Name}}, p...)
+			folder = f.ParentID
+		}
+		return p
+	}
+	// shortcut: one visibility walk per distinct folder involved; batch it if team trees get large.
+	seen := map[uuid.UUID]bool{}
+	visible := func(folder *uuid.UUID) (bool, error) {
+		if folder == nil {
+			return true, nil
+		}
+		if v, ok := seen[*folder]; ok {
+			return v, nil
+		}
+		v, err := h.folderVisible(c, id.TenantID, team, id.UserID, role, folder)
+		seen[*folder] = v
+		return v, err
+	}
+	lq := strings.ToLower(q)
+	folders := []folderHit{}
+	for _, f := range all {
+		if len(folders) == searchLimit || !strings.Contains(strings.ToLower(f.Name), lq) {
+			continue
+		}
+		if ok, err := visible(&f.ID); err != nil {
+			return err
+		} else if ok {
+			folders = append(folders, folderHit{toFolderJSON(f), path(f.ParentID)})
+		}
+	}
+	var hits []File
+	for _, f := range files {
+		if len(hits) == searchLimit {
+			break
+		}
+		if ok, err := visible(f.FolderID); err != nil {
+			return err
+		} else if ok {
+			hits = append(hits, f)
+		}
+	}
+	ids := make([]uuid.UUID, len(hits))
+	for i, f := range hits {
+		ids[i] = f.ID
+	}
+	counts, err := h.repo.ShareCounts(ctx, id.TenantID, ids)
+	if err != nil {
+		return err
+	}
+	users, err := h.userMap(ctx, id.TenantID)
+	if err != nil {
+		return err
+	}
+	fh := make([]fileHit, len(hits))
+	for i, f := range hits {
+		fh[i] = fileHit{h.toFileJSON(f, users, counts[f.ID]), path(f.FolderID)}
+	}
+	out["folders"], out["files"] = folders, fh
+	return c.JSON(http.StatusOK, out)
+}
+
 // CreateFolder serves POST /:id/folders {name, parent_id?}.
 func (h *Handler) CreateFolder(c *echo.Context) error {
 	team, role, err := h.access(c, CanWrite)

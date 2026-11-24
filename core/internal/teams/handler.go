@@ -133,6 +133,7 @@ func Mount(g *echo.Group, h *Handler, upload echo.MiddlewareFunc) {
 		return
 	}
 	g.GET("/:id/files", h.ListFiles)
+	g.GET("/:id/files/search", h.SearchFiles)
 	g.POST("/:id/files", h.UploadFile, upload)
 	g.POST("/:id/documents", h.CreateOfficeDocument)
 	g.PUT("/:id/files/:file", h.UpdateFile, upload)

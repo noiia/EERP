@@ -274,3 +274,56 @@ func TestShare_OnlyOwnerOrUploader(t *testing.T) {
 		t.Fatalf("owner sharing a member's file: %d", c)
 	}
 }
+
+func TestSearchFiles_WholeTreeWithPath(t *testing.T) {
+	f := newChatFixture(t, true)
+	a := f.folder(t, f.member, f.team, `{"name":"Reports"}`)
+	b := f.folder(t, f.member, f.team, `{"name":"2026","parent_id":"`+a.String()+`"}`)
+	for _, up := range [][2]string{{b.String(), "Q1 report.docx"}, {"", "root-REPORT.txt"}, {"", "other.txt"}, {"", "50%_off.txt"}} {
+		if code, _ := f.upload(t, f.member, up[0], up[1], "x"); code != 201 {
+			t.Fatalf("upload %s: %d", up[1], code)
+		}
+	}
+	search := func(q string) (out struct {
+		Folders []struct {
+			Name string
+			Path []struct{ Name string }
+		}
+		Files []struct {
+			Name string
+			Path []struct{ Name string }
+		}
+	}) {
+		req := httptest.NewRequest("GET", "/?q="+q, nil)
+		rec := serveReq(t, f.h.SearchFiles, req, f.as(f.guest), map[string]string{"id": f.team.String()})
+		if err := jsonDecode(rec, &out); err != nil || rec.Code != 200 {
+			t.Fatalf("search %q: %d %s", q, rec.Code, rec.Body)
+		}
+		return out
+	}
+	out := search("report")
+	if len(out.Folders) != 1 || out.Folders[0].Name != "Reports" || len(out.Folders[0].Path) != 0 ||
+		len(out.Files) != 2 || out.Files[0].Name != "Q1 report.docx" || len(out.Files[0].Path) != 2 ||
+		out.Files[0].Path[0].Name != "Reports" || out.Files[0].Path[1].Name != "2026" || out.Files[1].Name != "root-REPORT.txt" {
+		t.Fatalf("report: %+v", out)
+	}
+	// LIKE wildcards are literal
+	if out := search("%25_"); len(out.Files) != 1 || out.Files[0].Name != "50%_off.txt" {
+		t.Fatalf("wildcards: %+v", out)
+	}
+	if out := search(""); len(out.Files) != 0 || len(out.Folders) != 0 {
+		t.Fatalf("empty: %+v", out)
+	}
+}
+
+func TestSearchFiles_HidesPrivateFolders(t *testing.T) {
+	f := newPrivFixture(t)
+	for u, want := range map[uuid.UUID]int{f.owner: 1, f.unlisted: 0} {
+		req := httptest.NewRequest("GET", "/?q=s.txt", nil)
+		rec := serveReq(t, f.h.SearchFiles, req, f.as(u), f.teamP())
+		var out struct{ Files []struct{ Name string } }
+		if err := jsonDecode(rec, &out); err != nil || rec.Code != 200 || len(out.Files) != want {
+			t.Fatalf("user %s: %d %s, want %d files", u, rec.Code, rec.Body, want)
+		}
+	}
+}
