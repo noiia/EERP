@@ -26,7 +26,9 @@ import { RiskMatrix } from './risk-matrix'
 import { RiskRegister, USER_FIELD } from './risk-register'
 import { registerTable } from './register-table'
 import { useRelationLabels } from '../use-relation-labels'
-import { heatRgb, tint, type RiskRow } from './scoring'
+import { heatColors, tint, type RiskRow } from './scoring'
+import { RegisterExportDialog } from './register-export-dialog'
+import { RegisterSheetView } from './register-sheet-view'
 
 export interface RiskRendererProps {
   config: RiskConfig
@@ -58,6 +60,10 @@ export function RiskRenderer({ config, projectId }: RiskRendererProps) {
   // The matrix export: both matrices side by side, drawn off screen only while exporting.
   const both = useRef<HTMLDivElement>(null)
   const [exportingBoth, setExportingBoth] = useState(false)
+  // Register export: the format waiting on the row selection dialog, then (PNG) the rows drawn off screen.
+  const [registerKind, setRegisterKind] = useState<'csv' | 'xlsx' | 'pdf' | 'png' | null>(null)
+  const [pngRows, setPngRows] = useState<RiskRow[] | null>(null)
+  const registerPng = useRef<HTMLDivElement>(null)
   const fill = useFillHeight(area, phone)
   const { entity, projectField, categoryEntity } = config
   const canCreate = usePermission(`${entity}:${entity}:write`)
@@ -101,11 +107,30 @@ export function RiskRenderer({ config, projectId }: RiskRendererProps) {
   if (!rows) return <DiagramLoading />
   const open = (id: string) => router.push(erpPath(config.formPath.replace(':id', id)))
   const responsible = (r: RiskRow) => userLabel('responsible_id', r.responsible_id)
-  const exportRegister = (kind: 'csv' | 'xlsx' | 'pdf') => {
-    const base = registerTable(rows, categories, responsible, t)
-    const table = heat ? { ...base, fills: rows.map((r) => { const c = heatRgb(r.criticity); return c && tint(c) }) } : base
+  const exportRegister = (kind: 'csv' | 'xlsx' | 'pdf' | 'png', selected: RiskRow[]) => {
+    setRegisterKind(null)
+    if (kind === 'png') {
+      flushSync(() => setPngRows(selected))
+      const el = registerPng.current
+      if (!el) return setPngRows(null)
+      import('../diagram/export')
+        .then((m) => m.exportElementPng(el, `register-${projectId}`, '#ffffff'))
+        .catch((e: unknown) => setError(serializeError(toApiError(e))))
+        .finally(() => setPngRows(null))
+      return
+    }
+    const title = `${project} — ${t('Risk register')}`
+    if (kind === 'pdf') {
+      import('./register-export')
+        .then((m) => m.registerPdf(selected, title, new Date(), t).save(`register-${projectId}.pdf`))
+        .catch((e: unknown) => setError(serializeError(toApiError(e))))
+      return
+    }
+    const base = registerTable(selected, categories, responsible, t)
+    // Colors relative to the exported rows: the most dangerous one exported is the red one.
+    const table = heat ? { ...base, fills: heatColors(selected.map((r) => r.criticity)).map((c) => c && tint(c)) } : base
     import('./register-export')
-      .then((m) => m.downloadRegister(kind, table, `${project} — ${t('Risk register')}`, `register-${projectId}`, t('Risk register')))
+      .then((m) => m.downloadRegister(kind, table, `register-${projectId}`, t('Risk register')))
       .catch((e: unknown) => setError(serializeError(toApiError(e))))
   }
   const doExport = (kind: 'png' | 'pdf') => {
@@ -150,9 +175,10 @@ export function RiskRenderer({ config, projectId }: RiskRendererProps) {
             options={
               tab === 'register'
                 ? [
-                    { key: 'xlsx', label: t('Export XLSX'), icon: 'file-excel', onClick: () => exportRegister('xlsx') },
-                    { key: 'csv', label: t('Export CSV'), icon: 'file-csv', onClick: () => exportRegister('csv') },
-                    { key: 'pdf', label: t('Export PDF'), icon: 'file-pdf', onClick: () => exportRegister('pdf') },
+                    { key: 'xlsx', label: t('Export XLSX'), icon: 'file-excel', onClick: () => setRegisterKind('xlsx') },
+                    { key: 'csv', label: t('Export CSV'), icon: 'file-csv', onClick: () => setRegisterKind('csv') },
+                    { key: 'pdf', label: t('Export PDF'), icon: 'file-pdf', onClick: () => setRegisterKind('pdf') },
+                    { key: 'png', label: t('Export PNG'), icon: 'file-image', onClick: () => setRegisterKind('png') },
                   ]
                 : [
                     { key: 'png', label: t('Export PNG'), icon: 'file-image', onClick: () => doExport('png') },
@@ -181,6 +207,12 @@ export function RiskRenderer({ config, projectId }: RiskRendererProps) {
               </Box>
             ))}
           </Box>
+        </Box>
+      )}
+      {registerKind && <RegisterExportDialog rows={rows} heat={heat || registerKind === 'png' || registerKind === 'pdf'} onClose={() => setRegisterKind(null)} onExport={(sel) => exportRegister(registerKind, sel)} />}
+      {pngRows && (
+        <Box aria-hidden sx={{ position: 'fixed', left: -10000, top: 0 }}>
+          <RegisterSheetView ref={registerPng} rows={pngRows} title={`${project} — ${t('Risk register')}`} />
         </Box>
       )}
       {creating && ops ? (

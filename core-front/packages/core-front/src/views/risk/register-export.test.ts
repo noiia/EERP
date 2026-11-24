@@ -63,15 +63,13 @@ describe('registerXlsx', () => {
 })
 
 describe('registerPdf', () => {
-  it('pages a long register', () => {
-    const long = { ...table, rows: Array.from({ length: 80 }, () => table.rows[0]) }
+  const risks = [row({ name: 'Late vendor', criticity: 9, remediation: 'Second supplier', if_it_happens: 'Switch' }), row({ name: 'Cycle', criticity: null, residual_criticity: null })]
+  it('draws the sheet and pages a long register', () => {
+    const doc = registerPdf(risks, 'Apollo', new Date('2026-11-20'))
+    const out = doc.output()
+    for (const s of ['R1', 'Late vendor', 'Second supplier', 'If it happens', 'Residual']) expect(out).toContain(s)
+    const long = Array.from({ length: 80 }, (_, i) => row({ id: String(i), criticity: i }))
     expect(registerPdf(long, 'Apollo', new Date('2026-11-20')).getNumberOfPages()).toBeGreaterThan(1)
-  })
-  it('paints the temperature fills', () => {
-    const date = new Date('2026-11-20')
-    const ops = (t: typeof table) => registerPdf(t, 'Apollo', date).output().match(/ rg\b/g)?.length ?? 0
-    // The tinted row adds fill-color operators; an untinted row has none.
-    expect(ops({ ...table, fills: [[10, 20, 30], null] }) - ops(table)).toBeGreaterThanOrEqual(1)
   })
 })
 
@@ -80,8 +78,8 @@ describe('downloadRegister', () => {
     URL.createObjectURL = vi.fn(() => 'blob:x')
     URL.revokeObjectURL = vi.fn()
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
-    downloadRegister('csv', table, 'T', 'register-p1')
-    downloadRegister('xlsx', table, 'T', 'register-p1')
+    downloadRegister('csv', table, 'register-p1')
+    downloadRegister('xlsx', table, 'register-p1')
     expect(click).toHaveBeenCalledTimes(2)
     click.mockRestore()
   })

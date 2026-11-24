@@ -56,19 +56,25 @@ export function ishikawaBones(rows: RiskRow[], categories: { id: string; name: s
 }
 
 export type Rgb = [number, number, number]
-const MAX_CRITICITY = 36 // 3 likelihood x 4 severity x 3 detectability
 
-/** The register's temperature color for a criticity: blue (1) through green and yellow to red (36). */
-export function heatRgb(criticity: number | null): Rgb | null {
-  if (criticity == null) return null
-  const t = Math.min(1, Math.max(0, (criticity - 1) / (MAX_CRITICITY - 1)))
-  // HSL(hue, 80%, 50%) to RGB, hue 220 -> 0.
-  const h = 220 * (1 - t)
-  const f = (n: number) => {
-    const k = (n + h / 30) % 12
-    return Math.round(255 * (0.5 - 0.4 * Math.max(-1, Math.min(k - 3, 9 - k, 1))))
-  }
-  return [f(0), f(8), f(4)]
+/** The register's temperature colors, relative to the listed risks: the lowest criticity of the list is
+ * green, the highest red (yellow and orange between), so the most dangerous risk listed is always red.
+ * A list with one distinct criticity is all red. No criticity, no color. */
+export function heatColors(criticities: (number | null)[]): (Rgb | null)[] {
+  const known = criticities.filter((c): c is number => c != null)
+  const min = Math.min(...known)
+  const max = Math.max(...known)
+  return criticities.map((c) => {
+    if (c == null) return null
+    const t = max === min ? 1 : (c - min) / (max - min)
+    // HSL(hue, 65%, 50%) to RGB, hue 130 (green) -> 0 (red): muted, so dark text reads on every step.
+    const h = 130 * (1 - t)
+    const f = (n: number) => {
+      const k = (n + h / 30) % 12
+      return Math.round(255 * (0.5 - 0.325 * Math.max(-1, Math.min(k - 3, 9 - k, 1))))
+    }
+    return [f(0), f(8), f(4)]
+  })
 }
 
 /** `c` blended with white (`amount` 0 = c, 1 = white): the readable row tint of the exports. */

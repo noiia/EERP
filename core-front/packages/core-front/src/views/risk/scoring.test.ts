@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { band, heatRgb, ishikawaBones, matrixCells, tint, type RiskRow } from './scoring'
+import { band, heatColors, ishikawaBones, matrixCells, tint, type RiskRow } from './scoring'
 
 const row = (id: string, o: Partial<RiskRow> = {}): RiskRow => ({
   id, name: id, category_id: null, impact_on: 'delay', likelihood: 2, severity_effective: 3, criticity: 6,
@@ -32,15 +32,19 @@ describe('ishikawaBones', () => {
   })
 })
 
-describe('heatRgb', () => {
-  it('runs from blue to red and leaves no criticity uncolored', () => {
-    expect(heatRgb(null)).toBeNull()
-    const [r1, , b1] = heatRgb(1)!
-    expect(b1).toBeGreaterThan(r1)
-    const [r, g, b] = heatRgb(36)!
-    expect(r).toBeGreaterThan(200)
-    expect(Math.max(g, b)).toBeLessThan(40)
-    expect(heatRgb(99)).toEqual(heatRgb(36))
+describe('heatColors', () => {
+  it('runs from green on the lowest listed criticity to red on the highest', () => {
+    const [lo, mid, none, hi] = heatColors([2, 5, null, 8])
+    expect(none).toBeNull()
+    expect(lo![1]).toBeGreaterThan(Math.max(lo![0], lo![2]))
+    expect(hi![0]).toBeGreaterThan(200)
+    expect(Math.max(hi![1], hi![2])).toBeLessThan(60)
+    expect(mid).not.toEqual(lo)
+    expect(mid).not.toEqual(hi)
+    // Relative: the same criticity is red when it is the highest of the list.
+    expect(heatColors([1, 8])[1]).toEqual(heatColors([3, 8])[1])
+    expect(heatColors([4, 4])).toEqual([hi, hi])
+    expect(heatColors([null])).toEqual([null])
     expect(tint([0, 0, 0], 1)).toEqual([255, 255, 255])
   })
 })

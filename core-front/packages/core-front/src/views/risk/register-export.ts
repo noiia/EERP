@@ -1,8 +1,11 @@
 import { jsPDF } from 'jspdf'
 import { strToU8, zipSync } from 'fflate'
 import type { RegisterCell, RegisterTable } from './register-table'
+import type { Rgb, RiskRow } from './scoring'
+import { RESIDUAL_COLORS, SHEET_HEADER, SHEET_HEADS, SHEET_INK, SHEET_LINE, SHEET_WIDTHS, cellFill, legendScale, registerSheet } from './register-sheet'
 
-// Writers of the risk register table (register-table.ts): CSV, XLSX and PDF. Loaded on demand.
+// Writers of the risk register: the full table (register-table.ts) as CSV and XLSX, the sheet
+// (register-sheet.ts) as PDF. Loaded on demand.
 
 /** CSV (RFC 4180, UTF-8 with a BOM so Excel reads accents). A text cell a spreadsheet would run
  * as a formula (=, +, -, @, tab, CR first) is prefixed with ' — risk texts are user input. */
@@ -72,55 +75,97 @@ export function registerXlsx(table: RegisterTable, sheet = 'Risk register'): Uin
   })
 }
 
-// Relative column widths of the PDF table: the free texts (risk, remediation) get the room.
-const PDF_WIDTHS = [3, 1.6, 1.2, 1, 1, 1.1, 1, 3, 1.6, 1.3, 1.1]
-
-/** A landscape A4 PDF: title and date, then the table, wrapped and paged, header repeated. */
-export function registerPdf(table: RegisterTable, title: string, date: Date): jsPDF {
+/** A landscape A4 PDF of the sheet (register-sheet.ts): title and date, the table wrapped and paged with its
+ * header repeated, then the legend. Same layout and fixed light colors as the PNG. */
+export function registerPdf(rows: RiskRow[], title: string, date: Date, t: (s: string) => string = (s) => s): jsPDF {
+  const sheet = registerSheet(rows)
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
   const pageW = doc.internal.pageSize.getWidth()
   const pageH = doc.internal.pageSize.getHeight()
   const m = 10
-  const total = PDF_WIDTHS.reduce((a, b) => a + b, 0)
-  const widths = PDF_WIDTHS.map((w) => (w / total) * (pageW - m * 2))
-  const lineH = 3.6
-  const pad = 1.2
+  const total = SHEET_WIDTHS.reduce((a, b) => a + b, 0)
+  const widths = SHEET_WIDTHS.map((w) => (w / total) * (pageW - m * 2))
+  const lineH = 3.8
+  const pad = 2
+  const legendH = 8
+  doc.setTextColor(...SHEET_INK)
   doc.setFontSize(12)
+  doc.setFont('helvetica', 'bold')
   doc.text(title, m, m + 4)
+  doc.setFont('helvetica', 'normal')
   doc.text(date.toLocaleDateString(), pageW - m, m + 4, { align: 'right' })
   let y = m + 10
-  const draw = (cells: RegisterCell[], bold: boolean, fill?: [number, number, number] | null) => {
-    doc.setFont('helvetica', bold ? 'bold' : 'normal')
-    doc.setFontSize(8)
-    const wrapped = cells.map((v, i) => doc.splitTextToSize(v == null ? '—' : String(v), widths[i] - pad * 2) as string[])
+  const draw = (cells: string[], fill: (i: number) => Rgb | null, bold: (i: number) => boolean, header: boolean) => {
+    doc.setFontSize(header ? 9 : 8.5)
+    const wrapped = cells.map((v, i) => {
+      doc.setFont('helvetica', bold(i) ? 'bold' : 'normal')
+      return doc.splitTextToSize(v, widths[i] - pad * 2) as string[]
+    })
     const h = Math.max(...wrapped.map((l) => l.length)) * lineH + pad * 2
     if (y + h > pageH - m) {
       doc.addPage()
       y = m
-      if (!bold) draw(table.heads, true)
+      if (!header) drawHead()
     }
     let x = m
     wrapped.forEach((l, i) => {
-      if (bold || fill) {
-        if (fill) doc.setFillColor(...fill)
-        else doc.setFillColor(241, 245, 249)
+      const f = fill(i)
+      if (f) {
+        doc.setFillColor(...f)
         doc.rect(x, y, widths[i], h, 'F')
       }
-      doc.setDrawColor(203, 213, 225)
+      doc.setDrawColor(...SHEET_LINE)
+      doc.setLineWidth(0.6)
       doc.rect(x, y, widths[i], h)
-      doc.text(l, x + pad, y + pad + lineH - 0.8)
+      doc.setFont('helvetica', bold(i) ? 'bold' : 'normal')
+      if (header) doc.setTextColor(255, 255, 255)
+      else doc.setTextColor(...SHEET_INK)
+      const top = y + (h - l.length * lineH) / 2 + lineH - 0.9
+      doc.text(l, x + widths[i] / 2, top, { align: 'center' })
       x += widths[i]
     })
     y += h
   }
-  draw(table.heads, true)
-  table.rows.forEach((r, i) => draw(r, false, table.fills?.[i]))
+  const drawHead = () => draw(SHEET_HEADS.map(t), () => SHEET_HEADER, () => true, true)
+  drawHead()
+  for (const r of sheet.rows) draw(r.cells, (i) => cellFill(r, i), (i) => i === 0 || i === 1 || i >= 4, false)
+  // Legend: the criticity gradient between the sheet's lowest and highest, then the residual bands.
+  if (y + legendH + 4 > pageH - m) {
+    doc.addPage()
+    y = m
+  }
+  y += legendH
+  doc.setFontSize(8)
+  doc.setFont('helvetica', 'normal')
+  doc.setTextColor(...SHEET_INK)
+  let x = m
+  const label = (s: string) => {
+    doc.text(s, x, y)
+    x += doc.getTextWidth(s) + 2
+  }
+  if (sheet.range) {
+    label(`${t('Criticity')} ${sheet.range[0]}`)
+    const scale = legendScale(24)
+    scale.forEach((c, i) => {
+      doc.setFillColor(...c)
+      doc.rect(x + i * 1.5, y - 2.8, 1.5, 3, 'F')
+    })
+    x += scale.length * 1.5 + 2
+    label(String(sheet.range[1]))
+    x += 8
+  }
+  label(`${t('Residual')}:`)
+  for (const [b, name] of [['low', 'Low'], ['medium', 'Medium'], ['high', 'High']] as const) {
+    doc.setFillColor(...RESIDUAL_COLORS[b])
+    doc.rect(x + 2, y - 2.8, 3, 3, 'F')
+    x += 6
+    label(t(name))
+  }
   return doc
 }
 
-/** Saves the register in `kind`'s format as `<filename>.<ext>`. */
-export function downloadRegister(kind: 'csv' | 'xlsx' | 'pdf', table: RegisterTable, title: string, filename: string, sheet?: string) {
-  if (kind === 'pdf') return registerPdf(table, title, new Date()).save(`${filename}.pdf`)
+/** Saves the register table as `<filename>.csv` / `.xlsx`. */
+export function downloadRegister(kind: 'csv' | 'xlsx', table: RegisterTable, filename: string, sheet?: string) {
   const blob =
     kind === 'csv'
       ? new Blob([registerCsv(table)], { type: 'text/csv;charset=utf-8' })

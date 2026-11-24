@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
 vi.mock('../diagram/export', () => ({ exportElementPng: vi.fn(), exportElementPdf: vi.fn() }))
-vi.mock('./register-export', () => ({ downloadRegister: vi.fn() }))
+const pdfSave = vi.hoisted(() => vi.fn())
+vi.mock('./register-export', () => ({ downloadRegister: vi.fn(), registerPdf: vi.fn(() => ({ save: pdfSave })) }))
 const push = vi.hoisted(() => vi.fn())
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }))
 const canWrite = vi.hoisted(() => ({ value: true }))
@@ -18,7 +19,7 @@ vi.mock('../relation-widgets', async (orig) => ({
 
 import { RiskRenderer } from './risk-renderer'
 import { exportElementPng as exportPng } from '../diagram/export'
-import { downloadRegister } from './register-export'
+import { downloadRegister, registerPdf } from './register-export'
 import { RelationOpsProvider, type RelationOps } from '../relation-ops'
 import { ApiError } from '../../api/errors'
 import { setViewportWidth } from '../../test/viewport'
@@ -144,12 +145,17 @@ describe('RiskRenderer', () => {
   it('exports the register as XLSX, CSV and PDF from the same table, names resolved', async () => {
     setup([risk('Late vendor', { responsible_id: 'u1' })])
     fireEvent.click(await screen.findByRole('tab', { name: 'Register' }))
-    for (const [item, kind] of [['Export XLSX', 'xlsx'], ['Export CSV', 'csv'], ['Export PDF', 'pdf']]) {
+    for (const [item, kind] of [['Export XLSX', 'xlsx'], ['Export CSV', 'csv']]) {
       fireEvent.click(screen.getByRole('button', { name: 'Export' }))
-      expect(screen.queryByRole('menuitem', { name: 'Export PNG' })).toBeNull()
       fireEvent.click(await screen.findByRole('menuitem', { name: item }))
-      await waitFor(() => expect(downloadRegister).toHaveBeenLastCalledWith(kind, expect.anything(), 'Apollo — Risk register', 'register-p1', 'Risk register'))
+      fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Export' }))
+      await waitFor(() => expect(downloadRegister).toHaveBeenLastCalledWith(kind, expect.anything(), 'register-p1', 'Risk register'))
     }
+    fireEvent.click(screen.getByRole('button', { name: 'Export' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Export PDF' }))
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Export' }))
+    await waitFor(() => expect(pdfSave).toHaveBeenCalledWith('register-p1.pdf'))
+    expect(vi.mocked(registerPdf).mock.calls[0].slice(0, 2)).toEqual([[expect.objectContaining({ name: 'Late vendor' })], 'Apollo — Risk register'])
     const table = vi.mocked(downloadRegister).mock.calls[0][1]
     expect(table.heads[0]).toBe('Risk')
     expect(table.rows[0].slice(0, 3)).toEqual(['Late vendor', 'Internal', 'Delay'])
@@ -167,11 +173,66 @@ describe('RiskRenderer', () => {
     expect(heat[1]).toBe('') // no criticity, no color
     fireEvent.click(screen.getByRole('button', { name: 'Export' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Export XLSX' }))
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Export' }))
     await waitFor(() => expect(downloadRegister).toHaveBeenCalled())
     const { fills } = vi.mocked(downloadRegister).mock.calls[0][1]
     expect(fills).toHaveLength(2)
     expect(fills![0]).toHaveLength(3)
     expect(fills![1]).toBeNull()
+  })
+
+  it('colors the register relative to its rows: the highest criticity listed is red', async () => {
+    setup([risk('A', { criticity: 9 }), risk('B', { criticity: 3 })])
+    fireEvent.click(await screen.findByRole('tab', { name: 'Register' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Temperature' }))
+    const [hi, lo] = [...document.querySelectorAll('tr[data-heat]')].map((e) => e.getAttribute('data-heat')!.split(',').map(Number))
+    expect(hi[0]).toBeGreaterThan(200) // red, though 9 is far from the maximal 36
+    expect(lo[1]).toBeGreaterThan(lo[0]) // green
+  })
+
+  it('exports only the selected risks, recoloring on the selection', async () => {
+    setup([risk('A', { criticity: 9 }), risk('B', { criticity: 3 }), risk('C', { criticity: 6 })])
+    fireEvent.click(await screen.findByRole('tab', { name: 'Register' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Temperature' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Export' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Export XLSX' }))
+    const dialog = within(await screen.findByRole('dialog'))
+    expect(dialog.getAllByRole('checkbox').every((c) => (c as HTMLInputElement).checked)).toBe(true)
+    fireEvent.click(dialog.getByRole('button', { name: 'Clear selection' }))
+    expect(dialog.getByRole('button', { name: 'Export' })).toBeDisabled()
+    fireEvent.click(dialog.getByRole('button', { name: 'Select all' }))
+    expect(dialog.getAllByRole('checkbox').every((c) => (c as HTMLInputElement).checked)).toBe(true)
+    fireEvent.click(dialog.getByRole('checkbox', { name: '9 - A' }))
+    fireEvent.click(dialog.getByRole('button', { name: 'Export' }))
+    await waitFor(() => expect(downloadRegister).toHaveBeenCalled())
+    const { rows: out, fills } = vi.mocked(downloadRegister).mock.calls[0][1]
+    expect(out.map((r) => r[0])).toEqual(['B', 'C'])
+    // C (6) is now the highest exported: it takes the red end, tinted.
+    expect(fills![1]![0]).toBeGreaterThan(fills![1]![2])
+    expect(fills![0]![1]).toBeGreaterThan(fills![0]![0])
+  })
+
+  it('exports the selected register rows as a PNG', async () => {
+    let captured = ''
+    vi.mocked(exportPng).mockImplementationOnce(async (el: HTMLElement) => {
+      captured = el.textContent ?? ''
+      expect(el.dataset.testid).toBe('register-export')
+    })
+    setup([risk('A', { criticity: 9 }), risk('B', { criticity: 3 })])
+    fireEvent.click(await screen.findByRole('tab', { name: 'Register' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Export' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Export PNG' }))
+    const dialog = within(await screen.findByRole('dialog'))
+    fireEvent.click(dialog.getByRole('checkbox', { name: '3 - B' }))
+    fireEvent.click(dialog.getByRole('button', { name: 'Export' }))
+    await waitFor(() => expect(exportPng).toHaveBeenCalledTimes(1))
+    expect(captured).toContain('Apollo — Risk register')
+    expect(captured).toContain('R1A')
+    expect(captured).not.toContain('R2')
+    for (const h of ['Remediation', 'If it happens', 'Criticity', 'Residual']) expect(captured).toContain(h)
+    // Always the light sheet, whatever the theme.
+    expect(vi.mocked(exportPng).mock.calls[0][2]).toBe('#ffffff')
+    await waitFor(() => expect(screen.queryByTestId('register-export')).toBeNull())
   })
 
   it('exports the matrix with the current and after-remediation versions in one image', async () => {

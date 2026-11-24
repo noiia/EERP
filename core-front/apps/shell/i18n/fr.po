@@ -3588,3 +3588,18 @@ msgstr "Vue Gantt"
 
 msgid "No milestones yet."
 msgstr "Aucun jalon pour l'instant."
+
+msgid "Risks to export"
+msgstr "Risques à exporter"
+
+msgid "Clear selection"
+msgstr "Effacer la sélection"
+
+msgid "Residual"
+msgstr "Résiduelle"
+
+msgid "Low"
+msgstr "Faible"
+
+msgid "High"
+msgstr "Élevée"

@@ -3454,3 +3454,18 @@ msgstr ""
 
 msgid "No milestones yet."
 msgstr ""
+
+msgid "Risks to export"
+msgstr ""
+
+msgid "Clear selection"
+msgstr ""
+
+msgid "Residual"
+msgstr ""
+
+msgid "Low"
+msgstr ""
+
+msgid "High"
+msgstr ""
