@@ -443,6 +443,7 @@ export function WbsRenderer<T extends HasId>({
         entity={entity}
         mode="wbs"
         title={t('WBS')}
+        simpleExport
         nodes={rfNodes}
         edges={edges}
         extraNodes={extraDeliverableNodes}

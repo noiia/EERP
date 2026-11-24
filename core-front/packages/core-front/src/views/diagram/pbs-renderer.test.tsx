@@ -7,6 +7,7 @@ import type { ComponentType, ReactNode } from 'react'
 type RfNode = { id: string; type: string; data: unknown; position: { x: number; y: number }; width?: number; height?: number }
 type RfEdge = { id: string; source: string; target: string; type?: string; deletable?: boolean }
 type RfProps = {
+  onNodeDoubleClick?: (e: unknown, n: RfNode) => void
   nodes: RfNode[]
   edges: RfEdge[]
   nodeTypes: Record<string, ComponentType<{ id: string; data: unknown }>>
@@ -26,7 +27,7 @@ vi.mock('@xyflow/react', () => ({
         <div className="react-flow__viewport" />
         {props.nodes.map((n) => {
           const C = props.nodeTypes[n.type]
-          return <div key={n.id} data-testid={`node-${n.id}`}><C id={n.id} data={n.data} /></div>
+          return <div key={n.id} data-testid={`node-${n.id}`} onDoubleClick={(e) => props.onNodeDoubleClick?.(e, n)}><C id={n.id} data={n.data} /></div>
         })}
       </div>
     )

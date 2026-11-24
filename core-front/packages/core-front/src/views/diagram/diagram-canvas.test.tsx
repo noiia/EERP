@@ -25,6 +25,7 @@ type RfProps = {
   nodesConnectable?: boolean
   onNodesChange?: (c: unknown[]) => void
   onNodeDragStop?: (e: unknown, n: RfNode, nodes?: RfNode[]) => void
+  onNodeDoubleClick?: (e: { target: EventTarget }, n: RfNode) => void
   selectionKeyCode?: string
   multiSelectionKeyCode?: string
   onInit?: (i: { fitView: () => void; getNodes?: () => unknown[] }) => void
@@ -161,6 +162,23 @@ describe('DiagramCanvas', () => {
     await flush()
     expect(screen.getByTestId('react-flow').parentElement!.style.getPropertyValue('--handle-size')).toBe('24px')
     rf.zoom = 1
+  })
+
+  it('opens a task box on a double-click at any zoom, never from one of its inputs or buttons', async () => {
+    const onOpen = vi.fn()
+    setup({ nodes: [{ ...node('a'), data: { ...node('a').data, onOpen } }, { id: 'n', type: 'note', position: at(0, 0), data: { onOpen } }] })
+    await flush()
+    const dbl = (id: string, target: Element) => act(() => rf.props.onNodeDoubleClick!({ target }, rf.props.nodes.find((n) => n.id === id)!))
+    const plain = document.createElement('div')
+    const input = document.createElement('input')
+    const button = document.createElement('button')
+    button.appendChild(document.createElement('span'))
+    dbl('a', input)
+    dbl('a', button.firstElementChild!)
+    dbl('n', plain)
+    expect(onOpen).not.toHaveBeenCalled()
+    dbl('a', plain)
+    expect(onOpen).toHaveBeenCalledTimes(1)
   })
 
   it('undoes and redoes box moves (Ctrl+Z, Ctrl+Y, toolbar)', async () => {
@@ -746,14 +764,11 @@ describe('TaskBox', () => {
     expect(screen.getByLabelText('Name')).toHaveValue('Saved')
   })
 
-  it('double-click opens', () => {
+  it('shows its badges, footer and folding chevron', () => {
     const onToggle = vi.fn()
-    const data = box({ editable: false, badges: <span>badge</span>, footer: <span>foot</span>, chevron: { folded: true, onToggle } })
+    box({ editable: false, badges: <span>badge</span>, footer: <span>foot</span>, chevron: { folded: true, onToggle } })
     expect(screen.getByLabelText('Name')).toBeDisabled()
-    fireEvent.doubleClick(screen.getByLabelText('Name'))
-    expect(data.onOpen).not.toHaveBeenCalled()
-    fireEvent.doubleClick(screen.getByText('badge'))
-    expect(data.onOpen).toHaveBeenCalled()
+    expect(screen.getByText('badge')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Expand' }))
     expect(onToggle).toHaveBeenCalled()
     expect(screen.getByText('foot')).toBeInTheDocument()

@@ -7,6 +7,7 @@ import type { ComponentType, ReactNode } from 'react'
 type RfNode = { id: string; type: string; data: unknown; position: { x: number; y: number }; height?: number; draggable?: boolean; selectable?: boolean; connectable?: boolean; targetPosition?: string }
 type RfEdge = { id: string; source: string; target: string; markerEnd?: unknown; deletable?: boolean; reconnectable?: boolean; type?: string; sourceHandle?: string }
 type RfProps = {
+  onNodeDoubleClick?: (e: unknown, n: RfNode) => void
   nodes: RfNode[]
   edges: RfEdge[]
   nodeTypes: Record<string, ComponentType<{ id: string; data: unknown; positionAbsoluteX?: number; positionAbsoluteY?: number }>>
@@ -38,7 +39,7 @@ vi.mock('@xyflow/react', async () => {
           <div className="react-flow__viewport" />
           {props.nodes.map((n) => {
             const C = props.nodeTypes[n.type]
-            return <div key={n.id} data-testid={`node-${n.id}`}><C id={n.id} data={n.data} positionAbsoluteX={n.position.x} positionAbsoluteY={n.position.y} /></div>
+            return <div key={n.id} data-testid={`node-${n.id}`} onDoubleClick={(e) => props.onNodeDoubleClick?.(e, n)}><C id={n.id} data={n.data} positionAbsoluteX={n.position.x} positionAbsoluteY={n.position.y} /></div>
           })}
         </div>
       )
@@ -388,13 +389,30 @@ describe('WbsRenderer', () => {
       smallHandlesDuringExport = document.querySelector('[data-exporting]') != null
     })
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Export' })) })
-    await act(async () => fireEvent.click(screen.getByRole('menuitem', { name: 'Export PNG' })))
+    await act(async () => fireEvent.click(screen.getByRole('menuitem', { name: 'Export PNG (complete)' })))
     await waitFor(() => expect(inputsDuringExport).toBe(4))
     expect(smallHandlesDuringExport).toBe(true)
     expect(document.querySelector('[data-exporting]')).toBeNull()
     await waitFor(() => expect(screen.queryAllByLabelText('Name')).toHaveLength(0))
     fireEvent.doubleClick(screen.getByText('2 - Review'))
     expect(push).toHaveBeenCalledWith(expect.stringContaining('/project/tasks/D'))
+  })
+
+  it('a simple export prints every box as its color bar and title only', async () => {
+    setup()
+    await screen.findAllByLabelText('Name')
+    let farDuringExport = -1
+    let fieldsDuringExport = -1
+    exportPdf.mockImplementationOnce(async () => {
+      farDuringExport = screen.queryAllByTestId('task-box-far').length
+      fieldsDuringExport = screen.queryAllByTestId('export-field-name').length
+    })
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Export' })) })
+    expect(screen.getByRole('menuitem', { name: 'Export PNG (simple)' })).toBeInTheDocument()
+    await act(async () => fireEvent.click(screen.getByRole('menuitem', { name: 'Export PDF (simple)' })))
+    await waitFor(() => expect(farDuringExport).toBe(4))
+    expect(fieldsDuringExport).toBe(0)
+    await waitFor(() => expect(screen.queryAllByTestId('task-box-far')).toHaveLength(0))
   })
 
   it('draws in full only the boxes in the zone around the camera, the others once it comes near', async () => {

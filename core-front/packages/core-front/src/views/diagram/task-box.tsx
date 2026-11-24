@@ -1,5 +1,5 @@
 'use client'
-import { createContext, memo, useContext, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
+import { createContext, memo, useContext, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import IconButton from '@mui/material/IconButton'
 import InputBase from '@mui/material/InputBase'
@@ -142,13 +142,10 @@ export const TaskBox = memo(function TaskBox({ data, sourcePosition, targetPosit
   const simple = useContext(SimpleExport)
   const [error, setError] = useState<SerializedError | null>(null)
   const { record, chevron } = data
-  const onDoubleClick = (e: MouseEvent) => {
-    if (!(e.target as HTMLElement).closest('input, textarea, [role="combobox"]')) data.onOpen()
-  }
   if (!detailed || simple) {
     // Same size and handles as the full box: the layout and the arrows don't move.
     return (
-      <Paper variant="outlined" data-testid="task-box-far" onDoubleClick={data.onOpen} sx={{ position: 'relative', width: TASK_BOX_SIZE.w, height: TASK_BOX_SIZE.h, boxSizing: 'border-box', overflow: 'hidden', p: 1.5, pt: data.colors?.length ? 4 : 1.5 }}>
+      <Paper variant="outlined" data-testid="task-box-far" sx={{ position: 'relative', width: TASK_BOX_SIZE.w, height: TASK_BOX_SIZE.h, boxSizing: 'border-box', overflow: 'hidden', p: 1.5, pt: data.colors?.length ? 4 : 1.5 }}>
         <ColorRibbon colors={data.colors} height={20} />
         <Handle type="target" position={targetPosition ?? Position.Top} />
         {data.onRemove && !exporting ? <RemoveButton onRemove={data.onRemove} size={40} /> : null}
@@ -160,7 +157,7 @@ export const TaskBox = memo(function TaskBox({ data, sourcePosition, targetPosit
   }
   return (
     // An export grows the box to its content (no scrollbar in the image).
-    <Paper variant="outlined" onDoubleClick={onDoubleClick} sx={{ position: 'relative', width: TASK_BOX_SIZE.w, boxSizing: 'border-box', p: 1, pt: data.colors?.length ? 2.5 : 1, ...(exporting ? { minHeight: TASK_BOX_SIZE.h, overflow: 'visible' } : { height: TASK_BOX_SIZE.h, overflow: 'auto' }) }}>
+    <Paper variant="outlined" sx={{ position: 'relative', width: TASK_BOX_SIZE.w, boxSizing: 'border-box', p: 1, pt: data.colors?.length ? 2.5 : 1, ...(exporting ? { minHeight: TASK_BOX_SIZE.h, overflow: 'visible' } : { height: TASK_BOX_SIZE.h, overflow: 'auto' }) }}>
       <ColorRibbon colors={data.colors} height={10} />
       <Handle type="target" position={targetPosition ?? Position.Top} />
       {data.onRemove && !exporting ? <RemoveButton onRemove={data.onRemove} size={14} /> : null}

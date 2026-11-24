@@ -39,7 +39,7 @@ import { DeliverableBox } from './deliverable-box'
 import { ExportMenu, ToolButton } from './toolbar'
 import { BusEdge, ObsBox } from './obs-box'
 import { PbsBox } from './pbs-box'
-import { compactTheme, ForceDetail, LabelBox, SimpleExport, NOTE_BOX_SIZE, NOTE_LIMIT, NOTE_LINK_LIMIT, NoteBox, TASK_BOX_SIZE, TaskBox, type NoteBoxData } from './task-box'
+import { compactTheme, ForceDetail, LabelBox, SimpleExport, NOTE_BOX_SIZE, NOTE_LIMIT, NOTE_LINK_LIMIT, NoteBox, TASK_BOX_SIZE, TaskBox, type NoteBoxData, type TaskBoxData } from './task-box'
 
 // The canvas WBS and PERT share: React Flow plus the user's own saved arrangement
 // (RelationOps.getViewLayout/saveViewLayout, optional and fail-open). Saved boxes keep
@@ -772,8 +772,8 @@ function Canvas(props: DiagramCanvasProps) {
         {props.readOnly ? null : <ToolButton icon="wand-magic-sparkles" label={t('Re-arrange')} onClick={rearrange} />}
         <ExportMenu
           options={[
-            { key: 'png', label: t('Export PNG'), icon: 'file-image', onClick: () => void exportAs('png') },
-            { key: 'pdf', label: t('Export PDF'), icon: 'file-pdf', onClick: () => void exportAs('pdf') },
+            { key: 'png', label: t(props.simpleExport ? 'Export PNG (complete)' : 'Export PNG'), icon: 'file-image', onClick: () => void exportAs('png') },
+            { key: 'pdf', label: t(props.simpleExport ? 'Export PDF (complete)' : 'Export PDF'), icon: 'file-pdf', onClick: () => void exportAs('pdf') },
             ...(props.simpleExport
               ? [
                   { key: 'png-simple', label: t('Export PNG (simple)'), icon: 'file-image', onClick: () => void exportAs('png', true) },
@@ -824,6 +824,12 @@ function Canvas(props: DiagramCanvasProps) {
             edgeTypes={edgeTypes}
             onNodesChange={onNodesChange}
             onNodeDragStop={onNodeDragStop}
+            // On the node's wrapper, not the box: the box swaps its zoomed-out face for its full one
+            // (and back) as the view moves, the wrapper stays, so a double-click lands at any zoom.
+            onNodeDoubleClick={(e, node) => {
+              if (node.type !== 'task' || (e.target as HTMLElement).closest('input, textarea, button, [role="combobox"]')) return
+              ;(node.data as TaskBoxData).onOpen()
+            }}
             onConnect={props.onConnect || props.notes ? onConnect : undefined}
             onEdgesDelete={props.onEdgesDelete || props.notes ? onEdgesDelete : undefined}
             nodesConnectable={!props.readOnly && (!!props.onConnect || !!props.notes)}

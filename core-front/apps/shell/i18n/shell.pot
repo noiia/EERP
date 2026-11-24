@@ -2650,6 +2650,12 @@ msgstr ""
 msgid "Export PDF (simple)"
 msgstr ""
 
+msgid "Export PNG (complete)"
+msgstr ""
+
+msgid "Export PDF (complete)"
+msgstr ""
+
 msgid "Export XLSX"
 msgstr ""
 
