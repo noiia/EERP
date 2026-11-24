@@ -3576,3 +3576,15 @@ msgstr "Dernière modification"
 
 msgid "More actions"
 msgstr "Plus d’actions"
+
+msgid "Timeline"
+msgstr "Chronologie"
+
+msgid "Roadmap"
+msgstr "Feuille de route"
+
+msgid "Gantt view"
+msgstr "Vue Gantt"
+
+msgid "No milestones yet."
+msgstr "Aucun jalon pour l'instant."

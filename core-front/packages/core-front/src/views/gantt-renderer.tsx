@@ -24,6 +24,7 @@ import { mergeListOptions, type EntityListOptions } from '../api/list-options'
 import { pinnedId, type ExchangeFormat, type GanttBaselineConfig, type GanttDependenciesConfig, type GanttExchangeConfig, type GanttMilestonesConfig, type GanttScheduleConfig } from '../api/view-fields'
 import { useT } from '../i18n/translate'
 import { ganttTree } from './gantt-tree'
+import { GanttRoadmap } from './gantt-roadmap'
 import { useUndoToastStore } from './undo-toast'
 import type { ViewDescriptor } from './descriptor'
 import { BannerScope, BannerSlot } from './banner'
@@ -92,6 +93,23 @@ function readCritical(entity: string): boolean {
 function writeCritical(entity: string, on: boolean) {
   try {
     sessionStorage.setItem(criticalKey(entity), on ? '1' : '0')
+  } catch {
+    // not persisted, still applied
+  }
+}
+
+// Timeline or Roadmap (the pinned scope's milestones on one line), kept per entity like the zoom.
+const roadmapKey = (entity: string) => `eerp.gantt.roadmap.${entity}`
+function readRoadmap(entity: string): boolean {
+  try {
+    return sessionStorage.getItem(roadmapKey(entity)) === '1'
+  } catch {
+    return false
+  }
+}
+function writeRoadmap(entity: string, on: boolean) {
+  try {
+    sessionStorage.setItem(roadmapKey(entity), on ? '1' : '0')
   } catch {
     // not persisted, still applied
   }
@@ -464,17 +482,25 @@ export function GanttRenderer<T extends HasId>({
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
   // PNG/PDF of the timeline as drawn: folded rows (collapsed) are not in it.
   const [exportError, setExportError] = useState<SerializedError | null>(null)
-  const exportImage = async (kind: 'png' | 'pdf') => {
-    const el = gridRef.current
+  const roadmapRef = useRef<HTMLDivElement>(null)
+  const exportImage = async (kind: 'png' | 'pdf', roadmapView = false) => {
+    const el = roadmapView ? roadmapRef.current : gridRef.current
     if (!el) return
     setExportError(null)
     try {
       // html-to-image and jspdf load on the first export, not with the Gantt.
       const { exportElementPdf, exportElementPng } = await import('./diagram/export')
-      const title = `${t('Gantt')} ${fromIso} – ${isoDate(addDays(range.end, -1))}`
+      const title = roadmapView ? `${t('Roadmap')} ${isoDate(new Date())}` : `${t('Gantt')} ${fromIso} – ${isoDate(addDays(range.end, -1))}`
       const background = theme.palette.background.paper
+      const legend = roadmapView
+        ? [
+            { color: theme.palette.success.main, label: t('Reached') },
+            { color: theme.palette.error.main, label: t('Late') },
+            { color: theme.palette.primary.main, label: t('Upcoming') },
+          ]
+        : [{ color: theme.palette.error.main, label: t('Today') }]
       if (kind === 'png') await exportElementPng(el, title, background)
-      else await exportElementPdf(el, { title, date: new Date(), legend: [{ color: theme.palette.error.main, label: t('Today') }], background }, title)
+      else await exportElementPdf(el, { title, date: new Date(), legend, background }, title)
     } catch (e: unknown) {
       setExportError(serializeError(toApiError(e)))
     }
@@ -994,6 +1020,25 @@ export function GanttRenderer<T extends HasId>({
     const d = dayDiff(m.day, range.start)
     return d >= 0 && d < totalDays
   })
+  const [roadmapPicked, setRoadmapPicked] = useState(() => readRoadmap(descriptor.entity))
+  // Roadmap needs the pinned scope's milestones; unpinned, the Gantt shows its timeline.
+  const roadmapOn = roadmapPicked && milestonePin != null
+  const viewToggle = milestonePin ? (
+    <ToggleButtonGroup
+      size="small"
+      exclusive
+      value={roadmapOn ? 'roadmap' : 'timeline'}
+      onChange={(_e, next: string | null) => {
+        if (!next) return
+        setRoadmapPicked(next === 'roadmap')
+        writeRoadmap(descriptor.entity, next === 'roadmap')
+      }}
+      aria-label={t('Gantt view')}
+    >
+      <ToggleButton value="timeline">{t('Timeline')}</ToggleButton>
+      <ToggleButton value="roadmap">{t('Roadmap')}</ToggleButton>
+    </ToggleButtonGroup>
+  ) : null
   // The milestone row sits right under the header and pushes the task rows down by one.
   const msRow = milestoneRows.length > 0 ? 1 : 0
   const rowY = (i: number) => HEADER_H + ROW_GAP + (i + msRow) * (ROW_H + ROW_GAP) + ROW_H / 2
@@ -1009,6 +1054,27 @@ export function GanttRenderer<T extends HasId>({
     }
   }
 
+  if (roadmapOn)
+    return (
+      <Box>
+        <ErrorAlert error={exportError} />
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: phone ? 0.5 : 1, mb: 1 }}>
+          {viewToggle}
+          <ExportMenu
+            options={[
+              { key: 'png', label: t('Export PNG'), icon: 'file-image', onClick: () => void exportImage('png', true) },
+              { key: 'pdf', label: t('Export PDF'), icon: 'file-pdf', onClick: () => void exportImage('pdf', true) },
+            ]}
+          />
+        </Box>
+        <GanttRoadmap
+          ref={roadmapRef}
+          milestones={milestoneRows}
+          onOpen={milestones?.formPath ? (id) => router.push(erpPath(milestones.formPath!.replace(':id', id))) : undefined}
+        />
+      </Box>
+    )
+
   return (
     <Box>
       <ErrorAlert error={error} />
@@ -1018,6 +1084,7 @@ export function GanttRenderer<T extends HasId>({
       <Stack direction={phone ? 'column' : 'row'} spacing={2} sx={{ alignItems: phone ? 'stretch' : 'flex-start' }}>
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: phone ? 0.5 : 1, mb: 1 }}>
+            {viewToggle}
             <ToggleButtonGroup
               size="small"
               exclusive

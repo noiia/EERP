@@ -1151,6 +1151,51 @@ describe('GanttRenderer', () => {
       expect(pushMock).toHaveBeenCalledWith('/app/project/milestones/next')
     })
 
+    it('switches to the Roadmap: every milestone on one line and in a table, exported as PNG or PDF', async () => {
+      const cfg: GanttMilestonesConfig = { entity: 'project_milestone', scopeField: 'project_id', dateField: 'deadline', labelField: 'name', reachedField: 'reached', formPath: '/project/milestones/:id' }
+      const listPage = vi.fn<ListPage>(async (entity: string) => {
+        if (entity === 'project_milestone')
+          return {
+            records: [
+              { id: 'done', name: 'Done', deadline: '2026-03-02T00:00:00Z', reached: true },
+              { id: 'far', name: 'Far', deadline: '2027-06-01T00:00:00Z', reached: false },
+            ],
+            total: 2,
+          }
+        return { records: [t1], total: 1 }
+      })
+      const view = () =>
+        render(
+          <RelationOpsProvider ops={opsFor(listPage, vi.fn())}>
+            <GanttRenderer descriptor={descriptor} initialData={[]} actions={actions} startField="date_start" endField="deadline" serverOptions={{ filter: { project_id: 'p1' } }} milestones={cfg} />
+          </RelationOpsProvider>,
+        )
+      view()
+      await screen.findByTestId('gantt-milestone-done')
+      fireEvent.click(screen.getByRole('button', { name: 'Roadmap' }))
+      const roadmap = screen.getByTestId('gantt-roadmap')
+      // Out of the timeline's range, still on the roadmap.
+      expect(within(roadmap).getByTestId('gantt-roadmap-milestone-far')).toBeInTheDocument()
+      expect(within(roadmap).getAllByRole('row')).toHaveLength(3)
+      expect(within(roadmap).getByText('Reached')).toBeInTheDocument()
+      expect(within(roadmap).getByText('Upcoming')).toBeInTheDocument()
+      expect(screen.queryByTestId('gantt-track')).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: 'Export' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Export PNG' }))
+      await waitFor(() => expect(exportElementPng).toHaveBeenCalledWith(roadmap, expect.stringMatching(/^Roadmap /), expect.anything()))
+      fireEvent.click(screen.getByRole('button', { name: 'Export' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Export PDF' }))
+      await waitFor(() => expect(exportElementPdf).toHaveBeenCalledWith(roadmap, expect.objectContaining({ title: expect.stringMatching(/^Roadmap /) }), expect.anything()))
+      fireEvent.click(within(roadmap).getByRole('button', { name: 'Far' }))
+      expect(pushMock).toHaveBeenCalledWith('/app/project/milestones/far')
+      // Kept for the session, like the zoom.
+      cleanup()
+      view()
+      expect(await screen.findByTestId('gantt-roadmap')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Timeline' }))
+      expect(await screen.findByTestId('gantt-track')).toBeInTheDocument()
+    })
+
     it('draws no milestone row when the list is not pinned', async () => {
       const listPage = taskListPage([t1])
       const cfg: GanttMilestonesConfig = { entity: 'project_milestone', scopeField: 'project_id', dateField: 'deadline', labelField: 'name' }

@@ -3442,3 +3442,15 @@ msgstr ""
 
 msgid "More actions"
 msgstr ""
+
+msgid "Timeline"
+msgstr ""
+
+msgid "Roadmap"
+msgstr ""
+
+msgid "Gantt view"
+msgstr ""
+
+msgid "No milestones yet."
+msgstr ""
