@@ -91,11 +91,20 @@ describe('connectPresenceSocket', () => {
     expect(usePresenceStore.getState().statuses).toEqual({})
   })
 
-  it('tells listeners when the socket (re)opens, so the feed is re-read', () => {
+  it('tells listeners when the socket reopens, not on its first open (consumers read on mount)', () => {
     const listener = vi.fn()
     const stop = onLiveReconnect(listener)
     connectPresenceSocket()
     MockWebSocket.instances[0]!.onopen?.()
+    expect(listener).not.toHaveBeenCalled()
+    MockWebSocket.instances[0]!.onclose?.()
+    vi.advanceTimersByTime(60000)
+    MockWebSocket.instances[1]!.onopen?.()
+    expect(listener).toHaveBeenCalledTimes(1)
+    // A new session (disconnect, then connect) starts over.
+    disconnectPresenceSocket()
+    connectPresenceSocket()
+    MockWebSocket.instances.at(-1)!.onopen?.()
     expect(listener).toHaveBeenCalledTimes(1)
     stop()
   })
@@ -112,12 +121,33 @@ describe('connectPresenceSocket', () => {
     expect(MockWebSocket.instances).toHaveLength(1)
   })
 
-  it('reconnects a fixed delay after the socket closes', () => {
+  it('reconnects after a backoff that doubles on each failure and resets once a socket stayed open', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5) // no jitter
+    const closeLast = () => MockWebSocket.instances.at(-1)!.onclose?.()
     connectPresenceSocket()
+    closeLast()
+    vi.advanceTimersByTime(2999)
     expect(MockWebSocket.instances).toHaveLength(1)
-    MockWebSocket.instances[0]!.onclose?.()
-    vi.advanceTimersByTime(3000)
+    vi.advanceTimersByTime(1)
     expect(MockWebSocket.instances).toHaveLength(2)
+    // Second failure in a row: 6s.
+    closeLast()
+    vi.advanceTimersByTime(5999)
+    expect(MockWebSocket.instances).toHaveLength(2)
+    vi.advanceTimersByTime(1)
+    expect(MockWebSocket.instances).toHaveLength(3)
+    // Open for 30s, then dropped: back to 3s.
+    MockWebSocket.instances.at(-1)!.onopen?.()
+    vi.advanceTimersByTime(30000)
+    closeLast()
+    vi.advanceTimersByTime(3000)
+    expect(MockWebSocket.instances).toHaveLength(4)
+    // Never above 60s.
+    for (let i = 0; i < 10; i++) {
+      closeLast()
+      vi.advanceTimersByTime(60000)
+    }
+    expect(MockWebSocket.instances).toHaveLength(14)
   })
 
   it('disconnectPresenceSocket closes the socket and cancels any pending reconnect', () => {

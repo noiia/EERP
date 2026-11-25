@@ -44,14 +44,24 @@ function presenceWsUrl(): string {
 
 let socket: WebSocket | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+const RECONNECT_MIN_MS = 3000
+const RECONNECT_MAX_MS = 60000
+const STABLE_MS = 30000
+let failures = 0
+let openedAt = 0
+// The first open after connect only starts the live feed: every consumer did its own first
+// read on mount, so re-reading then would double each read (Teams' sidebar, the bell).
+let everOpened = false
 
 /**
  * Opens the presence socket (idempotent — a second call while one is already
  * open/connecting is a no-op) and wires it into usePresenceStore. Reconnects
- * on close/error after a fixed 3s delay — presence is best-effort live data,
- * not a queue that needs backoff/jitter at this scale (a handful to a few
- * hundred concurrent users per tenant). Call disconnectPresenceSocket() on
- * logout/unmount to stop reconnecting.
+ * on close/error with exponential backoff (3s doubling to 60s, ±20% jitter),
+ * back to 3s once a socket stayed open 30s: every (re)open re-reads the
+ * notification feed and the Teams sidebar, so a socket a proxy keeps dropping
+ * (or a 429 on the handshake) must not retry at a fixed pace, nor every tab
+ * of a shared IP in step. Call disconnectPresenceSocket() on logout/unmount to
+ * stop reconnecting.
  */
 export function connectPresenceSocket(): void {
   if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return
@@ -79,22 +89,35 @@ export function connectPresenceSocket(): void {
     }
   }
   // Frames sent while the socket was down aren't replayed: re-read the feed.
-  ws.onopen = () => notifyLiveReconnect()
-  ws.onclose = scheduleReconnect
+  ws.onopen = () => {
+    openedAt = Date.now()
+    if (everOpened) notifyLiveReconnect()
+    everOpened = true
+  }
+  ws.onclose = () => {
+    if (openedAt && Date.now() - openedAt >= STABLE_MS) failures = 0
+    openedAt = 0
+    scheduleReconnect()
+  }
   ws.onerror = () => ws.close()
 }
 
 function scheduleReconnect() {
   socket = null
   if (reconnectTimer) return
+  const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_MIN_MS * 2 ** failures) * (0.8 + Math.random() * 0.4)
+  failures++
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null
     connectPresenceSocket()
-  }, 3000)
+  }, delay)
 }
 
 /** Stops the socket and any pending reconnect — call on logout/unmount. */
 export function disconnectPresenceSocket(): void {
+  failures = 0
+  openedAt = 0
+  everOpened = false
   if (reconnectTimer) {
     clearTimeout(reconnectTimer)
     reconnectTimer = null
