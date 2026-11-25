@@ -59,3 +59,6 @@ tools/pdf-service/cover.out
 
 # Automated backups (internal/backup, backup_dir in the dev config).
 /backups/
+
+# Built CLI tools (make build-upgrade)
+/bin/

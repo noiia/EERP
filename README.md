@@ -123,6 +123,10 @@ are saved — a re-run needs no arguments. First sign-in: `admin@eerp.local` / `
 `ROTATE=1` regenerates the secrets. Behind a proxy, forward to the gateway's **HTTPS** port
 (its plain-HTTP port only redirects, so it loops) and keep WebSocket upgrades on.
 
+**Upgrading an old database:** an extract from `/database/management` or an automated backup of an
+older release (v0.108.0 or later) can be brought up to a release in one step, without installing
+every release in between, with `tools/eerp-upgrade` — see its [README](tools/eerp-upgrade/README.md).
+
 Every use case, with proxy examples and troubleshooting, is in the developer documentation
 ([EERP-Documentation-Wiki](https://github.com/noiia/EERP-Documentation-Wiki), *Developer
 Guide → Deployment*).

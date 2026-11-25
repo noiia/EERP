@@ -1,6 +1,6 @@
 root := $(CURDIR)
 
-.PHONY: rebuild-and-run clean build run run-back run-back-tests run-pdf-tests run-front-tests run-deadcode run-coverage-gate test test-back test-pdf test-front run-front-dev garage-init logs run-docker-prod bootstrap bootstrap-prod renew-certs-prod
+.PHONY: rebuild-and-run clean build run run-back run-back-tests run-pdf-tests run-front-tests run-deadcode run-coverage-gate test test-back test-pdf test-front run-front-dev garage-init logs run-docker-prod bootstrap bootstrap-prod renew-certs-prod build-upgrade test-upgrade
 
 CONFIG ?= $(root)/eerp-config.json
 
@@ -95,6 +95,14 @@ run-coverage-gate:
 GO_COVER_ARGS := -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
 test:
 	@$(MAKE) --no-print-directory -j3 --output-sync=target test-back test-pdf test-front
+
+# The database upgrade tool (tools/eerp-upgrade): not part of `make test`, see its README.
+build-upgrade:
+	cd $(root)/tools/eerp-upgrade && go build -ldflags "-X core/internal/version.Version=$$(git describe --tags --exact-match 2>/dev/null | sed 's/^v//' | rg . || echo dev)" -o $(root)/bin/eerp-upgrade .
+
+test-upgrade:
+	$(COMPOSE) up -d --wait db
+	cd $(root)/tools/eerp-upgrade && CONFIG="$(CONFIG)" EERP_UPGRADE_SLOW=1 go test ./... -timeout 30m $(ARGS)
 
 test-back:
 	$(COMPOSE) up -d --wait redis
