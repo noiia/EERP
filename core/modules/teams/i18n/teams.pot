@@ -319,6 +319,18 @@ msgstr ""
 msgid "Numbered list"
 msgstr ""
 
+msgid "Checklist"
+msgstr ""
+
+msgid "Check"
+msgstr ""
+
+msgid "Uncheck"
+msgstr ""
+
+msgid "The checkbox could not be changed."
+msgstr ""
+
 msgid "Link"
 msgstr ""
 

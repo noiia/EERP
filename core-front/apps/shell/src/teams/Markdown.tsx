@@ -1,6 +1,7 @@
 'use client'
 import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
+import Checkbox from '@mui/material/Checkbox'
 import Link from '@mui/material/Link'
 import Typography from '@mui/material/Typography'
 import { useT } from '@eerp/core-front'
@@ -49,6 +50,8 @@ export function renderInline(text: string): ReactNode[] {
 const LINE_KINDS: [RegExp, string][] = [
   [/^(#{1,3}) (.*)$/, 'heading'],
   [/^> ?(.*)$/, 'quote'],
+  // A checkbox: Go's teams/checks.go matches the same lines, in the same order, to tick one.
+  [/^[-*] \[([ xX])\] (.*)$/, 'task'],
   [/^[-*] (.*)$/, 'ul'],
   [/^\d+[.)] (.*)$/, 'ol'],
 ]
@@ -61,10 +64,13 @@ function kindOf(line: string): [string, RegExpExecArray | null] {
   return ['text', null]
 }
 
-/** A chat message body rendered from its Markdown subset (titles, bold, italic, strikethrough, code, quotes, lists, links). */
-export function Markdown({ text }: { text: string }) {
+/** A chat message body rendered from its Markdown subset (titles, bold, italic, strikethrough, code, quotes, lists,
+ * checkboxes, links). `onToggle` (the box's 0-based index among the message's checkboxes) makes the boxes clickable. */
+export function Markdown({ text, onToggle }: { text: string; onToggle?: (index: number, checked: boolean) => void }) {
+  const t = useT()
   const lines = text.split('\n')
   const blocks: ReactNode[] = []
+  let boxes = 0
   for (let i = 0; i < lines.length; ) {
     const k = blocks.length
     if (lines[i].startsWith('```')) {
@@ -92,10 +98,33 @@ export function Markdown({ text }: { text: string }) {
     const group: string[] = []
     while (i < lines.length && !lines[i].startsWith('```') && kindOf(lines[i])[0] === kind) {
       const mm = kindOf(lines[i])[1]
-      group.push(mm ? mm[1] : lines[i])
+      group.push(kind === 'task' ? lines[i] : mm ? mm[1] : lines[i])
       i++
     }
-    if (kind === 'quote') {
+    if (kind === 'task') {
+      blocks.push(
+        <Box key={k} component="ul" sx={{ m: 0, p: 0, listStyle: 'none' }}>
+          {group.map((g) => {
+            const [, mark, label] = kindOf(g)[1]!
+            const index = boxes++
+            const checked = mark !== ' '
+            return (
+              <Box component="li" key={index} sx={{ display: 'flex', alignItems: 'flex-start' }}>
+                <Checkbox
+                  size="small"
+                  checked={checked}
+                  disabled={!onToggle}
+                  onChange={() => onToggle?.(index, !checked)}
+                  slotProps={{ input: { 'aria-label': `${checked ? t('Uncheck') : t('Check')} ${label}` } }}
+                  sx={{ p: 0.25, mr: 0.5 }}
+                />
+                <Box component="span" sx={{ pt: 0.25, ...(checked && { textDecoration: 'line-through', color: 'text.secondary' }) }}>{renderInline(label)}</Box>
+              </Box>
+            )
+          })}
+        </Box>,
+      )
+    } else if (kind === 'quote') {
       blocks.push(
         <Box key={k} component="blockquote" sx={{ m: 0, my: 0.5, pl: 1.5, borderLeft: 3, borderColor: 'divider', color: 'text.secondary', whiteSpace: 'pre-wrap' }}>
           {renderInline(group.join('\n'))}

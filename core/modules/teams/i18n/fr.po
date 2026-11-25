@@ -320,6 +320,18 @@ msgstr "Liste à puces"
 msgid "Numbered list"
 msgstr "Liste numérotée"
 
+msgid "Checklist"
+msgstr "Liste de cases à cocher"
+
+msgid "Check"
+msgstr "Cocher"
+
+msgid "Uncheck"
+msgstr "Décocher"
+
+msgid "The checkbox could not be changed."
+msgstr "La case n'a pas pu être modifiée."
+
 msgid "Link"
 msgstr "Lien"
 

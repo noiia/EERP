@@ -231,6 +231,9 @@ export function postMessage(
 }
 export const editMessage = (message: string, body: string) =>
   call<Message>('PUT', `/messages/${message}`, { body })
+/** Ticks or clears a message's index-th checkbox (any member, not only its author). */
+export const setCheck = (message: string, index: number, checked: boolean) =>
+  call<Message>('PUT', `/messages/${message}/checks`, { index, checked })
 export const deleteMessage = (message: string) => call<void>('DELETE', `/messages/${message}`)
 export const markRead = (channel: string) => call<void>('POST', `/channels/${channel}/read`)
 export const toggleReaction = (message: string, emoji: string) =>

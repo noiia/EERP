@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { Markdown } from './Markdown'
 
@@ -33,5 +33,22 @@ describe('Markdown', () => {
     expect(fireEvent.click(link)).toBe(false) // default prevented
     expect(fireEvent.click(link, { ctrlKey: true })).toBe(true)
     expect(screen.getAllByRole('link')).toHaveLength(1)
+  })
+  it('draws checkboxes, numbered past code blocks, clickable only with onToggle', () => {
+    const toggle = vi.fn()
+    render(<Markdown text={'- [ ] a\n```\n- [ ] in code\n```\n* [X] **b**'} onToggle={toggle} />)
+    const boxes = screen.getAllByRole('checkbox')
+    expect(boxes).toHaveLength(2)
+    expect(boxes[1]).toBeChecked()
+    fireEvent.click(boxes[1])
+    expect(toggle).toHaveBeenCalledWith(1, false)
+    fireEvent.click(boxes[0])
+    expect(toggle).toHaveBeenCalledWith(0, true)
+    expect(screen.getByText('b').tagName).toBe('STRONG')
+  })
+
+  it('without onToggle the checkboxes are read-only', () => {
+    render(<Markdown text={'- [ ] a'} />)
+    expect(screen.getByRole('checkbox')).toBeDisabled()
   })
 })

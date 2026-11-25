@@ -6,12 +6,14 @@ const toggleReaction = vi.fn()
 const postMessage = vi.fn()
 const deleteMessage = vi.fn()
 const editMessage = vi.fn()
+const setCheck = vi.fn()
 vi.mock('./client', () => ({
   listMessages: (...a: unknown[]) => listMessages(...a),
   markRead: () => Promise.resolve(),
   postMessage: (...a: unknown[]) => postMessage(...a),
   deleteMessage: (...a: unknown[]) => deleteMessage(...a),
   editMessage: (...a: unknown[]) => editMessage(...a),
+  setCheck: (...a: unknown[]) => setCheck(...a),
   toggleReaction: (...a: unknown[]) => toggleReaction(...a),
 }))
 
@@ -177,6 +179,27 @@ describe('ChatPane', () => {
     expect(await screen.findByText('body m1, fixed')).toBeInTheDocument()
     expect(screen.queryByRole('textbox', { name: 'Message to modify' })).toBeNull()
     expect(within(screen.getAllByRole('article')[0]).getByText('(edited)')).toBeInTheDocument()
+  })
+
+  it("anyone but a guest ticks a checkbox of someone else's message; a guest sees it disabled", async () => {
+    useSessionStore.setState({ identity: { userId: 'u9' } } as never)
+    listMessages.mockResolvedValue([msg('m1', '2026-01-01T10:00:00Z', { body: '- [ ] milk\n- [x] eggs' })])
+    setCheck.mockReset().mockImplementation(async (id: string) => msg(id, '2026-01-01T10:00:00Z', { body: '- [x] milk\n- [x] eggs' }))
+    const { unmount } = renderPane()
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Check milk' }))
+    await waitFor(() => expect(setCheck).toHaveBeenCalledWith('m1', 0, true))
+    expect(await screen.findByRole('checkbox', { name: 'Uncheck milk' })).toBeChecked()
+    unmount()
+    render(<ChatPane channelId="c1" title="general" members={[]} canAttach readOnly />)
+    expect(await screen.findByRole('checkbox', { name: 'Uncheck eggs' })).toBeDisabled()
+  })
+
+  it('shows why a tick was refused', async () => {
+    listMessages.mockResolvedValue([msg('m1', '2026-01-01T10:00:00Z', { body: '- [ ] milk' })])
+    setCheck.mockReset().mockRejectedValue(new Error('The message has no checkbox at that index.'))
+    renderPane()
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Check milk' }))
+    expect(await screen.findByText('The message has no checkbox at that index.')).toBeInTheDocument()
   })
 
   it('keeps the draft in the editor when the edit is refused', async () => {

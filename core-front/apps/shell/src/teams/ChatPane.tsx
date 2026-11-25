@@ -16,7 +16,7 @@ import { useTheme } from '@mui/material/styles'
 import { faFaceSmile } from '@fortawesome/free-regular-svg-icons'
 import { faEllipsis, faReply } from '@fortawesome/free-solid-svg-icons'
 import { AvatarWithPresence, avatarUrl, FontAwesomeIcon, T, useSessionStore, useT } from '@eerp/core-front'
-import { deleteMessage, editMessage, postMessage, toggleReaction, type Message, type Role } from './client'
+import { deleteMessage, editMessage, postMessage, setCheck, toggleReaction, type Message, type Role } from './client'
 import { useChatStore } from './chat-store'
 import { Composer, type MentionCandidate } from './Composer'
 import { FolderPanel } from './FolderPanel'
@@ -120,7 +120,7 @@ const toolbarSx = {
 /** One message, Discord style: a full-width row highlighted on hover, the avatar in a left gutter, and a
  * floating toolbar (quick reactions, the reaction picker, the options menu) on its top-right corner,
  * shown on hover, keyboard focus, or a tap (the row is click-focusable). */
-function MessageItem({ m, stacked = false, onReact, onReply, onEdit, onDelete }: { m: Message; stacked?: boolean; onReact: (emoji: string) => void; onReply?: () => void; onEdit?: (body: string) => Promise<void>; onDelete?: () => void }) {
+function MessageItem({ m, stacked = false, onReact, onReply, onEdit, onDelete, onCheck }: { m: Message; stacked?: boolean; onReact: (emoji: string) => void; onReply?: () => void; onEdit?: (body: string) => Promise<void>; onDelete?: () => void; onCheck?: (index: number, checked: boolean) => void }) {
   const t = useT()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const [menu, setMenu] = useState<HTMLElement | null>(null)
@@ -163,7 +163,7 @@ function MessageItem({ m, stacked = false, onReact, onReply, onEdit, onDelete }:
         <MessageEditor initial={m.body} onCancel={() => setEditing(false)} onSave={(body) => onEdit(body).then(() => setEditing(false))} />
       ) : (
         <>
-          {m.body && <Markdown text={m.body} />}
+          {m.body && <Markdown text={m.body} onToggle={onCheck} />}
           {edited}
         </>
       )}
@@ -307,6 +307,13 @@ export function ChatPane({
       .catch((err: unknown) => setActionError(err instanceof Error && err.message ? err.message : t('The message could not be deleted.')))
   }
 
+  const check = (messageId: string, index: number, checked: boolean) => {
+    setActionError('')
+    setCheck(messageId, index, checked)
+      .then((m) => useChatStore.getState().update({ type: 'chat_message_updated', channel_id: channelId, message: m }))
+      .catch((err: unknown) => setActionError(err instanceof Error && err.message ? err.message : t('The checkbox could not be changed.')))
+  }
+
   // Throws to the editor, which keeps the draft and shows Go's refusal.
   const edit = async (messageId: string, body: string) => {
     const m = await editMessage(messageId, body)
@@ -371,6 +378,8 @@ export function ChatPane({
               onEdit={!readOnly && m.author_id === me ? (body) => edit(m.id, body) : undefined}
               // Go's rule: the author (not a guest) or a team owner.
               onDelete={!readOnly && (m.author_id === me || role === 'owner') ? () => remove(m.id) : undefined}
+              // Go's rule: anyone who may react (not a guest) ticks a box, not only the author.
+              onCheck={readOnly ? undefined : (index, checked) => check(m.id, index, checked)}
             />
           ))}
         </Box>

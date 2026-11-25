@@ -746,6 +746,59 @@ func (h *Handler) EditMessage(c *echo.Context) error {
 			return err
 		}
 	}
+	return h.answerUpdated(c, ch, role, audience, m)
+}
+
+// SetCheck serves PUT /messages/:message/checks {index, checked}: ticks or clears the
+// message's index-th checkbox (a `- [ ]` Markdown line, 0-based, outside code blocks).
+// Not only its author: anyone who may react to it may tick it (guests may not). The message
+// isn't marked edited; the channel's audience gets a chat_message_updated frame.
+func (h *Handler) SetCheck(c *echo.Context) error {
+	ctx := c.Request().Context()
+	id := auth.MustIdentity(ctx)
+	msgID, err := echo.PathParam[uuid.UUID](c, "message")
+	if err != nil {
+		return notFound(c, "message")
+	}
+	m, err := h.repo.FindMessage(ctx, id.TenantID, msgID)
+	if errors.Is(err, orm.ErrNotFound) {
+		return notFound(c, "message")
+	}
+	if err != nil {
+		return err
+	}
+	ch, role, audience, err := h.channelAccess(c, m.ChannelID)
+	if role == "" {
+		return err
+	}
+	if !CanWrite(role) {
+		return forbidden(c)
+	}
+	var b struct {
+		Index   *int  `json:"index"`
+		Checked *bool `json:"checked"`
+	}
+	if err := c.Bind(&b); err != nil || b.Index == nil || b.Checked == nil || *b.Index < 0 {
+		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "index (≥ 0) and checked are required.")
+	}
+	m, err = h.repo.SetCheck(ctx, id.TenantID, m.ID, *b.Index, *b.Checked)
+	if errors.Is(err, orm.ErrNotFound) {
+		return notFound(c, "message") // deleted meanwhile
+	}
+	if errors.Is(err, ErrNoSuchCheck) {
+		return errorJSON(c, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "The message has no checkbox at that index.")
+	}
+	if err != nil {
+		return err
+	}
+	return h.answerUpdated(c, ch, role, audience, m)
+}
+
+// answerUpdated sends a changed message to the channel's audience (chat_message_updated)
+// and answers it to the caller, its files redacted for what they may see.
+func (h *Handler) answerUpdated(c *echo.Context, ch Channel, role string, audience []uuid.UUID, m Message) error {
+	ctx := c.Request().Context()
+	id := auth.MustIdentity(ctx)
 	out, err := h.wire(ctx, id.TenantID, id.UserID, []Message{m})
 	if err != nil {
 		return err

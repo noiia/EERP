@@ -36,6 +36,7 @@ export const PATTERNS: Pattern[] = [
   { label: '❝', title: 'Quote', line: () => '> ' },
   { label: '•', title: 'Bulleted list', line: () => '- ' },
   { label: '1.', title: 'Numbered list', line: (i) => `${i + 1}. ` },
+  { label: '☐', title: 'Checklist', line: () => '- [ ] ' },
   { label: '🔗', title: 'Link', wrap: ['[', '](https://)'] },
 ]
 
