@@ -7,6 +7,7 @@ import { setViewportWidth } from '../../test/viewport'
 import { MatrixRenderer, type MatrixTask } from './matrix-renderer'
 import { humanDeadline } from './eisenhower'
 import { exportElementPdf, exportElementPng } from '../diagram/export'
+import { useUiStore } from '../ui-store'
 
 const push = vi.hoisted(() => vi.fn())
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }))
@@ -388,6 +389,25 @@ describe('MatrixRenderer RACI tab', () => {
   afterEach(() => {
     cleanup()
     vi.useRealTimers()
+  })
+
+  it('person headers fit their name on one line; a column resizes and keeps its width in the UI store', async () => {
+    useUiStore.setState({ raciColumnWidths: {} })
+    const { ops } = opsFixture({ tasks: RACI_TASKS, members: RACI_MEMBERS, raci: RACI_ROWS })
+    renderRenderer(ops)
+    fireEvent.click(await screen.findByRole('tab', { name: 'RACI' }))
+    const col = within(await screen.findByTestId('raci-header')).getAllByTestId(/raci-col-/)[0]
+    const userId = col.dataset.testid!.replace('raci-col-', '')
+    expect(col.style.whiteSpace).toBe('nowrap')
+    const handle = screen.getByTestId(`raci-resize-${userId}`)
+    fireEvent.keyDown(handle, { key: 'ArrowRight' })
+    const width = useUiStore.getState().raciColumnWidths[userId]
+    expect(width).toBeGreaterThanOrEqual(44)
+    expect(col.style.width).toBe(`${width}px`)
+    expect(col.style.whiteSpace).toBe('normal')
+    fireEvent.doubleClick(handle)
+    expect(useUiStore.getState().raciColumnWidths[userId]).toBeUndefined()
+    expect(col.style.whiteSpace).toBe('nowrap')
   })
 
   it("Columns are the project's manager plus members (the `project_member` rows, plus anyone already holding a RACI role). Rows are tasks in WBS order.", async () => {

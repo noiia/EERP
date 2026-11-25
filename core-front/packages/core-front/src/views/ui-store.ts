@@ -33,6 +33,8 @@ export interface UiState {
   /** The form chatter panel's drag-resized width (px), shared across every
    * entity — a per-user layout preference, not per-entity like viewMode. */
   chatterWidth: number
+  /** RACI matrix person columns' drag-resized widths (px), by user id; absent = fit the name. */
+  raciColumnWidths: Record<string, number>
   setTheme: (theme: ThemeMode) => void
   setUiStyle: (uiStyle: UiStyle) => void
   /** Override a single brand color (live theming). */
@@ -47,6 +49,8 @@ export interface UiState {
   setViewMode: (entity: string, mode: DisplayMode) => void
   setSwimlanes: (entity: string, on: boolean) => void
   setChatterWidth: (width: number) => void
+  /** null forgets the width (the column fits its name again). */
+  setRaciColumnWidth: (userId: string, width: number | null) => void
 }
 
 export const useUiStore = create<UiState>()(
@@ -60,6 +64,7 @@ export const useUiStore = create<UiState>()(
       viewMode: {},
       swimlanes: {},
       chatterWidth: layout.chatterWidthDefault,
+      raciColumnWidths: {},
       setTheme: (theme) => set({ theme }),
       setUiStyle: (uiStyle) => set({ uiStyle }),
       setPaletteColor: (key, value) =>
@@ -74,6 +79,13 @@ export const useUiStore = create<UiState>()(
       setSwimlanes: (entity, on) =>
         set((state) => ({ swimlanes: { ...state.swimlanes, [entity]: on } })),
       setChatterWidth: (chatterWidth) => set({ chatterWidth }),
+      setRaciColumnWidth: (userId, width) =>
+        set((state) => {
+          const raciColumnWidths = { ...state.raciColumnWidths }
+          if (width === null) delete raciColumnWidths[userId]
+          else raciColumnWidths[userId] = width
+          return { raciColumnWidths }
+        }),
     }),
     {
       name: 'eerp-ui',

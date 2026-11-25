@@ -24,12 +24,15 @@ import { byPrefixAndName, FontAwesomeIcon } from '../icons'
 import { DiagramLoading } from '../diagram/diagram-canvas'
 import { ExportMenu } from '../diagram/toolbar'
 import { usePhone } from '../use-phone'
+import { useUiStore } from '../ui-store'
 import { useRelationOps, type RelationRecord } from '../relation-ops'
 import { dsmOrder } from './dsm'
 import type { MatrixTask } from './matrix-renderer'
 
 const PAGE_SIZE = 200
 const USER_CHUNK = 100
+/** Narrowest a person column can be dragged to (one cell's letters still fit). */
+const MIN_COL = 44
 
 export const RACI_ROLES = ['R', 'A', 'C', 'I'] as const
 type RaciRole = (typeof RACI_ROLES)[number]
@@ -138,6 +141,8 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
   const [projectName, setProjectName] = useState('')
   const [exporting, setExporting] = useState(false)
   const table = useRef<HTMLTableElement>(null)
+  const colWidths = useUiStore((s) => s.raciColumnWidths)
+  const setColWidth = useUiStore((s) => s.setRaciColumnWidth)
 
   const listPage = ops?.listPage
   const get = ops?.get
@@ -327,6 +332,29 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
       .finally(() => setExporting(false))
   }
 
+  // Drag a person column's right edge; the width is kept per user id in localStorage.
+  const startResize = (userId: string) => (e: React.PointerEvent<HTMLElement>) => {
+    const handle = e.currentTarget
+    const startX = e.clientX
+    const startW = handle.parentElement?.getBoundingClientRect().width ?? MIN_COL
+    handle.setPointerCapture?.(e.pointerId)
+    const move = (ev: PointerEvent) => setColWidth(userId, Math.max(MIN_COL, Math.round(startW + ev.clientX - startX)))
+    const up = () => {
+      handle.removeEventListener('pointermove', move)
+      handle.removeEventListener('pointerup', up)
+    }
+    handle.addEventListener('pointermove', move)
+    handle.addEventListener('pointerup', up)
+    e.preventDefault()
+  }
+  const resizeByKey = (userId: string) => (e: React.KeyboardEvent<HTMLElement>) => {
+    const step = e.key === 'ArrowRight' ? 8 : e.key === 'ArrowLeft' ? -8 : 0
+    if (!step) return
+    const current = colWidths[userId] ?? e.currentTarget.parentElement?.getBoundingClientRect().width ?? MIN_COL
+    setColWidth(userId, Math.max(MIN_COL, Math.round(current + step)))
+    e.preventDefault()
+  }
+
   if (!people) return <DiagramLoading />
   const editingTask = editing ? rows.find((task) => task.id === editing) : null
   // A computed parent may sum several children's accountables: only hand-set ones warn.
@@ -489,8 +517,41 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
               <tr>
                 <th style={{ ...headerStyle, textAlign: 'left' }} aria-label="corner" />
                 {people.map((p) => (
-                  <th key={p.id} data-testid={`raci-col-${p.id}`} style={{ ...headerStyle, minWidth: 96, maxWidth: '40ch', verticalAlign: 'bottom' }}>
-                    {p.label}
+                  <th
+                    key={p.id}
+                    data-testid={`raci-col-${p.id}`}
+                    title={p.label}
+                    style={{
+                      ...headerStyle,
+                      position: 'relative',
+                      verticalAlign: 'bottom',
+                      // Unresized: one line, as wide as the name (clipped at 40 characters).
+                      ...(colWidths[p.id] ? { width: colWidths[p.id], minWidth: colWidths[p.id], maxWidth: colWidths[p.id] } : { whiteSpace: 'nowrap', minWidth: MIN_COL }),
+                    }}
+                  >
+                    {colWidths[p.id] ? p.label : clip(p.label)}
+                    <Box
+                      role="separator"
+                      aria-orientation="vertical"
+                      aria-label={`${t('Resize column')} ${p.label}`}
+                      tabIndex={0}
+                      data-testid={`raci-resize-${p.id}`}
+                      title={t('Drag to resize, double-click to reset')}
+                      onPointerDown={startResize(p.id)}
+                      onKeyDown={resizeByKey(p.id)}
+                      onDoubleClick={() => setColWidth(p.id, null)}
+                      sx={{
+                        position: 'absolute',
+                        top: 0,
+                        right: -4,
+                        bottom: 0,
+                        width: 8,
+                        zIndex: 1,
+                        cursor: 'col-resize',
+                        touchAction: 'none',
+                        '&:hover, &:focus-visible': { bgcolor: 'primary.main', opacity: 0.4, outline: 'none' },
+                      }}
+                    />
                   </th>
                 ))}
               </tr>
@@ -526,7 +587,7 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
                     const computedStyle = cell.computed ? { fontStyle: 'italic', color: th.palette.text.secondary } : undefined
                     const title = cell.computed ? t('Computed from subtasks') : undefined
                     return (
-                      <td key={p.id} style={{ width: 44, height: 44, border: `1px solid ${th.palette.divider}` }}>
+                      <td key={p.id} style={{ minWidth: MIN_COL, height: 44, border: `1px solid ${th.palette.divider}` }}>
                         {canWrite ? (
                           <Button
                             data-testid={`raci-cell-${task.id}-${p.id}`}
