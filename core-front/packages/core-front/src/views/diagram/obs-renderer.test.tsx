@@ -23,6 +23,7 @@ vi.mock('@xyflow/react', () => ({
     rf.props = props
     return (
       <div data-testid="react-flow">
+        <div className="react-flow__viewport" />
         {props.nodes.map((n) => {
           const C = props.nodeTypes[n.type]
           return <div key={n.id} data-testid={`node-${n.id}`} onDoubleClick={(e) => props.onNodeDoubleClick?.(e, n)}><C id={n.id} data={n.data} /></div>
@@ -38,7 +39,8 @@ vi.mock('@xyflow/react', () => ({
   Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
   getNodesBounds: () => ({ x: 0, y: 0, width: 100, height: 50 }),
 }))
-vi.mock('./export', () => ({ exportPng: vi.fn(), exportPdf: vi.fn() }))
+const exportPdf = vi.fn()
+vi.mock('./export', () => ({ exportPng: vi.fn(), exportPdf: (...a: unknown[]) => exportPdf(...a) }))
 
 import { ObsRenderer, OBS_BOX_SIZE } from './obs-renderer'
 import { layoutTreeGrid } from './auto-layout'
@@ -223,6 +225,23 @@ describe('ObsRenderer', () => {
     expect(await within(screen.getByTestId('node-b6')).findByText('Alice')).toBeInTheDocument()
     // b1 and b6 share contact c1: one read.
     expect(ops.get.mock.calls.filter(([e, id]) => e === 'contact' && id === 'c1')).toHaveLength(1)
+  })
+
+  it('a simple export prints every box as its color and title only', async () => {
+    setup()
+    await within(await screen.findByTestId('node-b1')).findByText('Alice')
+    let far = -1
+    let details = -1
+    exportPdf.mockImplementationOnce(async () => {
+      far = screen.queryAllByTestId('obs-box-far').length
+      details = screen.queryAllByText('alice@x.io').length
+    })
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Export' })) })
+    expect(screen.getByRole('menuitem', { name: 'Export PNG (simple)' })).toBeInTheDocument()
+    await act(async () => fireEvent.click(screen.getByRole('menuitem', { name: 'Export PDF (simple)' })))
+    await waitFor(() => expect(far).toBe(screen.getAllByTestId('obs-box').length))
+    expect(details).toBe(0)
+    await waitFor(() => expect(screen.queryAllByTestId('obs-box-far')).toHaveLength(0))
   })
 
   it('a box among more than 3 siblings below level 2 is entered from the left by a bus line', async () => {

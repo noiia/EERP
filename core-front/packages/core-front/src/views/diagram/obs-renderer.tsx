@@ -298,6 +298,7 @@ export function ObsRenderer({ config, projectId }: ObsRendererProps) {
         history={editable ? history : undefined}
         readOnly={!editable}
         legend={[]}
+        simpleExport
         toolbarExtra={editable ? addButtons : undefined}
       />
       {draft && ops ? <ObsBoxDialog draft={draft} ops={ops} config={config} projectId={projectId} onSubmit={submit} onClose={() => setDraft(null)} /> : null}

@@ -1,5 +1,5 @@
 'use client'
-import { memo, useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
+import { memo, useCallback, useContext, useEffect, useRef, useState, type MouseEvent } from 'react'
 import Box from '@mui/material/Box'
 import IconButton from '@mui/material/IconButton'
 import Menu from '@mui/material/Menu'
@@ -12,7 +12,7 @@ import { useT } from '../../i18n/translate'
 import { byPrefixAndName, FontAwesomeIcon } from '../icons'
 import { useRelationOps } from '../relation-ops'
 import { GRID_BUS_DROP } from './auto-layout'
-import { useDetailed } from './task-box'
+import { SimpleExport, useDetailed } from './task-box'
 
 // One box of an OBS chart: a contact, a user or free text, with its role title and color.
 // The contact/user label is read through the canvas's cached RelationOps.get.
@@ -74,6 +74,8 @@ export const ObsBox = memo(function ObsBox({ data, positionAbsoluteX, positionAb
   const t = useT()
   const theme = useTheme()
   const detailed = useDetailed({ x: positionAbsoluteX, y: positionAbsoluteY, ...OBS_BOX_SIZE })
+  // A simple export prints every box as its zoomed-out form: its color and title only.
+  const simple = useContext(SimpleExport)
   const lines = useLines(data.row)
   const [menu, setMenu] = useState<HTMLElement | null>(null)
   // The color being picked shows at once; one write goes out when the pick is committed.
@@ -106,7 +108,7 @@ export const ObsBox = memo(function ObsBox({ data, positionAbsoluteX, positionAb
     >
       {/* A box in a grid of siblings is entered from the left (the renderer sets targetPosition). */}
       <Handle type="target" position={targetPosition ?? Position.Top} />
-      {detailed ? (
+      {detailed && !simple ? (
         <>
           <Typography variant="subtitle2" sx={{ fontWeight: 700 }} noWrap>{row.title}</Typography>
           {lines.map((l, i) => (
@@ -138,7 +140,7 @@ export const ObsBox = memo(function ObsBox({ data, positionAbsoluteX, positionAb
           ) : null}
         </>
       ) : (
-        <Typography noWrap sx={{ fontSize: 28, lineHeight: 1.4, fontWeight: 600 }}>{row.title || lines[0]}</Typography>
+        <Typography data-testid="obs-box-far" noWrap sx={{ fontSize: 28, lineHeight: 1.4, fontWeight: 600 }}>{row.title || lines[0]}</Typography>
       )}
       <Handle type="source" position={Position.Bottom} />
     </Paper>
