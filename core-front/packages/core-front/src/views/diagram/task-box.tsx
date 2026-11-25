@@ -63,6 +63,8 @@ export function useDetailed(box?: BoxArea): boolean {
   return useContext(ForceDetail) || near
 }
 
+// The far-zoom (and simple export) one-line title of a label box or a milestone, the size of a task's.
+export const FAR_LABEL_SX = { fontSize: 28, lineHeight: 1.6, fontWeight: 600 } as const
 // The far-zoom title: large enough to read at DETAIL_ZOOM and below, at most 4 lines.
 const FAR_TITLE_SX = { fontSize: 28, lineHeight: 1.2, fontWeight: 600, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical' } as const
 
@@ -199,12 +201,13 @@ export interface LabelBoxData extends Record<string, unknown> {
 export const LabelBox = memo(function LabelBox({ data, sourcePosition, targetPosition, positionAbsoluteX, positionAbsoluteY }: NodeProps<Node<LabelBoxData>>) {
   const t = useT()
   const detailed = useDetailed({ x: positionAbsoluteX, y: positionAbsoluteY, ...LABEL_BOX_SIZE })
+  const simple = useContext(SimpleExport)
   const { chevron } = data
-  if (!detailed) {
+  if (!detailed || simple) {
     return (
       <Paper variant="outlined" sx={{ width: LABEL_BOX_SIZE.w, height: LABEL_BOX_SIZE.h, boxSizing: 'border-box', overflow: 'hidden', p: 1, bgcolor: 'action.hover' }}>
         <Handle type="target" position={targetPosition ?? Position.Top} />
-        <Typography noWrap sx={{ fontSize: 28, lineHeight: 1.6, fontWeight: 600 }}>{data.label}</Typography>
+        <Typography noWrap sx={FAR_LABEL_SX}>{data.label}</Typography>
         <Handle type="source" position={sourcePosition ?? Position.Bottom} />
       </Paper>
     )

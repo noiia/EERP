@@ -3,7 +3,8 @@ import { cleanup, render, screen, within } from '@testing-library/react'
 import type { ComponentProps } from 'react'
 import type { FieldDescriptor } from '../descriptor'
 import { useFormatStore } from '../format-store'
-import { ForceDetail, SimpleExport, TaskBox, type TaskBoxData } from './task-box'
+import { DeliverableBox } from './deliverable-box'
+import { ForceDetail, LabelBox, SimpleExport, TaskBox, type TaskBoxData } from './task-box'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }), usePathname: () => '/', useSearchParams: () => new URLSearchParams() }))
 vi.mock('@xyflow/react', () => ({
@@ -76,5 +77,37 @@ describe('TaskBox export', () => {
     expect(screen.getByText('1.2 - Build')).toBeInTheDocument()
     expect(screen.queryByTestId('export-field-name')).toBeNull()
     expect(screen.queryByLabelText('Remove from diagram')).toBeNull()
+  })
+})
+
+describe('milestone and label text size', () => {
+  const deliverable = (simple: boolean) =>
+    render(
+      <ForceDetail.Provider value>
+        <SimpleExport.Provider value={simple}>
+          <DeliverableBox {...({ id: 'D', data: { label: 'Go live', taskName: 'T', counts: '1 / 2', onOpen: vi.fn() } } as unknown as ComponentProps<typeof DeliverableBox>)} />
+        </SimpleExport.Provider>
+      </ForceDetail.Provider>,
+    )
+
+  it('a milestone reads like a group label: subtitle in detail, the 28px title in the simple export', () => {
+    deliverable(false)
+    expect(screen.getByText('Go live')).not.toHaveStyle({ fontSize: '28px' })
+    expect(screen.getByText('1 / 2')).toBeInTheDocument()
+    cleanup()
+    deliverable(true)
+    expect(screen.getByText('Go live')).toHaveStyle({ fontSize: '28px' })
+    expect(screen.queryByText('1 / 2')).toBeNull()
+  })
+
+  it('a group label takes the same 28px title in the simple export, like the tasks', () => {
+    render(
+      <ForceDetail.Provider value>
+        <SimpleExport.Provider value>
+          <LabelBox {...({ id: 'L', data: { label: 'Phase 1' } } as unknown as ComponentProps<typeof LabelBox>)} />
+        </SimpleExport.Provider>
+      </ForceDetail.Provider>,
+    )
+    expect(screen.getByText('Phase 1')).toHaveStyle({ fontSize: '28px' })
   })
 })

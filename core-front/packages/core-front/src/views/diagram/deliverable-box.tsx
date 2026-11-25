@@ -1,11 +1,11 @@
 'use client'
-import { memo } from 'react'
+import { memo, useContext } from 'react'
 import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
 import { alpha, useTheme } from '@mui/material/styles'
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import { useT } from '../../i18n/translate'
-import { useDetailed } from './task-box'
+import { FAR_LABEL_SX, SimpleExport, useDetailed } from './task-box'
 
 // One deliverable (a milestone) of the WBS: under the task that carries it, or, for a
 // level-1 task, on the footer row below the diagram — then empty ("No milestone yet")
@@ -28,6 +28,9 @@ function DeliverableBoxImpl({ data, positionAbsoluteX, positionAbsoluteY }: Node
   const t = useT()
   const theme = useTheme()
   const detailed = useDetailed({ x: positionAbsoluteX, y: positionAbsoluteY, ...DELIVERABLE_BOX_SIZE })
+  // Text sizes follow the task and label boxes: their far/simple title, else their subtitle.
+  const simple = useContext(SimpleExport)
+  const far = !detailed || simple
   const empty = data.label === null
   return (
     <Paper
@@ -57,15 +60,15 @@ function DeliverableBoxImpl({ data, positionAbsoluteX, positionAbsoluteY }: Node
       {/* The arrow from the task ends here; no hand-drawn link starts or ends on it. */}
       <Handle type="target" position={Position.Top} isConnectable={false} style={{ opacity: 0 }} />
       {empty ? (
-        <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center' }}>
+        <Typography variant="subtitle2" color="text.secondary" noWrap={far} sx={{ textAlign: 'center', ...(far ? FAR_LABEL_SX : {}) }}>
           {t('No milestone yet for {name}').replace('{name}', data.taskName)}
         </Typography>
       ) : (
         <>
-          <Typography variant="caption" sx={{ fontWeight: 600 }} noWrap>
+          <Typography variant="subtitle2" noWrap sx={far ? FAR_LABEL_SX : undefined}>
             {data.label}
           </Typography>
-          {detailed && data.counts ? (
+          {!far && data.counts ? (
             <Typography variant="caption" color="text.secondary">
               {data.counts}
             </Typography>
