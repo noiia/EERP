@@ -59,8 +59,11 @@ sequenceDiagram
   browser hasn't been asked (a button, since browsers only honor a permission request made from a
   click). Once granted, every live `notification` frame of kind `message` that is new to the tab
   pops up as a system notification while the ERP window isn't focused; activities never do (their
-  progress frames would spam). The popup is tagged with the notification id, so several open tabs
-  show it once; clicking it focuses the ERP and opens the notification's ERP link. Who gets one is
+  progress frames would spam). Every open tab receives the same frame, so the tabs race for a Web
+  Lock named after the notification (held 30 s): only the tab that takes it shows the popup, and a
+  focused tab claims first (unfocused ones wait 300 ms), so nothing pops up while the user is in an
+  ERP tab. The tag stays the notification id, which merges duplicates where Web Locks are missing
+  (the tag alone isn't enough: some browsers and desktops alert again for each tagged copy). Clicking it focuses the ERP and opens the notification's ERP link. Who gets one is
   decided server-side like the bell's feed: a muted Teams conversation sends its reader no
   notification, so nothing pops up for it either. No service worker: a closed ERP tab shows nothing.
 - **Roles** pick categories on the role form's *Notifications* tab, a stock many2many over the

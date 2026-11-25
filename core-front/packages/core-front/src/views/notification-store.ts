@@ -94,17 +94,42 @@ export function handleNotificationFrame(msg: { type?: string; notification?: unk
 /** An ERP path only — mirrors Go's notify.ValidLink. */
 const isErpPath = (link: string) => link.startsWith('/') && !link.startsWith('//') && !/[\\:]/.test(link)
 
+// How long the tab that shows a notification keeps its claim: every other open
+// tab receives the same frame well within it.
+const CLAIM_HOLD_MS = 30_000
+// An unfocused tab claims a little later, so a focused tab (where the user
+// already sees the bell) wins and nothing pops up.
+const UNFOCUSED_CLAIM_DELAY_MS = 300
+
 /**
  * Shows a live personal message (a Teams message, a failed cron run…) as a
  * system notification while the ERP window isn't focused and the user granted
  * the permission. Go already left out the users who muted the conversation,
  * so every message frame that reaches here is one to show. Activities (their
- * progress frames) never pop up. `tag` = the notification id, so several
- * open tabs show it once.
+ * progress frames) never pop up. Every open tab gets the same frame, so the
+ * tabs race for a Web Lock named after the notification: only the tab holding
+ * it shows the popup (none when a focused tab takes it). `tag` = the id stays
+ * as the fallback where Web Locks are missing.
  */
 export function showBrowserNotification(n: Omit<AppNotification, 'read'>): void {
   if (n.kind !== 'message' || typeof Notification === 'undefined' || Notification.permission !== 'granted') return
-  if (typeof document !== 'undefined' && document.hasFocus()) return
+  const focused = typeof document !== 'undefined' && document.hasFocus()
+  const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined
+  if (!locks) {
+    if (!focused) popUp(n)
+    return
+  }
+  const claim = () =>
+    void locks.request(`eerp-notification-${n.id}`, { ifAvailable: true }, async (lock) => {
+      if (!lock) return
+      if (!focused) popUp(n)
+      await new Promise((resolve) => setTimeout(resolve, CLAIM_HOLD_MS))
+    })
+  if (focused) claim()
+  else setTimeout(claim, UNFOCUSED_CLAIM_DELAY_MS)
+}
+
+function popUp(n: Omit<AppNotification, 'read'>): void {
   const locale = useI18nStore.getState().locale
   const shown = new Notification(translate(locale, n.title), { body: n.body, tag: n.id })
   shown.onclick = () => {

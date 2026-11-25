@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { handleNotificationFrame, useNotificationStore, type AppNotification } from './notification-store'
+import { handleNotificationFrame, showBrowserNotification, useNotificationStore, type AppNotification } from './notification-store'
 
 const n = (over: Partial<AppNotification> = {}): AppNotification => ({
   id: 'n1', category: 'dev_seed', kind: 'activity', title: 'Seeding', body: '', link: '/settings/developer',
@@ -98,6 +98,47 @@ describe('browser notifications', () => {
     stub('granted', false)
     handleNotificationFrame({ type: 'notification', notification: live({ id: 'c', kind: 'activity', status: 'running' }) })
     expect(shown).toHaveLength(0)
+  })
+
+  describe('across tabs (Web Locks)', () => {
+    // One lock manager shared by every "tab": showBrowserNotification called
+    // once per tab for the same frame.
+    const held = new Set<string>()
+    const locks = {
+      request: (name: string, _opts: unknown, cb: (lock: unknown) => Promise<void> | void) => {
+        if (held.has(name)) return Promise.resolve(cb(null))
+        held.add(name)
+        return Promise.resolve(cb({ name })).finally(() => held.delete(name))
+      },
+    }
+    beforeEach(() => {
+      vi.useFakeTimers()
+      held.clear()
+      Object.defineProperty(navigator, 'locks', { value: locks, configurable: true })
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+      delete (navigator as { locks?: unknown }).locks
+    })
+
+    it('several unfocused tabs show the same notification once', async () => {
+      stub('granted', false)
+      for (let tab = 0; tab < 3; tab++) showBrowserNotification(live({ id: 'm1' }))
+      await vi.advanceTimersByTimeAsync(300)
+      expect(shown).toHaveLength(1)
+      expect(held.has('eerp-notification-m1')).toBe(true)
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(held.size).toBe(0)
+    })
+
+    it('a focused tab takes the claim first, so no background tab pops up', async () => {
+      stub('granted', false)
+      showBrowserNotification(live({ id: 'm2' })) // background tab
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+      showBrowserNotification(live({ id: 'm2' })) // the tab the user is looking at
+      await vi.advanceTimersByTimeAsync(300)
+      expect(shown).toHaveLength(0)
+    })
   })
 
   it('a click focuses the ERP and opens an ERP link only', () => {
