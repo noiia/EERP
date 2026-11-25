@@ -93,7 +93,7 @@ func (m *Manager) provisionAndKeepWarm(ctx context.Context, name string, started
 		return err
 	}
 
-	tmp, err := orm.New(m.pool(m.conn.dsn(name)), common.Logger)
+	tmp, err := orm.New(m.pool(m.conn.DSN(name)), common.Logger)
 	if err != nil {
 		return fail(fmt.Errorf("dbmanage: connect to %s: %w", name, err))
 	}

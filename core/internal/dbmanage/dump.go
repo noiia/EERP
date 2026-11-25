@@ -14,11 +14,11 @@ import (
 	"core/internal/common"
 )
 
-// pgDump streams a pg_dump (custom format, -Fc: compressed, selectively
+// PgDump streams a pg_dump (custom format, -Fc: compressed, selectively
 // restorable via pg_restore) of dbName into w. Shells out to the postgresql-
 // client tooling (added to core/Dockerfile's runtime stage) rather than
 // reimplementing the dump format — the standard, native way to do this.
-func pgDump(ctx context.Context, conn connInfo, dbName string, w io.Writer) error {
+func PgDump(ctx context.Context, conn Conn, dbName string, w io.Writer) error {
 	// #nosec G204 — every argument is either a fixed flag or comes from
 	// connInfo/dbName, both already validated/config-sourced, never raw
 	// request input passed straight through.
@@ -47,17 +47,17 @@ func pgDump(ctx context.Context, conn connInfo, dbName string, w io.Writer) erro
 	return nil
 }
 
-// pgRestore loads a custom-format dump file into an already-created, empty
+// PgRestore loads a custom-format dump file into an already-created, empty
 // database. Extensions the target server doesn't ship are left out (with
 // their schemas, see extensionSchemas): a database created by an older
 // PostGIS image carries postgis_tiger_geocoder, which PostGIS 3.7 images no
 // longer have, and EERP never uses it.
-func pgRestore(ctx context.Context, conn connInfo, dbName, dumpPath string) error {
+func PgRestore(ctx context.Context, conn Conn, dbName, dumpPath string) error {
 	available, err := availableExtensions(ctx, conn, dbName)
 	if err != nil {
 		return err
 	}
-	// #nosec G204 — same reasoning as pgDump above.
+	// #nosec G204 — same reasoning as PgDump above.
 	toc, err := exec.CommandContext(ctx, "pg_restore", "-l", dumpPath).Output()
 	if err != nil {
 		return fmt.Errorf("dbmanage: pg_restore -l: %w", err)
@@ -70,7 +70,7 @@ func pgRestore(ctx context.Context, conn connInfo, dbName, dumpPath string) erro
 	if err := os.WriteFile(listPath, []byte(list), 0o600); err != nil {
 		return fmt.Errorf("dbmanage: write restore list: %w", err)
 	}
-	// #nosec G204 — same reasoning as pgDump above.
+	// #nosec G204 — same reasoning as PgDump above.
 	cmd := exec.CommandContext(ctx, "pg_restore",
 		"-h", conn.Host,
 		"-p", fmt.Sprintf("%d", conn.Port),
@@ -89,8 +89,8 @@ func pgRestore(ctx context.Context, conn connInfo, dbName, dumpPath string) erro
 	return nil
 }
 
-func availableExtensions(ctx context.Context, conn connInfo, dbName string) (map[string]bool, error) {
-	c, err := pgx.Connect(ctx, conn.dsn(dbName))
+func availableExtensions(ctx context.Context, conn Conn, dbName string) (map[string]bool, error) {
+	c, err := pgx.Connect(ctx, conn.DSN(dbName))
 	if err != nil {
 		return nil, fmt.Errorf("dbmanage: connect to %s: %w", dbName, err)
 	}

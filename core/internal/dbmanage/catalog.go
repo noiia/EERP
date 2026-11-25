@@ -10,18 +10,23 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// connInfo is the fixed part of every DSN this package builds — switching (or
+// Conn is the fixed part of every DSN this package builds — switching (or
 // creating/dropping/dumping) a database only ever varies the database NAME,
 // never the host/port/credentials (core/cmd/app/main.go builds its one boot
 // DSN from exactly these same five fields).
-type connInfo struct {
+type Conn struct {
 	Host     string
 	Port     int
 	User     string
 	Password string
 }
 
-func (c connInfo) dsn(dbName string) string {
+// ConnFromConfig is the one place the five connection fields are read.
+func ConnFromConfig(cfg *types.Config) Conn {
+	return Conn{Host: cfg.DbHost, Port: cfg.DbPort, User: cfg.DbUser, Password: cfg.DbPassword}
+}
+
+func (c Conn) DSN(dbName string) string {
 	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s", c.User, c.Password, c.Host, c.Port, dbName)
 }
 
@@ -62,8 +67,8 @@ type DatabaseInfo struct {
 // `template0`/`template1`, and any unrelated database sharing this Postgres
 // server out of the list entirely, with no separate exclusion list to
 // maintain.
-func ListDatabases(ctx context.Context, conn connInfo, activeName string) ([]DatabaseInfo, error) {
-	maint, err := pgx.Connect(ctx, conn.dsn("postgres"))
+func ListDatabases(ctx context.Context, conn Conn, activeName string) ([]DatabaseInfo, error) {
+	maint, err := pgx.Connect(ctx, conn.DSN("postgres"))
 	if err != nil {
 		return nil, fmt.Errorf("dbmanage: connect to maintenance db: %w", err)
 	}
@@ -114,8 +119,8 @@ func ListDatabases(ctx context.Context, conn connInfo, activeName string) ([]Dat
 // A connection failure (a database this role can't access, one mid-drop,
 // etc.) is treated as "not EERP-shaped" rather than surfaced as a list-wide
 // error — one unreachable database must not hide every other row.
-func isEERPShaped(ctx context.Context, conn connInfo, dbName string) bool {
-	c, err := pgx.Connect(ctx, conn.dsn(dbName))
+func isEERPShaped(ctx context.Context, conn Conn, dbName string) bool {
+	c, err := pgx.Connect(ctx, conn.DSN(dbName))
 	if err != nil {
 		return false
 	}
@@ -129,11 +134,11 @@ func isEERPShaped(ctx context.Context, conn connInfo, dbName string) bool {
 // CreateDatabase issues CREATE DATABASE over a maintenance connection. Schema
 // provisioning (making it an actually-usable EERP database) is a separate
 // step — see provision.go.
-func CreateDatabase(ctx context.Context, conn connInfo, name string) error {
+func CreateDatabase(ctx context.Context, conn Conn, name string) error {
 	if err := validateName(name); err != nil {
 		return err
 	}
-	maint, err := pgx.Connect(ctx, conn.dsn("postgres"))
+	maint, err := pgx.Connect(ctx, conn.DSN("postgres"))
 	if err != nil {
 		return fmt.Errorf("dbmanage: connect to maintenance db: %w", err)
 	}
@@ -160,8 +165,8 @@ func CreateDatabase(ctx context.Context, conn connInfo, name string) error {
 // A database that already exists is left completely untouched, config and
 // data alike.
 func EnsureDatabaseExists(ctx context.Context, cfg *types.Config) error {
-	conn := connInfo{Host: cfg.DbHost, Port: cfg.DbPort, User: cfg.DbUser, Password: cfg.DbPassword}
-	maint, err := pgx.Connect(ctx, conn.dsn("postgres"))
+	conn := ConnFromConfig(cfg)
+	maint, err := pgx.Connect(ctx, conn.DSN("postgres"))
 	if err != nil {
 		return fmt.Errorf("dbmanage: connect to maintenance db: %w", err)
 	}
@@ -189,14 +194,14 @@ func EnsureDatabaseExists(ctx context.Context, cfg *types.Config) error {
 // invoke this directly; a bare DropDatabase call against a prepared standby
 // still fails the same way Postgres always would ("database is being
 // accessed by other users").
-func DropDatabase(ctx context.Context, conn connInfo, name, activeName string) error {
+func DropDatabase(ctx context.Context, conn Conn, name, activeName string) error {
 	if err := validateName(name); err != nil {
 		return err
 	}
 	if name == activeName {
 		return fmt.Errorf("cannot delete the currently active database")
 	}
-	maint, err := pgx.Connect(ctx, conn.dsn("postgres"))
+	maint, err := pgx.Connect(ctx, conn.DSN("postgres"))
 	if err != nil {
 		return fmt.Errorf("dbmanage: connect to maintenance db: %w", err)
 	}
