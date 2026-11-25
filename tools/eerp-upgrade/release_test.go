@@ -39,10 +39,10 @@ func TestPrepareRelease_TooOld(t *testing.T) {
 }
 
 func TestReleaseConfig(t *testing.T) {
-	user := map[string]any{"db_host": "h", "master_key": "k", "s3_bucket": "b", "mcp_enabled": true, "module_root": []any{"x"}, "db_name": "old"}
-	got := releaseConfig(user, "/w", "newdb", 4321)
+	user := map[string]any{"db_host": "h", "master_key": "k", "s3_bucket": "b", "mcp_enabled": true, "module_root": []any{"x"}, "api_config_path": "api.json", "db_name": "old"}
+	got := releaseConfig(user, "/cfg", "/w", "newdb", 4321)
 	want := map[string]any{"db_name": "newdb", "environment": "production", "backend_port": 4321, "backend_host": "127.0.0.1",
-		"module_root": []string{"/w/core/modules"}, "s3_bucket": "", "mcp_enabled": false, "cron_log_dir": "/w/cron-logs", "db_host": "h", "master_key": "k"}
+		"module_root": []string{"/w/core/modules"}, "s3_bucket": "", "mcp_enabled": false, "cron_log_dir": "/w/cron-logs", "db_host": "h", "master_key": "k", "api_config_path": "/cfg/api.json"}
 	for k, v := range want {
 		if g := got[k]; !equalAny(g, v) {
 			t.Errorf("%s = %#v, want %#v", k, g, v)

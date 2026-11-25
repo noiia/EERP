@@ -20,6 +20,7 @@ import (
 // migrations bring it to its schema. The release is built from a git worktree.
 type release struct {
 	tag, version, worktree, bin string
+	root, cfgDir                string
 	cfg                         map[string]any
 }
 
@@ -55,7 +56,11 @@ func prepareRelease(ctx context.Context, cfgPath, tag string) (*release, error) 
 	if err != nil {
 		return nil, err
 	}
-	r := &release{tag: tag, version: ver, worktree: wt, bin: filepath.Join(wt, "eerp"), cfg: cfg}
+	absCfg, err := filepath.Abs(cfgPath)
+	if err != nil {
+		return nil, err
+	}
+	r := &release{cfgDir: filepath.Dir(absCfg), tag: tag, version: ver, worktree: wt, bin: filepath.Join(wt, "eerp"), root: root, cfg: cfg}
 	// worktree add needs a missing or empty dir; MkdirTemp's empty dir is accepted.
 	if out, err := gitOut(ctx, "-C", root, "worktree", "add", "--detach", wt, tag); err != nil {
 		os.RemoveAll(wt)
@@ -71,17 +76,22 @@ func prepareRelease(ctx context.Context, cfgPath, tag string) (*release, error) 
 }
 
 func (r *release) Close() error {
-	if out, err := gitOut(context.WithoutCancel(context.Background()), "worktree", "remove", "--force", r.worktree); err != nil {
-		return fmt.Errorf("git worktree remove: %s", out)
+	ctx := context.Background()
+	out, err := gitOut(ctx, "-C", r.root, "worktree", "remove", "--force", r.worktree)
+	if err == nil {
+		return nil
 	}
-	return nil
+	// The dir holds upgrade-config.json with secrets: never leave it behind.
+	_ = os.RemoveAll(r.worktree)
+	_, _ = gitOut(ctx, "-C", r.root, "worktree", "prune")
+	return fmt.Errorf("git worktree remove: %s", out)
 }
 
 func (r *release) Version() string { return r.version }
 
 // releaseConfig derives the old release's config: this database, a private
 // listener, and every external service off. Unknown keys are ignored by old cores.
-func releaseConfig(user map[string]any, worktree, dbName string, port int) map[string]any {
+func releaseConfig(user map[string]any, cfgDir, worktree, dbName string, port int) map[string]any {
 	c := make(map[string]any, len(user)+16)
 	for k, v := range user {
 		c[k] = v
@@ -89,6 +99,10 @@ func releaseConfig(user map[string]any, worktree, dbName string, port int) map[s
 	for _, k := range []string{"s3_endpoint", "s3_bucket", "s3_access_key", "s3_secret_key", "nats_url", "redis_url",
 		"smtp_host", "pdf_service_url", "frontend_base_url", "backup_dir", "mcp_oauth_issuer"} {
 		c[k] = ""
+	}
+	// Relative paths resolve against the config file's directory, which is now the worktree.
+	if p, ok := c["api_config_path"].(string); ok && p != "" && !filepath.IsAbs(p) {
+		c["api_config_path"] = filepath.Join(cfgDir, p)
 	}
 	c["mcp_enabled"] = false
 	c["cron_log_dir"] = filepath.Join(worktree, "cron-logs")
@@ -123,7 +137,7 @@ func (r *release) Migrate(ctx context.Context, dbName string) error {
 		return err
 	}
 	cfgFile := filepath.Join(r.worktree, "upgrade-config.json")
-	raw, err := json.Marshal(releaseConfig(r.cfg, r.worktree, dbName, port))
+	raw, err := json.Marshal(releaseConfig(r.cfg, r.cfgDir, r.worktree, dbName, port))
 	if err != nil {
 		return err
 	}
@@ -155,6 +169,7 @@ func (r *release) Migrate(ctx context.Context, dbName string) error {
 	}
 	logTail := func() string { b, _ := os.ReadFile(logFile); return tail(bytes.TrimSpace(b), 50) }
 
+	client := &http.Client{Timeout: 2 * time.Second}
 	url := "http://127.0.0.1:" + strconv.Itoa(port) + "/health"
 	deadline := time.NewTimer(healthTimeout)
 	defer deadline.Stop()
@@ -172,7 +187,7 @@ func (r *release) Migrate(ctx context.Context, dbName string) error {
 			return fmt.Errorf("release %s not healthy after %s:\n%s", r.tag, healthTimeout, logTail())
 		case <-tick.C:
 			req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-			if resp, err := http.DefaultClient.Do(req); err == nil {
+			if resp, err := client.Do(req); err == nil {
 				resp.Body.Close()
 				if resp.StatusCode == http.StatusOK {
 					stop()

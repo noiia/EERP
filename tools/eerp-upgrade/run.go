@@ -35,6 +35,16 @@ func (inProcess) Version() string                                { return versio
 
 func run(ctx context.Context, cfg *types.Config, a args) (Report, error) {
 	if a.To != "" && strings.TrimPrefix(a.To, "v") != strings.TrimPrefix(version.Version, "v") {
+		// Fail fast on a bad input before the slow build.
+		in, err := openInput(a.In)
+		if err != nil {
+			return Report{}, err
+		}
+		verr := checkRange(in.Version, strings.TrimPrefix(a.To, "v"))
+		in.zip.Close()
+		if verr != nil {
+			return Report{}, verr
+		}
 		r, err := prepareRelease(ctx, a.ConfigPath, a.To)
 		if err != nil {
 			return Report{}, err
