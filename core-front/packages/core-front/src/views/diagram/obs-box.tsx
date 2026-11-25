@@ -1,5 +1,5 @@
 'use client'
-import { memo, useCallback, useContext, useEffect, useRef, useState, type MouseEvent } from 'react'
+import { memo, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from 'react'
 import Box from '@mui/material/Box'
 import IconButton from '@mui/material/IconButton'
 import Menu from '@mui/material/Menu'
@@ -70,6 +70,35 @@ function useLines(row: ObsRow): string[] {
   return row.kind === 'text' ? (row.text ? [row.text] : []) : lines
 }
 
+const FAR_MAX_FONT = 28
+const FAR_MIN_FONT = 10
+
+/** The zoomed-out (and simple export) title: wrapped on words, its font shrunk from 28px
+ * until every line and every word fits the box, so nothing is cropped. */
+export function FarTitle({ text }: { text: string }) {
+  const ref = useRef<HTMLElement>(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    let size = FAR_MAX_FONT
+    el.style.fontSize = `${size}px`
+    // overflowWrap normal: a word longer than the box overflows sideways (caught here) instead of splitting.
+    while (size > FAR_MIN_FONT && (el.scrollHeight > el.clientHeight || el.scrollWidth > el.clientWidth)) {
+      size -= 1
+      el.style.fontSize = `${size}px`
+    }
+  }, [text])
+  return (
+    <Typography
+      ref={ref}
+      data-testid="obs-box-far"
+      sx={{ height: '100%', overflow: 'hidden', lineHeight: 1.2, fontWeight: 600, whiteSpace: 'normal', overflowWrap: 'normal', wordBreak: 'normal' }}
+    >
+      {text}
+    </Typography>
+  )
+}
+
 export const ObsBox = memo(function ObsBox({ data, positionAbsoluteX, positionAbsoluteY, targetPosition }: NodeProps<Node<ObsBoxData>>) {
   const t = useT()
   const theme = useTheme()
@@ -103,7 +132,7 @@ export const ObsBox = memo(function ObsBox({ data, positionAbsoluteX, positionAb
       variant="outlined"
       data-testid="obs-box"
       onDoubleClick={editable ? data.onEdit : undefined}
-      sx={{ width: OBS_BOX_SIZE.w, height: OBS_BOX_SIZE.h, boxSizing: 'border-box', overflow: 'hidden', position: 'relative', p: 1, pr: editable || chevron ? 4 : 1 }}
+      sx={{ width: OBS_BOX_SIZE.w, height: OBS_BOX_SIZE.h, boxSizing: 'border-box', overflow: 'hidden', position: 'relative', p: 1, pr: detailed && !simple && (editable || chevron) ? 4 : 1 }}
       style={{ backgroundColor: bg, color: fg }}
     >
       {/* A box in a grid of siblings is entered from the left (the renderer sets targetPosition). */}
@@ -140,7 +169,7 @@ export const ObsBox = memo(function ObsBox({ data, positionAbsoluteX, positionAb
           ) : null}
         </>
       ) : (
-        <Typography data-testid="obs-box-far" noWrap sx={{ fontSize: 28, lineHeight: 1.4, fontWeight: 600 }}>{row.title || lines[0]}</Typography>
+        <FarTitle text={row.title || lines[0] || ''} />
       )}
       <Handle type="source" position={Position.Bottom} />
     </Paper>

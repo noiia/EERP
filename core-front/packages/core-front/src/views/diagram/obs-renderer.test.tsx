@@ -43,6 +43,7 @@ const exportPdf = vi.fn()
 vi.mock('./export', () => ({ exportPng: vi.fn(), exportPdf: (...a: unknown[]) => exportPdf(...a) }))
 
 import { ObsRenderer, OBS_BOX_SIZE } from './obs-renderer'
+import { FarTitle } from './obs-box'
 import { layoutTreeGrid } from './auto-layout'
 import { buildWbs } from './wbs'
 import { registerKanbanColumnsGuard } from '../kanban-columns'
@@ -242,6 +243,24 @@ describe('ObsRenderer', () => {
     await waitFor(() => expect(far).toBe(screen.getAllByTestId('obs-box').length))
     expect(details).toBe(0)
     await waitFor(() => expect(screen.queryAllByTestId('obs-box-far')).toHaveLength(0))
+  })
+
+  it('the simple title wraps on words and shrinks its font until it fits the box', () => {
+    // jsdom has no layout: content height grows with the font (3 lines), the box holds 94px.
+    const h = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) {
+      return parseFloat(this.style.fontSize || '0') * 1.2 * 3
+    })
+    const c = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(94)
+    try {
+      render(<FarTitle text="Head of the regional operations department" />)
+      const el = screen.getByTestId('obs-box-far')
+      expect(el).toHaveStyle({ whiteSpace: 'normal', overflowWrap: 'normal' })
+      // 26px * 3.6 = 93.6 fits, 27px does not.
+      expect(el.style.fontSize).toBe('26px')
+    } finally {
+      h.mockRestore()
+      c.mockRestore()
+    }
   })
 
   it('a box among more than 3 siblings below level 2 is entered from the left by a bus line', async () => {
