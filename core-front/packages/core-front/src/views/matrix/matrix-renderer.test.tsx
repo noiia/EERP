@@ -497,37 +497,27 @@ describe('MatrixRenderer RACI tab', () => {
     expect(screen.getByTestId('raci-cell-t2-u2').textContent).toBe('')
   })
 
-  it('shows a long task title in full on hover and in the PNG/PDF export, at the on-screen column width', async () => {
+  it('shows long task and people names in full, on screen and in the PNG/PDF export', async () => {
     const long = 'A very long task title that goes well past the forty character cap'
     const { ops } = opsFixture({ tasks: [task('t1', { name: long })], members: RACI_MEMBERS })
     renderRenderer(ops)
     fireEvent.click(await screen.findByRole('tab', { name: 'RACI' }))
-    const name = await screen.findByTestId('raci-name-t1')
-    expect(name.textContent).toBe(`${long.slice(0, 39)}…`)
-    fireEvent.mouseOver(name)
-    expect((await screen.findByRole('tooltip')).textContent).toBe(long)
+    expect((await screen.findByTestId('raci-name-t1')).textContent).toBe(long)
 
-    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ width: 250 } as DOMRect)
     let captured = ''
-    let width = ''
     vi.mocked(exportElementPng).mockImplementation(async (el) => {
       captured = el.querySelector('[data-testid="raci-name-t1"]')!.textContent ?? ''
-      width = (el.querySelector('[data-testid="raci-row-t1"]') as HTMLElement).style.width
     })
     fireEvent.click(screen.getByRole('button', { name: 'Export' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Export PNG' }))
     await vi.waitFor(() => expect(exportElementPng).toHaveBeenCalledWith(expect.any(HTMLTableElement), 'raci-p1', expect.any(String)))
     expect(captured).toBe(long)
-    expect(width).toBe('250px')
-    // Back to the clipped title once the export is done.
-    await vi.waitFor(() => expect(screen.getByTestId('raci-name-t1').textContent).toBe(`${long.slice(0, 39)}…`))
 
     fireEvent.click(screen.getByRole('button', { name: 'Export' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Export PDF' }))
     await vi.waitFor(() =>
       expect(exportElementPdf).toHaveBeenCalledWith(expect.any(HTMLTableElement), expect.objectContaining({ title: 'Acme — RACI' }), 'raci-p1'),
     )
-    rect.mockRestore()
   })
 
   it('Read-only users see letters only.', async () => {

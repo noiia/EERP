@@ -131,7 +131,7 @@ export function MilestoneRoadmap({ milestones, capped }: { milestones: Milestone
             spacing={1}
             sx={{ width: phone ? 'auto' : 200, flexShrink: 0, alignItems: 'center' }}
           >
-            <Typography variant="body2" noWrap sx={{ flex: '1 1 auto', minWidth: 0 }}>
+            <Typography variant="body2" sx={{ flex: '1 1 auto', minWidth: 0, overflowWrap: 'anywhere' }}>
               {m.name}
             </Typography>
             {isLate(m) ? <Chip size="small" color="error" label={t('Late')} sx={{ flexShrink: 0 }} /> : null}

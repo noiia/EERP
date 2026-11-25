@@ -209,11 +209,11 @@ its own extras on top of the shared task set:
   role on every ticked row. The task form hosts the same rows as a `raci` one2many page.
   Read-only users see the letters only. On phone the grid becomes a per-task
   card listing `R / A / C / I` and an `Edit` dialog with one select per
-  person. Task titles are clipped to 40 characters on screen, the full title
-  in a tooltip on hover; the desktop grid's *Export* (PNG / PDF, client-side
-  like the diagram exports) prints every title in full, wrapped inside the
-  task column's on-screen width, so long titles make taller rows instead of a
-  wider column.
+  person. Task titles and people names are never clipped: they wrap inside
+  their column (task column ≤ 280 px, people columns ≤ 40 characters), so long
+  names make taller rows instead of wider columns, and the desktop grid's
+  *Export* (PNG / PDF, client-side like the diagram exports) captures the grid
+  exactly as shown.
   - *Task tree* (the matrix config's `parentField`, `parent_id` for Project):
     rows are indented under their parent with a chevron to collapse a branch
     (*Expand all* / *Collapse all*), and a *Parent task* select narrows the

@@ -1,6 +1,5 @@
 'use client'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { flushSync } from 'react-dom'
 import Box from '@mui/material/Box'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
@@ -13,7 +12,6 @@ import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import Select from '@mui/material/Select'
 import Stack from '@mui/material/Stack'
-import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useTheme } from '@mui/material/styles'
 import { usePermission } from '../../auth/Can'
@@ -138,8 +136,7 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
   const [root, setRoot] = useState('')
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [projectName, setProjectName] = useState('')
-  // Width of the task column while exporting: full titles wrap inside it instead of widening it.
-  const [exportWidth, setExportWidth] = useState<number | null>(null)
+  const [exporting, setExporting] = useState(false)
   const table = useRef<HTMLTableElement>(null)
 
   const listPage = ops?.listPage
@@ -316,19 +313,18 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
     </Select>
   )
 
-  // The export shows every task title in full, wrapped at the on-screen column width.
+  // The grid already shows every title in full (wrapped), so the export captures it as is.
   const doExport = (kind: 'png' | 'pdf') => {
     const el = table.current
-    const width = el?.querySelector('tbody th')?.getBoundingClientRect().width
-    if (!el || !width) return
-    flushSync(() => setExportWidth(width))
+    if (!el) return
+    setExporting(true)
     const name = `raci-${projectId}`
     const bg = th.palette.background.paper
     const meta = { title: [projectName, t('RACI')].filter(Boolean).join(' — '), date: new Date(), legend: [], background: bg }
     import('../diagram/export')
       .then((m) => (kind === 'png' ? m.exportElementPng(el, name, bg) : m.exportElementPdf(el, meta, name)))
       .catch((e: unknown) => setError(serializeError(toApiError(e))))
-      .finally(() => setExportWidth(null))
+      .finally(() => setExporting(false))
   }
 
   if (!people) return <DiagramLoading />
@@ -444,7 +440,7 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
       {!phone && rows.length ? (
         <Stack direction="row" sx={{ mb: 1, justifyContent: 'flex-end' }}>
           <ExportMenu
-            disabled={exportWidth !== null}
+            disabled={exporting}
             options={[
               { key: 'png', label: t('Export PNG'), icon: 'file-image', onClick: () => doExport('png') },
               { key: 'pdf', label: t('Export PDF'), icon: 'file-pdf', onClick: () => doExport('pdf') },
@@ -493,8 +489,8 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
               <tr>
                 <th style={{ ...headerStyle, textAlign: 'left' }} aria-label="corner" />
                 {people.map((p) => (
-                  <th key={p.id} data-testid={`raci-col-${p.id}`} title={p.label} style={{ ...headerStyle, minWidth: 96, maxWidth: '40ch', whiteSpace: 'nowrap', verticalAlign: 'bottom' }}>
-                    {clip(p.label)}
+                  <th key={p.id} data-testid={`raci-col-${p.id}`} style={{ ...headerStyle, minWidth: 96, maxWidth: '40ch', verticalAlign: 'bottom' }}>
+                    {p.label}
                   </th>
                 ))}
               </tr>
@@ -508,16 +504,13 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
                       minWidth: 160,
                       maxWidth: 280,
                       fontWeight: 'normal',
-                      ...(exportWidth ? { boxSizing: 'border-box', width: exportWidth, minWidth: exportWidth, maxWidth: exportWidth } : {}),
                     }}
                   >
                     <Stack direction="row" sx={{ alignItems: 'flex-start', ...indent(task) }}>
                       {chevron(task)}
                       {rowCheckbox(task.id, task.name)}
                       <Box>
-                        <Tooltip title={task.name} placement="right">
-                          <span data-testid={`raci-name-${task.id}`}>{exportWidth ? task.name : clip(task.name)}</span>
-                        </Tooltip>
+                        <span data-testid={`raci-name-${task.id}`}>{task.name}</span>
                         {!accountables(task.id) ? (
                           <Typography variant="caption" color="warning.main" sx={{ display: 'block' }}>
                             {t('No one accountable')}
