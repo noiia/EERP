@@ -1,6 +1,35 @@
 package main
 
-// Report is the outcome of an upgrade run (filled in by Task 4).
-type Report struct{}
+import (
+	"fmt"
+	"strings"
+	"time"
+)
 
-func (Report) String() string { return "" }
+// Report is the outcome of an upgrade run.
+type Report struct {
+	In, Out, Target, Source string
+	Diff                    Diff
+	S3Objects               int
+	Duration                time.Duration
+}
+
+func (r Report) String() string {
+	src := r.Source
+	if src == "" {
+		src = "unknown (≥ " + floor + ")"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Upgraded %s (%s) -> %s (%s) in %s, %d S3 objects copied\n",
+		r.In, src, r.Out, r.Target, r.Duration.Round(time.Millisecond), r.S3Objects)
+	for _, m := range r.Diff.Missing {
+		fmt.Fprintf(&b, "ERROR missing: %s\n", m)
+	}
+	for _, c := range r.Diff.Changed {
+		fmt.Fprintf(&b, "ERROR changed: %s\n", c)
+	}
+	for _, e := range r.Diff.Extra {
+		fmt.Fprintf(&b, "warning extra: %s\n", e)
+	}
+	return b.String()
+}
