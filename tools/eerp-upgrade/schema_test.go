@@ -44,3 +44,15 @@ func TestLoadSchema_DetectsDrift(t *testing.T) {
 		t.Errorf("bad drift diff %+v", d)
 	}
 }
+
+func TestDiffSchemas_NotValidCheckIsWarning(t *testing.T) {
+	cfg := testConfig(t)
+	ref := snapshot(t, cfg, freshDB(t, cfg), "ALTER TABLE contact ADD CONSTRAINT chk_upg_t CHECK (name <> 'zz')")
+	got := snapshot(t, cfg, freshDB(t, cfg),
+		"INSERT INTO contact (id, tenant_id, name, kind, created_at, updated_at) VALUES (gen_random_uuid(), gen_random_uuid(), 'zz', 'contact', now(), now())",
+		"ALTER TABLE contact ADD CONSTRAINT chk_upg_t CHECK (name <> 'zz') NOT VALID")
+	d := diffSchemas(ref, got)
+	if d.Failed() || !reflect.DeepEqual(d.NotValid, []string{"constraint:contact.chk_upg_t"}) {
+		t.Errorf("bad diff %+v", d)
+	}
+}

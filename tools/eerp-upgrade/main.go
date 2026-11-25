@@ -41,6 +41,9 @@ func validateArgs(a args) error {
 	if _, err := os.Stat(a.In); err != nil {
 		return fmt.Errorf("-in: %w", err)
 	}
+	if st, err := os.Stat(filepath.Dir(a.Out)); err != nil || !st.IsDir() {
+		return fmt.Errorf("-out: directory %s does not exist", filepath.Dir(a.Out))
+	}
 	if a.In == a.Out {
 		return errors.New("-out must differ from -in")
 	}

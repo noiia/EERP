@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -13,7 +14,9 @@ import (
 type Schema map[string]string
 
 // Diff is one-directional: Extra objects in got are tolerated (see Failed).
-type Diff struct{ Missing, Changed, Extra []string }
+// NotValid lists constraints left NOT VALID in got (a module validates its checks
+// best-effort, so an old violating row keeps one unvalidated): a warning, never a failure.
+type Diff struct{ Missing, Changed, Extra, NotValid []string }
 
 // Failed reports drift that matters: something absent or different. Extras are fine
 // (an old database may carry search indexes or columns a fresh one lacks).
@@ -21,7 +24,15 @@ func (d Diff) Failed() bool { return len(d.Missing)+len(d.Changed) > 0 }
 
 func diffSchemas(ref, got Schema) Diff {
 	var d Diff
+	for k := range got {
+		if c, ok := strings.CutPrefix(k, "notvalid:"); ok {
+			d.NotValid = append(d.NotValid, "constraint:"+c)
+		}
+	}
 	for k, want := range ref {
+		if strings.HasPrefix(k, "notvalid:") {
+			continue
+		}
 		g, ok := got[k]
 		switch {
 		case !ok:
@@ -31,13 +42,14 @@ func diffSchemas(ref, got Schema) Diff {
 		}
 	}
 	for k := range got {
-		if _, ok := ref[k]; !ok {
+		if _, ok := ref[k]; !ok && !strings.HasPrefix(k, "notvalid:") {
 			d.Extra = append(d.Extra, k)
 		}
 	}
 	sort.Strings(d.Missing)
 	sort.Strings(d.Changed)
 	sort.Strings(d.Extra)
+	sort.Strings(d.NotValid)
 	return d
 }
 
@@ -60,8 +72,11 @@ UNION ALL
 SELECT 'index:' || i.indexname, i.indexdef FROM pg_indexes i JOIN t ON t.relname = i.tablename
 WHERE i.schemaname = 'public'
 UNION ALL
-SELECT 'constraint:' || t.relname || '.' || co.conname, pg_get_constraintdef(co.oid)
+SELECT 'constraint:' || t.relname || '.' || co.conname, regexp_replace(pg_get_constraintdef(co.oid), ' NOT VALID$', '')
 FROM t JOIN pg_constraint co ON co.conrelid = t.oid
+UNION ALL
+SELECT 'notvalid:' || t.relname || '.' || co.conname, ''
+FROM t JOIN pg_constraint co ON co.conrelid = t.oid WHERE NOT co.convalidated
 UNION ALL
 SELECT 'trigger:' || t.relname || '.' || tg.tgname, pg_get_triggerdef(tg.oid)
 FROM t JOIN pg_trigger tg ON tg.tgrelid = t.oid AND NOT tg.tgisinternal

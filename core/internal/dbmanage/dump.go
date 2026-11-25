@@ -20,7 +20,7 @@ import (
 // reimplementing the dump format — the standard, native way to do this.
 func PgDump(ctx context.Context, conn Conn, dbName string, w io.Writer) error {
 	// #nosec G204 — every argument is either a fixed flag or comes from
-	// connInfo/dbName, both already validated/config-sourced, never raw
+	// conn/dbName, both already validated/config-sourced, never raw
 	// request input passed straight through.
 	cmd := exec.CommandContext(ctx, "pg_dump",
 		"-h", conn.Host,

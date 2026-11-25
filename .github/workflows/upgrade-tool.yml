@@ -17,6 +17,10 @@ on:
 
 jobs:
   upgrade-tool-test:
+    timeout-minutes: 45
+    concurrency:
+      group: upgrade-tool-${{ github.ref }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     services:
       postgres:

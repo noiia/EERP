@@ -28,6 +28,9 @@ func TestValidateArgs(t *testing.T) {
 	if validateArgs(args{ConfigPath: "c", In: filepath.Join(d, "missing"), Out: out, Force: true}) == nil {
 		t.Error("missing in must error")
 	}
+	if validateArgs(args{ConfigPath: "c", In: in, Out: filepath.Join(d, "nodir", "o.zip")}) == nil {
+		t.Error("missing out directory must error")
+	}
 	if validateArgs(args{In: in, Out: out, Force: true}) == nil {
 		t.Error("missing config must error")
 	}

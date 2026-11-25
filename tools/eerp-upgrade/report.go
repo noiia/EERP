@@ -31,5 +31,8 @@ func (r Report) String() string {
 	for _, e := range r.Diff.Extra {
 		fmt.Fprintf(&b, "warning extra: %s\n", e)
 	}
+	for _, n := range r.Diff.NotValid {
+		fmt.Fprintf(&b, "warning not validated (an existing row violates it): %s\n", n)
+	}
 	return b.String()
 }

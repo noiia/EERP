@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -65,6 +66,23 @@ func tmpName(kind string) string {
 	return "eerp_upgrade_" + kind + "_" + hex.EncodeToString(b)
 }
 
+var tempName = regexp.MustCompile(`^eerp_upgrade_(tmp|ref)_[0-9a-f]{8}$`)
+
+// dropTemp drops one of the tool's own scratch databases, kicking out any
+// connection a released server left open (WITH (FORCE)). Only names this tool generates.
+func dropTemp(ctx context.Context, conn dbmanage.Conn, name string) error {
+	if !tempName.MatchString(name) {
+		return fmt.Errorf("refusing to drop %q: not a temp upgrade database", name)
+	}
+	c, err := pgx.Connect(ctx, conn.DSN("postgres"))
+	if err != nil {
+		return err
+	}
+	defer c.Close(ctx)
+	_, err = c.Exec(ctx, "DROP DATABASE IF EXISTS "+pgx.Identifier{name}.Sanitize()+" WITH (FORCE)")
+	return err
+}
+
 func runSteps(ctx context.Context, cfg *types.Config, db, target string, pre bool) error {
 	ss := stepsFor(target, pre)
 	if len(ss) == 0 {
@@ -114,7 +132,7 @@ func runWith(ctx context.Context, cfg *types.Config, a args, m migrator) (rep Re
 		// Ctrl-C must still clean up.
 		cctx := context.WithoutCancel(ctx)
 		for _, n := range created {
-			if derr := dbmanage.DropDatabase(cctx, conn, n, cfg.DbName); derr != nil {
+			if derr := dropTemp(cctx, conn, n); derr != nil {
 				common.Logger.Warn("drop temp database", zap.String("db", n), zap.Error(derr))
 			}
 		}

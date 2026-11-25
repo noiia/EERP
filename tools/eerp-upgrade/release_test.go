@@ -77,6 +77,7 @@ func TestRelease_Migrate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = r.Close() })
 	wt := r.worktree
 	conn := dbmanage.ConnFromConfig(cfg)
 	name := tmpName("t")

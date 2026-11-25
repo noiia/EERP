@@ -78,6 +78,7 @@ func TestRun_RoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	in, id := buildInput(t, dir)
 	out := filepath.Join(dir, "out.zip")
+	before := upgradeDBCount(t)
 	rep, err := runWith(context.Background(), cfg, args{In: in, Out: out}, realMigrator(t))
 	if err != nil {
 		t.Fatal(err)
@@ -110,7 +111,7 @@ func TestRun_RoundTrip(t *testing.T) {
 	if err := c.QueryRow(context.Background(), `SELECT name FROM contact WHERE id = $1`, id).Scan(&n); err != nil || n != "Upg Test" {
 		t.Fatalf("contact: %q %v", n, err)
 	}
-	if upgradeDBCount(t) != 0 {
+	if upgradeDBCount(t) != before {
 		t.Error("temp databases left behind")
 	}
 }
@@ -139,6 +140,7 @@ func TestRun_FailureCleansUp(t *testing.T) {
 	dir := t.TempDir()
 	in, _ := buildInput(t, dir)
 	out := filepath.Join(dir, "out.zip")
+	before := upgradeDBCount(t)
 	m := stubMigrator{ver: version.Version, fn: func(context.Context, stubEnv, string) error { return errors.New("boom") }}
 	if _, err := runWith(context.Background(), cfg, args{In: in, Out: out}, m); err == nil {
 		t.Fatal("want error")
@@ -148,7 +150,7 @@ func TestRun_FailureCleansUp(t *testing.T) {
 			t.Errorf("%s exists", p)
 		}
 	}
-	if upgradeDBCount(t) != 0 {
+	if upgradeDBCount(t) != before {
 		t.Error("temp databases left behind")
 	}
 }
@@ -158,6 +160,7 @@ func TestRun_DriftFails(t *testing.T) {
 	dir := t.TempDir()
 	in, _ := buildInput(t, dir)
 	out := filepath.Join(dir, "out.zip")
+	before := upgradeDBCount(t)
 	m := stubMigrator{ver: version.Version, fn: func(ctx context.Context, _ stubEnv, db string) error {
 		if err := provision(ctx, cfg, db); err != nil {
 			return err
@@ -174,7 +177,7 @@ func TestRun_DriftFails(t *testing.T) {
 	if _, e := os.Stat(out); e == nil {
 		t.Error("output written")
 	}
-	if upgradeDBCount(t) != 0 {
+	if upgradeDBCount(t) != before {
 		t.Error("temp databases left behind")
 	}
 }

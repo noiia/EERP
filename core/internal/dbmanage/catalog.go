@@ -26,6 +26,7 @@ func ConnFromConfig(cfg *types.Config) Conn {
 	return Conn{Host: cfg.DbHost, Port: cfg.DbPort, User: cfg.DbUser, Password: cfg.DbPassword}
 }
 
+// DSN is the connection URL for database dbName on this server.
 func (c Conn) DSN(dbName string) string {
 	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s", c.User, c.Password, c.Host, c.Port, dbName)
 }

@@ -24,7 +24,8 @@ type release struct {
 	cfg                         map[string]any
 }
 
-const healthTimeout = 5 * time.Minute
+// Old releases may run long backfills on a large database before they listen.
+const healthTimeout = 30 * time.Minute
 
 func gitOut(ctx context.Context, args ...string) (string, error) {
 	out, err := exec.CommandContext(ctx, "git", args...).CombinedOutput()
@@ -52,11 +53,11 @@ func prepareRelease(ctx context.Context, cfgPath, tag string) (*release, error) 
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return nil, fmt.Errorf("read %s: %w", cfgPath, err)
 	}
-	wt, err := os.MkdirTemp("", "eerp-release-")
+	absCfg, err := filepath.Abs(cfgPath)
 	if err != nil {
 		return nil, err
 	}
-	absCfg, err := filepath.Abs(cfgPath)
+	wt, err := os.MkdirTemp("", "eerp-release-")
 	if err != nil {
 		return nil, err
 	}
@@ -153,6 +154,8 @@ func (r *release) Migrate(ctx context.Context, dbName string) error {
 	cmd := exec.Command(r.bin, "-config", cfgFile) // not CommandContext: we stop it gracefully ourselves
 	cmd.Dir = filepath.Join(r.worktree, "core")
 	cmd.Stdout, cmd.Stderr = lf, lf
+	// shortcut: Linux-only (the tool targets Linux); the release dies with the tool.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGTERM}
 	if err := cmd.Start(); err != nil {
 		return err
 	}

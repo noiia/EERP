@@ -46,7 +46,10 @@ checks the tag out in a git worktree, builds its `core/cmd/app`, and starts it o
 the temporary database (integrations emptied, `production` environment) until
 `/health` answers, which happens after the migration. The verification reference
 is provisioned by the same binary, so it compares against that release's fresh
-schema. A `-to` equal to the tool's own version takes the in-process path.
+schema. Unlike the in-process path, `-to` runs the release's full startup before
+stopping it, so its background jobs start briefly (quote expiry, search index build,
+rates fetch); harmless, a normal boot does the same. A `-to` equal to the tool's own
+version takes the in-process path.
 
 Forward only: an input recorded as newer than the target, or a target older than
 v0.108.0, is refused.
@@ -90,5 +93,7 @@ enables the `-to` boot test.
 - S3 objects travel inside the zip and are never uploaded anywhere; restoring the output through `/database/management` puts them back.
 - The default target is the version stamped into the build: for a release build, build from the target tag's checkout. An untagged build is `dev` and counts as newer than every release.
 - `-to` builds a past release: expect minutes, not seconds.
+- A crashed run can leave scratch databases: list them with `SELECT datname FROM pg_database WHERE datname LIKE 'eerp\_upgrade\_%'` and drop each with `DROP DATABASE "<name>" WITH (FORCE)`.
+- A check a module left `NOT VALID` (an old row violates it) is reported as a warning, not a failure.
 - On a brand-new empty database the core's first provisioning pass fails on module ordering (warehouse/notify before auth's `users` table), so the tool retries it once. This is a pre-existing core issue, not the tool's.
 - The default admin is seeded in `production` mode, so its known password must be changed at first sign-in.
