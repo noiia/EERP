@@ -40,9 +40,11 @@ make run-back
 make run-front-dev
 
 # Run every check the CI runs, coverage gates included (required before every push,
-# see "Before pushing"): Go backend (with Redis) + its coverage floor, the dead code
-# gate, pdf-service + its floor, then frontend lint + typecheck + tests with each
-# package's vitest thresholds. Stops at the first failure.
+# see "Before pushing"), as three chains run at the same time: test-back (Go backend
+# with Redis + its coverage floor + the dead code gate), test-pdf (pdf-service + its
+# floor) and test-front (frontend lint + typecheck + tests with each package's vitest
+# thresholds). Each chain stops at its first failure and prints its output whole when
+# it ends; `make test-back` / `test-pdf` / `test-front` runs one alone.
 make test
 
 # The CI's dead code gate alone: any Go function unreachable from main that isn't
@@ -317,7 +319,7 @@ set, since setting it names real intent (see `internal/reports/` above and
 
 Nothing is pushed until the tests pass **and** every service still meets the coverage floor CI enforces. CI (`.github/workflows/test-check.yml`) gates every image build on these, so a push that skips them only moves the failure to CI.
 
-- Run **`make test`** before every `git push`. It runs exactly what CI runs, coverage gates included, and stops at the first failure:
+- Run **`make test`** before every `git push`. It runs exactly what CI runs, coverage gates included, as three parallel chains (back, pdf-service, front), each stopping at its first failure:
 
   | Service | Floor (source of truth) |
   |---|---|

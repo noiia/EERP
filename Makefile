@@ -1,6 +1,6 @@
 root := $(CURDIR)
 
-.PHONY: rebuild-and-run clean build run run-back run-back-tests run-pdf-tests run-front-tests run-deadcode run-coverage-gate test run-front-dev garage-init logs run-docker-prod bootstrap bootstrap-prod renew-certs-prod
+.PHONY: rebuild-and-run clean build run run-back run-back-tests run-pdf-tests run-front-tests run-deadcode run-coverage-gate test test-back test-pdf test-front run-front-dev garage-init logs run-docker-prod bootstrap bootstrap-prod renew-certs-prod
 
 CONFIG ?= $(root)/eerp-config.json
 
@@ -83,19 +83,30 @@ run-coverage-gate:
 	cd $(root) && go run github.com/vladopajic/go-test-coverage/v2@$(GO_TEST_COVERAGE_VERSION) --config=$(COVER_CONFIG)
 
 # Every check the CI runs, coverage gates included — what must pass before a push
-# (CLAUDE.md "Before pushing"): Go backend (+ the Redis-backed cache tests) and its
-# total coverage floor, the dead code gate, pdf-service and its floor, then the
-# frontend's lint, typecheck and tests with each package's vitest thresholds.
-# Stops at the first failure. Pitfall: the Go figure is measured against your dev
-# database; CI uses a fresh one (see .github/.testcoverage.yml).
+# (CLAUDE.md "Before pushing"), as three independent chains run at the same time:
+# test-back (Go backend + the Redis-backed cache tests, its total coverage floor,
+# the dead code gate), test-pdf (pdf-service and its floor) and test-front (the
+# frontend's lint, typecheck and tests with each package's vitest thresholds).
+# Each chain stops at its own first failure; make fails once they've all ended.
+# A chain's output is printed whole when it ends (--output-sync), so the logs
+# don't interleave: the shorter chains report first. Run one chain alone with
+# `make test-back` (or test-pdf, test-front). Pitfall: the Go figure is measured
+# against your dev database; CI uses a fresh one (see .github/.testcoverage.yml).
 GO_COVER_ARGS := -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
 test:
+	@$(MAKE) --no-print-directory -j3 --output-sync=target test-back test-pdf test-front
+
+test-back:
 	$(COMPOSE) up -d --wait redis
 	REDIS_URL=redis://127.0.0.1:6379/0 $(MAKE) --no-print-directory run-back-tests ARGS="-timeout 30m $(GO_COVER_ARGS) $(ARGS)"
 	$(MAKE) --no-print-directory run-coverage-gate COVER_CONFIG=.github/.testcoverage.yml
 	$(MAKE) --no-print-directory run-deadcode
+
+test-pdf:
 	$(MAKE) --no-print-directory run-pdf-tests ARGS="$(GO_COVER_ARGS) $(ARGS)"
 	$(MAKE) --no-print-directory run-coverage-gate COVER_CONFIG=.github/.testcoverage-pdf-service.yml
+
+test-front:
 	$(MAKE) --no-print-directory run-front-tests FRONT_TEST=test:coverage
 
 run-front-dev:
