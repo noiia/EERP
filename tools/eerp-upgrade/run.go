@@ -34,8 +34,17 @@ func (m inProcess) Migrate(ctx context.Context, db string) error { return provis
 func (inProcess) Version() string                                { return version.Version }
 
 func run(ctx context.Context, cfg *types.Config, a args) (Report, error) {
-	if a.To != "" && a.To != version.Version {
-		return Report{}, fmt.Errorf("-to %s is not supported yet", a.To)
+	if a.To != "" && strings.TrimPrefix(a.To, "v") != strings.TrimPrefix(version.Version, "v") {
+		r, err := prepareRelease(ctx, a.ConfigPath, a.To)
+		if err != nil {
+			return Report{}, err
+		}
+		defer func() {
+			if err := r.Close(); err != nil {
+				common.Logger.Warn("remove release worktree", zap.Error(err))
+			}
+		}()
+		return runWith(ctx, cfg, a, r)
 	}
 	return runWith(ctx, cfg, a, inProcess{cfg})
 }
@@ -90,12 +99,13 @@ func runWith(ctx context.Context, cfg *types.Config, a args, m migrator) (rep Re
 
 	conn := dbmanage.ConnFromConfig(cfg)
 	tmp, ref := tmpName("tmp"), tmpName("ref")
+	var created []string
 	defer func() {
 		// Ctrl-C must still clean up.
 		cctx := context.WithoutCancel(ctx)
-		for _, n := range []string{tmp, ref} {
+		for _, n := range created {
 			if derr := dbmanage.DropDatabase(cctx, conn, n, cfg.DbName); derr != nil {
-				common.Logger.Debug("drop temp database", zap.String("db", n), zap.Error(derr))
+				common.Logger.Warn("drop temp database", zap.String("db", n), zap.Error(derr))
 			}
 		}
 	}()
@@ -112,6 +122,7 @@ func runWith(ctx context.Context, cfg *types.Config, a args, m migrator) (rep Re
 	if err := dbmanage.CreateDatabase(ctx, conn, tmp); err != nil {
 		return rep, err
 	}
+	created = append(created, tmp)
 	if err := dbmanage.PgRestore(ctx, conn, tmp, dumpPath); err != nil {
 		return rep, fmt.Errorf("restore input: %w", err)
 	}
@@ -127,6 +138,7 @@ func runWith(ctx context.Context, cfg *types.Config, a args, m migrator) (rep Re
 	if err := dbmanage.CreateDatabase(ctx, conn, ref); err != nil {
 		return rep, err
 	}
+	created = append(created, ref)
 	if err := m.Migrate(ctx, ref); err != nil {
 		return rep, fmt.Errorf("migrate reference: %w", err)
 	}
