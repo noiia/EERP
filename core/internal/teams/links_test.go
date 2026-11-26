@@ -105,3 +105,99 @@ func TestLinks_CountDownload(t *testing.T) {
 		t.Fatalf("count: %+v %v", got, err)
 	}
 }
+
+func linkBody(at time.Time) string { return `{"expires_at":"` + at.UTC().Format(time.RFC3339) + `"}` }
+
+func TestLinkRoutes_ManagerRule(t *testing.T) {
+	f := newChatFixture(t, true)
+	file := f.file(t, f.team, nil, "m.txt") // uploaded by f.member
+	p := map[string]string{"file": file.ID.String()}
+	body := linkBody(time.Now().Add(24 * time.Hour))
+	for _, tc := range []struct {
+		name string
+		as   uuid.UUID
+		want int
+	}{{"uploader", f.member, 201}, {"owner", f.owner, 201}, {"guest", f.guest, 403}, {"non-member", f.outside, 404}} {
+		t.Run(tc.name, func(t *testing.T) {
+			if c := f.call(t, f.h.CreateLink, "POST", body, tc.as, p); c != tc.want {
+				t.Fatalf("got %d want %d", c, tc.want)
+			}
+		})
+	}
+	other := f.guest2(t) // promoted to member, not the uploader
+	if c := f.call(t, f.h.CreateLink, "POST", body, other, p); c != 403 {
+		t.Fatalf("other member: %d", c)
+	}
+}
+
+func TestLinkRoutes_ExpiryBounds(t *testing.T) {
+	f := newChatFixture(t, true)
+	file := f.file(t, f.team, nil, "m.txt")
+	p := map[string]string{"file": file.ID.String()}
+	now := time.Now()
+	for _, tc := range []struct {
+		name, body string
+		want       int
+	}{
+		{"past", linkBody(now.Add(-time.Minute)), 422},
+		{"now", linkBody(now), 422},
+		{"over 90 days", linkBody(now.Add(90*24*time.Hour + time.Minute)), 422},
+		{"malformed", `{"expires_at":"soon"}`, 400},
+		{"missing", `{}`, 422},
+		{"7 days", linkBody(now.Add(7 * 24 * time.Hour)), 201},
+		{"just under 90 days", linkBody(now.Add(90*24*time.Hour - time.Minute)), 201},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if c := f.call(t, f.h.CreateLink, "POST", tc.body, f.member, p); c != tc.want {
+				t.Fatalf("got %d want %d", c, tc.want)
+			}
+		})
+	}
+}
+
+func TestLinkRoutes_ListAndRevoke(t *testing.T) {
+	f := newChatFixture(t, true)
+	file := f.file(t, f.team, nil, "m.txt")
+	p := map[string]string{"file": file.ID.String()}
+	body := linkBody(time.Now().Add(time.Hour))
+	rec := serve(t, f.h.CreateLink, "POST", body, f.as(f.member), p)
+	var created struct {
+		ID, Token, URL string
+	}
+	if err := jsonDecode(rec, &created); err != nil || rec.Code != 201 || created.Token == "" || created.URL != "/app/teams/links/"+created.Token {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body)
+	}
+	if _, err := f.repo.ResolveLink(context.Background(), teams.HashToken(created.Token)); err != nil {
+		t.Fatalf("token does not resolve: %v", err)
+	}
+	f.call(t, f.h.CreateLink, "POST", body, f.member, p)
+	rec = serve(t, f.h.ListLinks, "GET", "", f.as(f.guest), p) // managers only
+	if rec.Code != 403 {
+		t.Fatalf("guest list: %d", rec.Code)
+	}
+	rec = serve(t, f.h.ListLinks, "GET", "", f.as(f.member), p)
+	var listed struct {
+		Data []map[string]any
+	}
+	if err := jsonDecode(rec, &listed); err != nil || rec.Code != 200 || len(listed.Data) != 2 {
+		t.Fatalf("list: %d %s", rec.Code, rec.Body)
+	}
+	if _, has := listed.Data[0]["token"]; has {
+		t.Fatal("list must never return a token")
+	}
+	lp := map[string]string{"link": created.ID}
+	if c := f.call(t, f.h.RevokeLink, "DELETE", "", f.guest, lp); c != 403 {
+		t.Fatalf("guest revoke: %d", c)
+	}
+	if c := f.call(t, f.h.RevokeLink, "DELETE", "", f.outside, lp); c != 404 {
+		t.Fatalf("outsider revoke: %d", c)
+	}
+	if c := f.call(t, f.h.RevokeLink, "DELETE", "", f.member, lp); c != 204 {
+		t.Fatalf("revoke: %d", c)
+	}
+	rec = serve(t, f.h.ListLinks, "GET", "", f.as(f.member), p)
+	_ = jsonDecode(rec, &listed)
+	if len(listed.Data) != 1 {
+		t.Fatalf("after revoke: %s", rec.Body)
+	}
+}
