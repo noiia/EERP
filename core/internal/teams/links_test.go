@@ -337,9 +337,16 @@ func TestDownloadLink_ServesLatestContent(t *testing.T) {
 // servePublic runs h like the anonymous route: no identity on the context.
 func servePublic(t *testing.T, h echo.HandlerFunc, token string) *httptest.ResponseRecorder {
 	t.Helper()
+	return servePublicUA(t, h, token, "")
+}
+
+func servePublicUA(t *testing.T, h echo.HandlerFunc, token, ua string) *httptest.ResponseRecorder {
+	t.Helper()
 	e := echo.New()
 	rec := httptest.NewRecorder()
-	c := e.NewContext(httptest.NewRequest("GET", "/", nil), rec)
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("User-Agent", ua)
+	c := e.NewContext(req, rec)
 	c.SetPathValues(echo.PathValues{{Name: "token", Value: token}})
 	if err := h(c); err != nil {
 		e.HTTPErrorHandler(c, err)
@@ -417,7 +424,7 @@ func TestPublicLink_404s(t *testing.T) {
 			f := newChatFixture(t, true)
 			file, token, _ := f.newLinkBody(t, publicBody(tc.pub))
 			rec := servePublic(t, f.h.PublicDownload, tc.mutate(t, f, token))
-			if rec.Code != 404 || !strings.Contains(rec.Body.String(), "No such file.") {
+			if rec.Code != 404 || rec.Body.String() != teams.LinkGoneText || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/plain") {
 				t.Fatalf("got %d %s", rec.Code, rec.Body)
 			}
 			if !tc.pub {
@@ -427,5 +434,78 @@ func TestPublicLink_404s(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestDownloadLink_DeadStaysDead(t *testing.T) {
+	f := newChatFixture(t, true)
+	ctx := context.Background()
+	file, token := f.newLink(t, "", "x")
+	if err := f.repo.RemoveMember(ctx, f.tenant, f.team, f.member); err != nil {
+		t.Fatal(err)
+	}
+	p := map[string]string{"token": token}
+	if rec := serve(t, f.h.DownloadLink, "GET", "", f.as(f.staff), p); rec.Code != 404 {
+		t.Fatalf("after removal: %d", rec.Code)
+	}
+	if _, err := f.repo.AddMember(ctx, f.tenant, f.team, f.member, teams.RoleMember); err != nil {
+		t.Fatal(err)
+	}
+	if rec := serve(t, f.h.DownloadLink, "GET", "", f.as(f.staff), p); rec.Code != 404 {
+		t.Fatalf("revived after re-adding the creator: %d", rec.Code)
+	}
+	// A link dead without a download is dropped from the list too.
+	_, token2 := f.newLink(t, "", "y")
+	_ = token2
+	if err := f.repo.RemoveMember(ctx, f.tenant, f.team, f.member); err != nil {
+		t.Fatal(err)
+	}
+	rec := serve(t, f.h.ListLinks, "GET", "", f.as(f.owner), map[string]string{"file": file.String()})
+	var listed struct{ Data []map[string]any }
+	if err := jsonDecode(rec, &listed); err != nil || rec.Code != 200 || len(listed.Data) != 0 {
+		t.Fatalf("list: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestLinkInfo(t *testing.T) {
+	f := newChatFixture(t, true)
+	_, token := f.newLink(t, "", "hello")
+	rec := serve(t, f.h.LinkInfo, "GET", "", f.as(f.staff), map[string]string{"token": token})
+	var info struct {
+		Name string
+		Size int64
+	}
+	if err := jsonDecode(rec, &info); err != nil || rec.Code != 200 || info.Name != "doc.txt" || info.Size != 5 {
+		t.Fatalf("info: %d %s", rec.Code, rec.Body)
+	}
+	l, _ := f.repo.ResolveLink(context.Background(), teams.HashToken(token))
+	if l.DownloadCount != 0 {
+		t.Fatalf("info counted a download: %d", l.DownloadCount)
+	}
+	if rec := serve(t, f.h.LinkInfo, "GET", "", f.as(f.staff), map[string]string{"token": "nope"}); rec.Code != 404 {
+		t.Fatalf("unknown: %d", rec.Code)
+	}
+}
+
+func TestPublicLink_PreviewBotsNotCounted(t *testing.T) {
+	f := newChatFixture(t, true)
+	_, token, _ := f.newLinkBody(t, publicBody(true))
+	for _, ua := range []string{"Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)", "WhatsApp/2.23.20.0",
+		"Mozilla/5.0 (compatible; Discordbot/2.0)", "facebookexternalhit/1.1", "Microsoft Office/16.0 (SkypeUriPreview Preview/0.5)"} {
+		if rec := servePublicUA(t, f.h.PublicDownload, token, ua); rec.Code != 200 {
+			t.Fatalf("%s: %d", ua, rec.Code)
+		}
+	}
+	servePublicUA(t, f.h.PublicDownload, token, "Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0")
+	l, err := f.repo.ResolveLink(context.Background(), teams.HashToken(token))
+	if err != nil || l.DownloadCount != 1 {
+		t.Fatalf("count: %+v %v", l, err)
+	}
+}
+
+func TestPublicGate_SameAnswerWhenInactive(t *testing.T) {
+	rec := servePublic(t, teams.PublicGate(func(string) bool { return false })(func(*echo.Context) error { return nil }), "x")
+	if rec.Code != 404 || rec.Body.String() != teams.LinkGoneText {
+		t.Fatalf("got %d %s", rec.Code, rec.Body)
 	}
 }

@@ -6,12 +6,15 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"mime/multipart"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"core/internal/pictures"
+	"core/internal/teams"
 	"core/internal/types"
 )
 
@@ -147,7 +150,7 @@ func TestApp_TeamsDownloadLinkRoutes(t *testing.T) {
 		t.Fatalf("anonymous: %d", code)
 	}
 	// The public route answers anonymously, with the same 404 for an unknown token.
-	if code, body := c.do("GET", "/api/v1/file-links/unknown", nil); code != 404 || !strings.Contains(string(body), "No such file.") {
+	if code, body := c.do("GET", "/api/v1/file-links/unknown", nil); code != 404 || string(body) != teams.LinkGoneText {
 		t.Fatalf("public unknown token: %d %s", code, body)
 	}
 	c.token = token
@@ -162,5 +165,48 @@ func TestApp_TeamsDownloadLinkRoutes(t *testing.T) {
 		!strings.Contains(rec.Body.String(), "GET /api/v1/teams/links/:token/download") ||
 		strings.Contains(rec.Body.String(), "/api/v1/file-links") {
 		t.Fatalf("MCP operations: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestApp_PublicLinkDownload goes through the real app end to end: a team, an
+// uploaded file, a public link, then an anonymous download through the
+// anonymous group's own middlewares (rate limiter, gate, logging).
+func TestApp_PublicLinkDownload(t *testing.T) {
+	c := buildApp(t)
+	if !pictures.S3Configured(c.a.cfg) {
+		t.Skip("teams file routes need s3_*")
+	}
+	code, body := c.do("POST", "/api/v1/teams", map[string]string{"name": "links-" + t.Name()})
+	team, _ := decode(t, body)["id"].(string)
+	if code != 201 || team == "" {
+		t.Fatalf("create team: %d %s", code, body)
+	}
+	t.Cleanup(func() { c.do("DELETE", "/api/v1/teams/"+team, nil) })
+
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	fw, _ := w.CreateFormFile("file", "hello.txt")
+	_, _ = fw.Write([]byte("hello world"))
+	_ = w.Close()
+	req := httptest.NewRequest("POST", "/api/v1/teams/"+team+"/files", &buf)
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	rec := httptest.NewRecorder()
+	c.h.ServeHTTP(rec, req)
+	file, _ := decode(t, rec.Body.Bytes())["id"].(string)
+	if rec.Code != 201 || file == "" {
+		t.Fatalf("upload: %d %s", rec.Code, rec.Body)
+	}
+
+	expires := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+	code, body = c.do("POST", "/api/v1/teams/files/"+file+"/links", map[string]any{"expires_at": expires, "public": true})
+	url, _ := decode(t, body)["url"].(string)
+	if code != 201 || !strings.HasPrefix(url, "/api/v1/file-links/") {
+		t.Fatalf("create link: %d %s", code, body)
+	}
+	c.token = ""
+	code, hdr, got := c.getFile(url)
+	if code != 200 || string(got) != "hello world" || hdr.Get("Cache-Control") != "private, no-store" {
+		t.Fatalf("anonymous download: %d %v %s", code, hdr, got)
 	}
 }

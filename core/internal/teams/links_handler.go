@@ -1,10 +1,12 @@
 package teams
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"core/internal/auth"
@@ -66,9 +68,13 @@ func (h *Handler) ListLinks(c *echo.Context) error {
 	if err != nil {
 		return err
 	}
-	out := make([]linkJSON, len(links))
-	for i, l := range links {
-		out[i] = toLinkJSON(l, users)
+	out := make([]linkJSON, 0, len(links))
+	for _, l := range links {
+		if _, alive, err := h.linkFile(ctx, l); err != nil {
+			return err
+		} else if alive {
+			out = append(out, toLinkJSON(l, users))
+		}
 	}
 	return list(c, out)
 }
@@ -139,63 +145,147 @@ func (h *Handler) RevokeLink(c *echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+// LinkGoneText is the public route's single failure answer, readable in a browser.
+const LinkGoneText = "This link has expired, been revoked, or does not exist."
+
+func linkGone(c *echo.Context) error { return c.String(http.StatusNotFound, LinkGoneText) }
+
+func fileGone(c *echo.Context) error { return notFound(c, "file") }
+
+// PublicGate answers like a dead link while Teams is inactive, so an anonymous
+// caller learns nothing more than from any other failure.
+func PublicGate(isActive func(string) bool) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			if !isActive("teams") {
+				return linkGone(c)
+			}
+			return next(c)
+		}
+	}
+}
+
+// memberLink resolves the :token for a signed-in staff caller of the link's tenant.
+func (h *Handler) memberLink(c *echo.Context) (Link, bool, error) {
+	ctx := c.Request().Context()
+	l, err := h.repo.ResolveLink(ctx, HashToken(c.Param("token")))
+	if errors.Is(err, orm.ErrNotFound) || (err == nil && l.TenantID != auth.MustIdentity(ctx).TenantID) {
+		return Link{}, false, fileGone(c)
+	}
+	return l, err == nil, err
+}
+
 // DownloadLink serves GET /links/:token/download to any staff user of the
 // link's tenant. Every failure is the same 404, so a token can't be probed;
 // the link also dies once its creator can no longer read the file.
 func (h *Handler) DownloadLink(c *echo.Context) error {
-	ctx := c.Request().Context()
-	id := auth.MustIdentity(ctx)
-	l, err := h.repo.ResolveLink(ctx, HashToken(c.Param("token")))
-	if errors.Is(err, orm.ErrNotFound) || (err == nil && l.TenantID != id.TenantID) {
-		return notFound(c, "file")
+	l, ok, err := h.memberLink(c)
+	if !ok {
+		return err
 	}
+	return h.serveLink(c, l, fileGone)
+}
+
+// LinkInfo serves GET /links/:token: the linked file's name and size, so the
+// link page can name the file or say the link is dead. Never counts a download.
+func (h *Handler) LinkInfo(c *echo.Context) error {
+	l, ok, err := h.memberLink(c)
+	if !ok {
+		return err
+	}
+	f, alive, err := h.linkFile(c.Request().Context(), l)
 	if err != nil {
 		return err
 	}
-	return h.serveLink(c, l)
+	if !alive {
+		return fileGone(c)
+	}
+	return c.JSON(http.StatusOK, map[string]any{"name": f.Name, "size": f.Size, "mime": f.Mime, "expires_at": l.ExpiresAt})
 }
 
 // PublicDownload serves GET /api/v1/file-links/:token to anyone, account or
-// not, for links created public. Every failure is the same 404.
+// not, for links created public. Every failure is the same plain-text 404.
 func (h *Handler) PublicDownload(c *echo.Context) error {
 	l, err := h.repo.ResolveLink(c.Request().Context(), HashToken(c.Param("token")))
 	if errors.Is(err, orm.ErrNotFound) || (err == nil && !l.Public) {
-		return notFound(c, "file")
+		return linkGone(c)
 	}
 	if err != nil {
 		return err
 	}
-	return h.serveLink(c, l)
+	return h.serveLink(c, l, linkGone)
 }
 
-// serveLink streams a resolved link's file while its creator can still read it.
-func (h *Handler) serveLink(c *echo.Context, l Link) error {
-	ctx := c.Request().Context()
+// linkFile returns the link's file while its creator can still read it. A link
+// whose creator lost access is revoked on the spot, so it stays dead even if
+// that access comes back.
+func (h *Handler) linkFile(ctx context.Context, l Link) (File, bool, error) {
 	f, err := h.repo.FindFile(ctx, l.TenantID, l.FileID)
 	if errors.Is(err, orm.ErrNotFound) {
-		return notFound(c, "file")
+		return File{}, false, nil
 	}
 	if err != nil {
-		return err
+		return File{}, false, err
 	}
+	visible := false
 	role, err := h.repo.RoleOf(ctx, l.TenantID, f.TeamID, l.CreatedBy)
-	if errors.Is(err, orm.ErrNotFound) {
-		return notFound(c, "file")
+	if err == nil {
+		if visible, err = h.visibleFolder(ctx, l.TenantID, f.TeamID, l.CreatedBy, role, f.FolderID); err != nil {
+			return File{}, false, err
+		}
+	} else if !errors.Is(err, orm.ErrNotFound) {
+		return File{}, false, err
 	}
+	if !visible {
+		return File{}, false, h.repo.RevokeLink(ctx, l.TenantID, l.ID)
+	}
+	return f, true, nil
+}
+
+// serveLink streams a resolved link's file; gone writes the failure answer.
+func (h *Handler) serveLink(c *echo.Context, l Link, gone func(*echo.Context) error) error {
+	ctx := c.Request().Context()
+	f, alive, err := h.linkFile(ctx, l)
 	if err != nil {
 		return err
 	}
-	if visible, err := h.visibleFolder(ctx, l.TenantID, f.TeamID, l.CreatedBy, role, f.FolderID); err != nil {
-		return err
-	} else if !visible {
-		return notFound(c, "file")
+	if !alive {
+		return gone(c)
 	}
-	if err := h.repo.CountDownload(ctx, l.TenantID, l.ID); err != nil {
-		return err
+	if !isPreviewBot(c.Request().UserAgent()) {
+		if err := h.repo.CountDownload(ctx, l.TenantID, l.ID); err != nil {
+			return err
+		}
 	}
 	c.Response().Header().Set("Cache-Control", "private, no-store")
 	c.Response().Header().Set("X-Content-Type-Options", "nosniff")
 	return h.streamFile(c, f)
+}
+
+// previewBots are the link-preview fetchers chat and mail apps send when a URL
+// is pasted: they get the file but aren't counted as a download.
+// shortcut: a user-agent list, so an unlisted previewer still counts; extend it when one shows up.
+var previewBots = []string{"slackbot", "whatsapp", "discordbot", "facebookexternalhit", "twitterbot",
+	"telegrambot", "linkedinbot", "skypeuripreview", "teamsbot", "googlebot", "bingbot", "applebot",
+	"embedly", "redditbot", "mattermost", "rocket.chat", "outlook", "microsoftpreview"}
+
+func isPreviewBot(ua string) bool {
+	ua = strings.ToLower(ua)
+	for _, b := range previewBots {
+		if strings.Contains(ua, b) {
+			return true
+		}
+	}
+	return false
+}
+
+// MountLinks registers the members link routes, rate-limited by limit. Needs S3.
+func MountLinks(g *echo.Group, h *Handler, limit echo.MiddlewareFunc) {
+	if h.objects == nil {
+		return
+	}
+	g.GET("/links/:token", h.LinkInfo, limit)
+	g.GET("/links/:token/download", h.DownloadLink, limit)
 }
 
 // MountPublicLinks registers the anonymous public-link route. Needs S3.
@@ -204,12 +294,4 @@ func MountPublicLinks(g *echo.Group, h *Handler) {
 		return
 	}
 	g.GET("/:token", h.PublicDownload)
-}
-
-// MountLinks registers the download-link route, rate-limited by limit. Needs S3.
-func MountLinks(g *echo.Group, h *Handler, limit echo.MiddlewareFunc) {
-	if h.objects == nil {
-		return
-	}
-	g.GET("/links/:token/download", h.DownloadLink, limit)
 }

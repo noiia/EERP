@@ -389,3 +389,20 @@ func TestBodyLimit_ExemptPrefixUsesOwnLimit(t *testing.T) {
 		})
 	}
 }
+
+// Callers with different keys get separate buckets; the same key shares one.
+func TestRateLimiterBy_KeysApart(t *testing.T) {
+	e := echo.New()
+	e.GET("/", func(c *echo.Context) error { return c.NoContent(200) },
+		ormserver.RateLimiterBy(1, func(c *echo.Context) string { return c.Request().Header.Get("X-User") }))
+	hit := func(user string) int {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/", nil)
+		req.Header.Set("X-User", user)
+		e.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if a1, b1, a2 := hit("a"), hit("b"), hit("a"); a1 != 200 || b1 != 200 || a2 != 429 {
+		t.Fatalf("a=%d b=%d a again=%d", a1, b1, a2)
+	}
+}
