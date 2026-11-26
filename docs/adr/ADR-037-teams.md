@@ -220,7 +220,15 @@ sequenceDiagram
   own access.
 - **Response**: `Content-Disposition: attachment`, `ETag`, `Cache-Control: private, no-store`,
   `X-Content-Type-Options: nosniff`. Each download bumps the link's `download_count` and
-  `last_download_at`, shown in the Share dialog.
+  `last_download_at`, shown in the Share dialog — except fetches from known link-preview bots
+  (Slack, Teams/Office, WhatsApp, Discord… — a user-agent list), which get the file uncounted.
+- **Dead links stay dead**: the first time a link is found whose creator can no longer read the
+  file (on a download, a `GET /links/:token`, or the Share dialog's list), it is revoked on the
+  spot, so restoring the creator's access never brings it back, and it leaves the list.
+- **Link page**: `GET /api/v1/teams/links/:token` (members, never counted) answers the file's
+  `name`/`size`, so `/app/teams/links/<token>` names the file before downloading, or says the link
+  has expired, been revoked or doesn't exist. The members link routes are rate-limited **per
+  user** (`ormserver.RateLimiterBy`), so colleagues behind one office NAT don't share a bucket.
 - **Frontend**: the Share dialog's *Download links* section (create + copy, list, revoke), a Share
   button in the office viewer header (`OfficeDialog`'s `headerActions`), and the page
   `/app/teams/links/<token>`, which signs the visitor in and downloads through the Teams BFF.
@@ -231,7 +239,8 @@ sequenceDiagram
   never silently become public. Public links are served anonymously by Go at
   `GET /api/v1/file-links/:token` (own group: public rate limit + `ActiveGate`, no JWT, independent
   of the website tenant), with the same checks minus the tenant comparison, and they also work
-  through the members route. The create answer's `url` is that route for a public link,
+  through the members route. Every failure there — and the route itself while Teams is inactive
+  (`PublicGate`) — is the same plain-text 404, readable in a browser. The create answer's `url` is that route for a public link,
   `/app/teams/links/<token>` otherwise. The route is not an MCP root.
 
 ## Consequences

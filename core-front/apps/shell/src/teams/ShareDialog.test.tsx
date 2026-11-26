@@ -62,14 +62,24 @@ describe('ShareDialog', () => {
     const url = `${window.location.origin}/app/teams/links/tok`
     expect(await screen.findByDisplayValue(url)).toBeInTheDocument()
     expect(writeText).toHaveBeenCalledWith(url)
+    expect(await screen.findByLabelText('Link copied')).toBeInTheDocument()
+  })
+
+  it('says to copy the link by hand when the clipboard refuses', async () => {
+    Object.assign(navigator, { clipboard: { writeText: vi.fn().mockRejectedValue(new Error('denied')) } })
+    createLink.mockResolvedValue({ id: 'l2', url: '/app/teams/links/tok', expires_at: '2030-01-08T22:59:00Z', created_by_name: 'Alice', created_at: '', download_count: 0, last_download_at: null, public: false })
+    render(<ShareDialog open fileId="f1" onClose={vi.fn()} onSaved={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Create link' }))
+    expect(await screen.findByLabelText('Copy this link')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Link copied')).toBeNull()
   })
 
   it('lists live links and revokes one', async () => {
     render(<ShareDialog open fileId="f1" onClose={vi.fn()} onSaved={vi.fn()} />)
-    expect(await screen.findByText(/3 downloads/)).toBeInTheDocument()
+    expect(await screen.findByText(/Downloads: 3/)).toBeInTheDocument()
     fireEvent.click(screen.getAllByRole('button', { name: 'Revoke' })[0]!)
     await waitFor(() => expect(revokeLink).toHaveBeenCalledWith('l1'))
-    await waitFor(() => expect(screen.queryByText(/3 downloads/)).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByText(/Downloads: 3/)).not.toBeInTheDocument())
   })
 
   it('makes a public link only when asked, with a warning', async () => {
@@ -89,7 +99,7 @@ describe('ShareDialog', () => {
 
   it('marks public links in the list', async () => {
     render(<ShareDialog open fileId="f1" onClose={vi.fn()} onSaved={vi.fn()} />)
-    expect(await screen.findByText(/0 downloads/)).toBeInTheDocument()
+    expect(await screen.findByText(/Downloads: 0/)).toBeInTheDocument()
     expect(screen.getAllByText('Public')).toHaveLength(1)
   })
 

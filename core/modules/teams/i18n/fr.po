@@ -446,14 +446,10 @@ msgstr "Lien copié"
 msgid "Revoke"
 msgstr "Révoquer"
 
-msgid "downloads"
-msgstr "téléchargements"
 
 msgid "Download file"
 msgstr "Télécharger le fichier"
 
-msgid "This link opens one shared file. If it has expired or been revoked, the download answers File not found."
-msgstr "Ce lien ouvre un fichier partagé. S'il a expiré ou a été révoqué, le téléchargement répond Fichier introuvable."
 
 msgid "Workspace members only"
 msgstr "Membres de l'espace de travail uniquement"
@@ -466,3 +462,12 @@ msgstr "Toute personne qui reçoit ce lien peut télécharger le fichier sans se
 
 msgid "Public"
 msgstr "Public"
+
+msgid "Copy this link"
+msgstr "Copiez ce lien"
+
+msgid "Downloads"
+msgstr "Téléchargements"
+
+msgid "This link has expired, been revoked, or does not exist."
+msgstr "Ce lien a expiré, a été révoqué ou n'existe pas."

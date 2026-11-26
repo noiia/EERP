@@ -445,14 +445,10 @@ msgstr ""
 msgid "Revoke"
 msgstr ""
 
-msgid "downloads"
-msgstr ""
 
 msgid "Download file"
 msgstr ""
 
-msgid "This link opens one shared file. If it has expired or been revoked, the download answers File not found."
-msgstr ""
 
 msgid "Workspace members only"
 msgstr ""
@@ -464,4 +460,13 @@ msgid "Anyone who gets this link can download the file without signing in."
 msgstr ""
 
 msgid "Public"
+msgstr ""
+
+msgid "Copy this link"
+msgstr ""
+
+msgid "Downloads"
+msgstr ""
+
+msgid "This link has expired, been revoked, or does not exist."
 msgstr ""

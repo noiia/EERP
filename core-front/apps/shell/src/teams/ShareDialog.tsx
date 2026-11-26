@@ -48,6 +48,7 @@ export function ShareDialog({ open, fileId, onClose, onSaved }: { open: boolean;
   const [links, setLinks] = useState<FileLink[]>([])
   const [expires, setExpires] = useState(() => daysFromNow(7))
   const [created, setCreated] = useState('')
+  const [copied, setCopied] = useState(false)
   const [linkError, setLinkError] = useState('')
   const [isPublic, setIsPublic] = useState(false)
 
@@ -73,8 +74,10 @@ export function ShareDialog({ open, fileId, onClose, onSaved }: { open: boolean;
       .then((l) => {
         const url = `${window.location.origin}${l.url ?? ''}`
         setCreated(url)
+        setCopied(false)
         setLinks((ls) => [l, ...ls])
-        navigator.clipboard?.writeText(url).catch(() => {})
+        // The label says "copied" only once the clipboard actually took it.
+        navigator.clipboard?.writeText(url).then(() => setCopied(true), () => setCopied(false))
       })
       .catch((e: unknown) => setLinkError(e instanceof Error ? e.message : t('The change could not be saved.')))
   }
@@ -134,7 +137,7 @@ export function ShareDialog({ open, fileId, onClose, onSaved }: { open: boolean;
             fullWidth
             size="small"
             sx={{ mt: 1 }}
-            label={t('Link copied')}
+            label={copied ? t('Link copied') : t('Copy this link')}
             value={created}
             slotProps={{ htmlInput: { readOnly: true }, inputLabel: { shrink: true } }}
             onFocus={(e) => e.target.select()}
@@ -145,7 +148,7 @@ export function ShareDialog({ open, fileId, onClose, onSaved }: { open: boolean;
           <Stack key={l.id} direction="row" spacing={1} sx={{ alignItems: 'center', mt: 1 }}>
             {l.public && <Chip size="small" color="warning" label={t('Public')} />}
             <Typography variant="body2" sx={{ flex: 1 }}>
-              {t('Expires on')} {new Date(l.expires_at).toLocaleDateString()} · {l.created_by_name} · {l.download_count} {t('downloads')}
+              {t('Expires on')} {new Date(l.expires_at).toLocaleDateString()} · {l.created_by_name} · {t('Downloads')}: {l.download_count}
             </Typography>
             <Button size="small" color="error" onClick={() => revoke(l.id)}><T text="Revoke" /></Button>
           </Stack>
