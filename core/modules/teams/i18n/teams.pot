@@ -426,3 +426,30 @@ msgstr ""
 
 msgid "Size (smallest)"
 msgstr ""
+
+msgid "Download links"
+msgstr ""
+
+msgid "Anyone signed in to this workspace with the link can download this file until it expires."
+msgstr ""
+
+msgid "Expires on"
+msgstr ""
+
+msgid "Create link"
+msgstr ""
+
+msgid "Link copied"
+msgstr ""
+
+msgid "Revoke"
+msgstr ""
+
+msgid "downloads"
+msgstr ""
+
+msgid "Download file"
+msgstr ""
+
+msgid "This link opens one shared file. If it has expired or been revoked, the download answers File not found."
+msgstr ""

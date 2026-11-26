@@ -278,6 +278,22 @@ export const setShares = async (file: string, userIds: string[]) =>
   (await call<{ data: Share[] }>('PUT', `/files/${file}/shares`, { user_ids: userIds })).data
 export const listShared = () => list<SharedFile>('/shared')
 
+/** A secret download link to one file; `url` (and `token`) only in the create answer. */
+export type FileLink = {
+  id: string
+  expires_at: string
+  created_by_name: string
+  created_at: string
+  download_count: number
+  last_download_at: string | null
+  url?: string
+  token?: string
+}
+export const getLinks = (file: string) => list<FileLink>(`/files/${file}/links`)
+export const createLink = (file: string, expiresAt: string) =>
+  call<FileLink>('POST', `/files/${file}/links`, { expires_at: expiresAt })
+export const revokeLink = (link: string) => call<void>('DELETE', `/files/links/${link}`)
+
 // Team groups and conversation access (owners)
 export const listGroups = (team: string) => list<Group>(`/${team}/groups`)
 export const createGroup = (team: string, g: { name: string; user_ids: string[] }) =>
