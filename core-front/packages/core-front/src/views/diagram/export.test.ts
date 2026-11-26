@@ -9,7 +9,7 @@ vi.mock('jspdf', () => ({
 }))
 
 import { toPng, toSvg } from 'html-to-image'
-import { diagramToPng, diagramToSvg, elementToPng, elementToSvg, pixelRatioFor, exportPdf, exportPng, pdfColor, pdfFormat, type DiagramBounds } from './export'
+import { diagramToPng, diagramToSvg, elementToPng, elementToSvg, pixelRatioFor, exportPdf, exportPng, pdfColor, pdfFormat, revealClippedText, type DiagramBounds } from './export'
 
 const bounds = { x: 10, y: 20, width: 800, height: 400 }
 
@@ -298,5 +298,60 @@ describe('diagramToPng keeps every line, dash and arrowhead the canvas shows', (
     expect(viewport.querySelector('marker')).toBeNull()
     expect(root.querySelector('marker[id="m-default"]')).not.toBeNull()
     expect(viewport.outerHTML).toBe(before)
+  })
+})
+
+describe('revealClippedText', () => {
+  const setup = () => {
+    const root = document.createElement('div')
+    const box = document.createElement('div')
+    box.style.height = '64px'
+    box.style.overflow = 'hidden'
+    const title = document.createElement('p')
+    title.style.whiteSpace = 'nowrap'
+    title.style.textOverflow = 'ellipsis'
+    title.style.overflow = 'hidden'
+    title.textContent = 'A very long title that would be cut'
+    box.appendChild(title)
+    root.appendChild(box)
+    document.body.appendChild(root)
+    // jsdom has no layout: the box reports its wrapped title as taller than itself.
+    Object.defineProperty(box, 'scrollHeight', { configurable: true, value: 120 })
+    Object.defineProperty(box, 'clientHeight', { configurable: true, value: 64 })
+    Object.defineProperty(box, 'offsetHeight', { configurable: true, value: 64 })
+    return { root, box, title }
+  }
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('wraps an ellipsized title and grows the box clipping it, then restores both', () => {
+    const { root, box, title } = setup()
+    const restore = revealClippedText(root)
+    expect(title.style.whiteSpace).toBe('normal')
+    expect(title.style.textOverflow).toBe('clip')
+    expect(title.style.overflow).toBe('visible')
+    expect(box.style.overflow).toBe('visible')
+    expect(box.style.height).toBe('auto')
+    expect(box.style.minHeight).toBe('64px')
+    restore()
+    expect(title.style.whiteSpace).toBe('nowrap')
+    expect(title.style.textOverflow).toBe('ellipsis')
+    expect(title.style.overflow).toBe('hidden')
+    expect(box.style.height).toBe('64px')
+    expect(box.style.overflow).toBe('hidden')
+    expect(box.style.minHeight).toBe('')
+  })
+
+  it('applies to every element capture and leaves the element as it was', async () => {
+    const { root, title } = setup()
+    let during = ''
+    vi.mocked(toSvg).mockImplementationOnce(async () => {
+      during = title.style.whiteSpace
+      return 'data:image/svg+xml,AAA'
+    })
+    await elementToSvg(root)
+    expect(during).toBe('normal')
+    expect(title.style.whiteSpace).toBe('nowrap')
   })
 })

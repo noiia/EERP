@@ -33,7 +33,7 @@ import { useFillHeight, usePhone } from '../use-phone'
 import { byPrefixAndName, FontAwesomeIcon } from '../icons'
 import { RelationOpsProvider, useRelationOps, type DiagramNote, type RelationOps, type RelationRecord, type ViewLayout } from '../relation-ops'
 import type { HasId } from '../stores'
-import { freeSpot, segmentHitsRect, separateBoxes, type Point, type Rect } from './collide'
+import { freeSpot, pushDown, segmentHitsRect, separateBoxes, type Point, type Rect } from './collide'
 import { historyKey, type UndoHistory } from './history'
 import { DeliverableBox } from './deliverable-box'
 import { ExportMenu, ToolButton } from './toolbar'
@@ -328,6 +328,8 @@ function Canvas(props: DiagramCanvasProps) {
   const [saveError, setSaveError] = useState<SerializedError | null>(null)
   const [exportError, setExportError] = useState<SerializedError | null>(null)
   const [exporting, setExporting] = useState(false)
+  // An export's positions once its boxes grew to their full text (pushDown), null otherwise.
+  const [exportPositions, setExportPositions] = useState<Record<string, Point> | null>(null)
   const [simple, setSimple] = useState(false)
   const phone = usePhone()
   // CSS only on the same element: no remount, so unsaved notes and positions stay.
@@ -514,7 +516,7 @@ function Canvas(props: DiagramCanvasProps) {
   // React Flow skips it (2000 boxes would otherwise all re-render per frame).
   const built = useRef(new Map<string, { src: Node; position: Point; size?: { width: number; height: number }; selected: boolean; node: Node }>())
   const bodyNodes: Node[] = all.map((n) => {
-    const position = live[n.id] ?? placed[n.id]
+    const position = exportPositions?.[n.id] ?? live[n.id] ?? placed[n.id]
     const selected = selectedNodes.has(n.id)
     const prev = built.current.get(n.id)
     if (prev && prev.src === n && prev.position === position && prev.size === sizes[n.id] && prev.selected === selected) return prev.node
@@ -540,6 +542,7 @@ function Canvas(props: DiagramCanvasProps) {
     ...(props.extraNodes
       ? props.extraNodes(placed).map((n) => ({
           ...n,
+          position: exportPositions?.[n.id] ?? n.position,
           draggable: false,
           selectable: false,
           connectable: false,
@@ -735,16 +738,34 @@ function Canvas(props: DiagramCanvasProps) {
     if (!viewport) return
     setExportError(null)
     // Full boxes in the image even when zoomed out: drawn before the capture starts.
+    // The boxes as laid out on screen, before the export grows any of them.
+    const before = new Map((instance.current?.getNodes() ?? []).map((n) => [n.id, n]))
     flushSync(() => {
       setExporting(true)
       setSimple(simpleBoxes)
     })
+    let restoreText = () => {}
+    const frames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
     try {
-      // Export boxes grow to their content: let React Flow re-measure them before bounding.
-      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
-      const bounds = getNodesBounds(instance.current?.getNodes() ?? rfNodes)
       // html-to-image and jspdf load on the first export, not with the diagram.
       const m = await import('./export')
+      // No title cut short in the image: clipped texts wrap and their boxes grow.
+      restoreText = m.revealClippedText(viewport)
+      // Export boxes grow to their content: let React Flow re-measure them before bounding.
+      await frames()
+      // A grown box pushes the boxes below it down instead of covering them.
+      const grown = (instance.current?.getNodes() ?? []).flatMap((n) => {
+        const was = before.get(n.id)
+        const h = n.measured?.height
+        const w = n.measured?.width
+        if (!was?.measured?.height || !h || !w) return []
+        return [{ id: n.id, x: n.position.x, y: n.position.y, w, h: was.measured.height, grownH: Math.max(h, was.measured.height) }]
+      })
+      if (grown.some((b) => b.grownH > b.h)) {
+        flushSync(() => setExportPositions(pushDown(grown)))
+        await frames()
+      }
+      const bounds = getNodesBounds(instance.current?.getNodes() ?? rfNodes)
       // The diagram's own background: a dark theme's light text stays readable in the image.
       const background = outer.palette.background.paper
       if (kind === 'png') await m.exportPng(viewport, bounds, title, background)
@@ -753,6 +774,8 @@ function Canvas(props: DiagramCanvasProps) {
     } catch (e: unknown) {
       setExportError(serializeError(toApiError(e)))
     } finally {
+      restoreText()
+      setExportPositions(null)
       setExporting(false)
       setSimple(false)
     }

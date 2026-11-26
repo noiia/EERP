@@ -530,7 +530,7 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
                       ...(colWidths[p.id] ? { width: colWidths[p.id], minWidth: colWidths[p.id], maxWidth: colWidths[p.id] } : { whiteSpace: 'nowrap', minWidth: MIN_COL }),
                     }}
                   >
-                    {colWidths[p.id] ? p.label : clip(p.label)}
+                    {colWidths[p.id] || exporting ? p.label : clip(p.label)}
                     <Box
                       role="separator"
                       aria-orientation="vertical"

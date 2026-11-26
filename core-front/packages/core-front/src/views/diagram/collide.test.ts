@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bezierPoint, freeSpot, labelSize, overlaps, placeLabels, segmentHitsRect, separateBoxes, type Rect } from './collide'
+import { bezierPoint, freeSpot, labelSize, overlaps, placeLabels, pushDown, segmentHitsRect, separateBoxes, type Rect } from './collide'
 
 const r = (x: number, y: number, w = 100, h = 40): Rect => ({ x, y, w, h })
 
@@ -74,4 +74,28 @@ describe('segmentHitsRect', () => {
     ['diagonal miss', { x: 0, y: 30 }, { x: 30, y: 25 }, false],
     ['vertical through', { x: 15, y: 0 }, { x: 15, y: 30 }, true],
   ])('%s', (_name, a, b, hit) => expect(segmentHitsRect(a, b, r)).toBe(hit))
+})
+
+describe('pushDown', () => {
+  const box = (id: string, x: number, y: number, h = 100, grownH = h) => ({ id, x, y, w: 200, h, grownH })
+
+  it('moves the boxes below a grown one down by its growth, keeping their gaps', () => {
+    const out = pushDown([box('a', 0, 0, 100, 180), box('b', 0, 140), box('c', 0, 280, 100, 130)])
+    expect(out.a).toEqual({ x: 0, y: 0 })
+    expect(out.b).toEqual({ x: 0, y: 220 })
+    expect(out.c).toEqual({ x: 0, y: 360 })
+  })
+
+  it('leaves other columns, and everything when nothing grew, where they were', () => {
+    const out = pushDown([box('a', 0, 0, 100, 300), box('side', 260, 140), box('below', 100, 140)])
+    expect(out.side).toEqual({ x: 260, y: 140 })
+    expect(out.below.y).toBe(340)
+    expect(pushDown([box('a', 0, 0), box('b', 0, 140)])).toEqual({ a: { x: 0, y: 0 }, b: { x: 0, y: 140 } })
+  })
+
+  it('never overlaps a pushed box with the one above it', () => {
+    const out = pushDown([box('a', 0, 0, 100, 400), box('b', 50, 120, 100, 250), box('c', 0, 240)])
+    expect(out.b.y).toBeGreaterThanOrEqual(out.a.y + 400)
+    expect(out.c.y).toBeGreaterThanOrEqual(out.b.y + 250)
+  })
 })

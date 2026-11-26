@@ -104,7 +104,7 @@ const exportSvg = vi.hoisted(() => vi.fn(async () => {}))
 const exportLoads = vi.hoisted(() => ({ n: 0 }))
 vi.mock('./export', () => {
   exportLoads.n++
-  return { exportPng, exportPdf, exportSvg }
+  return { exportPng, exportPdf, exportSvg, revealClippedText: () => () => {} }
 })
 
 import { DIAGRAM_RECORD_CAP, DiagramCanvas, DiagramCapNotice, handleSize, trimPositions, useDiagramRecords, type DiagramCanvasProps } from './diagram-canvas'

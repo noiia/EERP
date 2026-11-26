@@ -63,7 +63,7 @@ vi.mock('@xyflow/react', async () => {
 })
 const exportPng = vi.hoisted(() => vi.fn(async () => {}))
 const exportPdf = vi.hoisted(() => vi.fn(async () => {}))
-vi.mock('./export', () => ({ exportPng, exportPdf }))
+vi.mock('./export', () => ({ exportPng, exportPdf, revealClippedText: () => () => {} }))
 const push = vi.hoisted(() => vi.fn())
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }))
 

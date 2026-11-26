@@ -130,6 +130,50 @@ export function prepareEdgesForCapture(node: HTMLElement, bounds: DiagramBounds)
   }
 }
 
+/** Shows every clipped text in full for a capture, and returns the restore. A text cut by an
+ * ellipsis (`noWrap`, a Chip label) or a line clamp wraps instead, and each box between it and
+ * `root` that then clips it (a fixed height, `overflow: hidden`) grows to its content, so an
+ * exported image never loses a title. Run it before measuring the capture's size: a React Flow
+ * canvas needs a frame afterwards to re-measure its nodes and re-route the edges. */
+export function revealClippedText(root: HTMLElement): () => void {
+  const restores: Array<() => void> = []
+  const set = (el: HTMLElement, prop: string, value: string) => {
+    const old = el.style.getPropertyValue(prop)
+    restores.push(() => (old ? el.style.setProperty(prop, old) : el.style.removeProperty(prop)))
+    el.style.setProperty(prop, value)
+  }
+  const clipped = Array.from(root.querySelectorAll<HTMLElement>('*')).filter((el) => {
+    const cs = getComputedStyle(el)
+    const clamp = cs.getPropertyValue('-webkit-line-clamp')
+    return cs.textOverflow === 'ellipsis' || (clamp !== '' && clamp !== 'none')
+  })
+  for (const el of clipped) {
+    set(el, 'white-space', 'normal')
+    set(el, 'overflow-wrap', 'anywhere')
+    set(el, 'text-overflow', 'clip')
+    set(el, 'overflow', 'visible')
+    set(el, '-webkit-line-clamp', 'none')
+    if (getComputedStyle(el).display === '-webkit-box') set(el, 'display', 'block')
+  }
+  // Innermost first: a grown box's own size is what its parent then reads.
+  for (const el of clipped) {
+    for (let p = el.parentElement; p && p !== root; p = p.parentElement) {
+      const tall = p.scrollHeight > p.clientHeight + 1
+      if (!tall && p.scrollWidth <= p.clientWidth + 1) continue
+      const cs = getComputedStyle(p)
+      if (cs.overflowX !== 'visible' || cs.overflowY !== 'visible') set(p, 'overflow', 'visible')
+      if (tall) {
+        set(p, 'min-height', `${p.offsetHeight}px`)
+        set(p, 'height', 'auto')
+        set(p, 'max-height', 'none')
+      }
+    }
+  }
+  return () => {
+    for (let i = restores.length - 1; i >= 0; i--) restores[i]()
+  }
+}
+
 /** PNG data URL of the whole diagram (not just the visible part), via the xyflow export recipe;
  * at `ratio` image pixels per CSS pixel (default 600 dpi), capped by the canvas limits (pixelRatioFor). */
 export const diagramToPng = (viewport: HTMLElement, bounds: DiagramBounds, background = WHITE, ratio?: number) =>
@@ -234,6 +278,15 @@ export const elementToPng = (el: HTMLElement, background = WHITE, ratio?: number
 export const elementToSvg = (el: HTMLElement, background = WHITE) => captureElement(toSvg, el, background)
 
 async function captureElement(render: typeof toPng, el: HTMLElement, background: string, ratio?: number): Promise<string> {
+  const restoreText = revealClippedText(el)
+  try {
+    return await captureRevealed(render, el, background, ratio)
+  } finally {
+    restoreText()
+  }
+}
+
+async function captureRevealed(render: typeof toPng, el: HTMLElement, background: string, ratio?: number): Promise<string> {
   const width = Math.ceil(el.scrollWidth)
   const height = Math.ceil(el.scrollHeight)
   const restore = prepareEdgesForCapture(el, { x: 0, y: 0, width: el.scrollWidth, height: el.scrollHeight })
