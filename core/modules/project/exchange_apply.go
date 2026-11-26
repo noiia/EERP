@@ -151,7 +151,8 @@ type pendingGate struct {
 // fieldKeys are the keys a row about a task or a milestone can arrive under: the fields
 // the diff reports, plus the two decisions that are not fields.
 var (
-	taskFieldKeys = []string{fieldName, fieldDates, fieldHours, fieldClosed, fieldMilestoneID, "move", "delete"}
+	taskFieldKeys = []string{fieldName, fieldDates, fieldHours, fieldClosed, fieldMilestoneID,
+		fieldPriority, fieldDescription, "move", "delete"}
 	mileFieldKeys = []string{fieldName, fieldDates, "delete"}
 )
 
@@ -259,7 +260,9 @@ func (a *applier) run() (int, error) {
 		a.updateTasks,
 		a.updateMilestones,
 		a.linkTasks,
+		a.createBaselines,
 		a.removeRows,
+		a.updateCapacities,
 	} {
 		if err := phase(); err != nil {
 			return 0, err
@@ -596,6 +599,18 @@ func (a *applier) fieldBody(c Change) (map[string]any, error) {
 		return a.stageOf(c)
 	case fieldMilestoneID:
 		return a.milestoneOf(c)
+	case fieldPriority:
+		v, ok := c.After.(bool)
+		if !ok {
+			return nil, badValue(c.Key, "a priority", c.After)
+		}
+		return map[string]any{"priority": v}, nil
+	case fieldDescription:
+		v, ok := c.After.(string)
+		if !ok {
+			return nil, badValue(c.Key, "a description", c.After)
+		}
+		return map[string]any{"description": v}, nil
 	default:
 		return nil, fmt.Errorf("project: %s reports field %s, which apply does not know", c.Key, c.Field)
 	}
@@ -799,6 +814,114 @@ func (a *applier) addAssignee(c Change) error {
 	}
 	a.applied++
 	return nil
+}
+
+// createBaselines adds the baselines the file brought. EERP never edits a baseline,
+// so a changed Baseline n is a new one. The baseline guards refuse every generic
+// write, so this does not go through check: the route already checked the caller
+// manages the project.
+func (a *applier) createBaselines() error {
+	return a.each(func(c Change) error {
+		value, ok := c.After.(baselineValue)
+		if !ok {
+			return badValue(c.Key, "a baseline", c.After)
+		}
+		var n int
+		if err := a.tx.QueryRow(a.ctx, `SELECT count(*) FROM project_baseline
+			WHERE project_id = $1 AND tenant_id = $2 AND deleted_at IS NULL`, a.pid, a.tenant).Scan(&n); err != nil {
+			return err
+		}
+		if n >= baselineLimit {
+			return invalid(c.Key, fmt.Sprintf("the project already has %d baselines: delete one first", baselineLimit))
+		}
+		who, _ := auth.IdentityFromContext(a.ctx)
+		base, err := orm.MustRepo[ProjectBaseline](a.h.db).WithTx(a.tx).Create(a.ctx, ProjectBaseline{
+			BaseModel: model.BaseModel{ID: uuid.New()}, TenantID: a.tenant, ProjectID: a.pid,
+			Name: value.Name, CreatedBy: who.UserID,
+		})
+		if err != nil {
+			return err
+		}
+		tasks := orm.MustRepo[ProjectBaselineTask](a.h.db).WithTx(a.tx)
+		for _, b := range a.d.file.Baselines {
+			if b.Number != value.Number {
+				continue
+			}
+			for key, bt := range a.d.fileBaselineTasks(b) {
+				id, ok := a.task(key)
+				if !ok || a.gone[id] {
+					continue
+				}
+				start, end := day(bt.Start), day(endAfter(bt.Start, bt.Duration, a.d.file.Weekend))
+				if _, err := tasks.Create(a.ctx, ProjectBaselineTask{
+					BaseModel: model.BaseModel{ID: uuid.New()}, TenantID: a.tenant, BaselineID: base.ID,
+					ProjectID: a.pid, TaskID: id, DateStart: &start, Deadline: &end, PlannedHours: bt.Work,
+				}); err != nil {
+					return err
+				}
+			}
+		}
+		a.applied++
+		return nil
+	}, kindBaselineCreate)
+}
+
+// capacityPermission is what a capacity change needs: capacities apply to every
+// project of the workspace, so managing this one is not enough.
+const capacityPermission = "project_capacity:project_capacity:write"
+
+// updateCapacities sets the weekly hours of the people the manager ticked. It runs
+// last; a refusal rolls the whole batch back like any other.
+func (a *applier) updateCapacities() error {
+	return a.each(func(c Change) error {
+		hours, ok := c.After.(float64)
+		if !ok {
+			return badValue(c.Key, "hours per week", c.After)
+		}
+		who, _ := auth.IdentityFromContext(a.ctx)
+		allowed := false
+		if a.h.perms != nil {
+			has, err := a.h.perms.Has(a.ctx, who.Roles, capacityPermission)
+			if err != nil {
+				return err
+			}
+			allowed = has
+		}
+		if !allowed {
+			return invalid(c.Key, "changing a capacity needs the "+capacityPermission+" permission")
+		}
+		user, known := a.d.users[strings.TrimPrefix(c.Key, "capacity:")]
+		if !known {
+			return nil
+		}
+		var id uuid.UUID
+		err := a.tx.QueryRow(a.ctx, `SELECT id FROM project_capacity
+			WHERE tenant_id = $1 AND user_id = $2 AND deleted_at IS NULL`, a.tenant, user).Scan(&id)
+		if err != nil && !errors.Is(err, orm.ErrNotFound) {
+			return err
+		}
+		body := map[string]any{"user_id": user.String(), "hours_per_week": hours}
+		repo := orm.MustRepo[ProjectCapacity](a.h.db).WithTx(a.tx)
+		if id == uuid.Nil {
+			if _, err := a.check("project_capacity", opCreate, uuid.Nil, body, c.Key); err != nil {
+				return err
+			}
+			if _, err := repo.Create(a.ctx, ProjectCapacity{BaseModel: model.BaseModel{ID: uuid.New()},
+				TenantID: a.tenant, UserID: user, HoursPerWeek: hours}); err != nil {
+				return err
+			}
+		} else {
+			if _, err := a.check("project_capacity", opUpdate, id, body, c.Key); err != nil {
+				return err
+			}
+			if _, err := repo.UpdateQuery().Set("hours_per_week", hours).Set("updated_at", time.Now()).
+				Where(orm.Cond("id = $1 AND tenant_id = $2", id, a.tenant)).Exec(a.ctx, a.tx); err != nil {
+				return err
+			}
+		}
+		a.applied++
+		return nil
+	}, kindCapacityUpdate)
 }
 
 // removeRows is the destructive half, and it goes last so that every row the file still

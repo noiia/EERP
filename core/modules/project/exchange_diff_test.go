@@ -1794,3 +1794,127 @@ func TestDiff_FormatCarries(t *testing.T) {
 	changes, _ := diffPlans(cur, file, nil, nameOnlyFormat{})
 	dfxWantKeys(t, changes, changeKey(kA, fieldName))
 }
+
+// ── MS Project extras (priority, notes, baselines, capacity) ─────────────────
+
+func dfxOne(mod func(*PlanTask)) Plan {
+	t := dfxTask(dfxKey(dfxA), "", "Design", dfxMon, 2)
+	mod(&t)
+	return dfxPlan([]PlanTask{t}, nil)
+}
+
+func TestDiff_Priority(t *testing.T) {
+	cur, file := dfxOne(func(*PlanTask) {}), dfxOne(func(t *PlanTask) { t.Priority = true })
+	changes, _ := diffPlans(cur, file, nil, mspdiFormat{})
+	dfxWantKeys(t, changes, changeKey(dfxKey(dfxA), fieldPriority))
+	if r := changes[0]; r.Kind != kindUpdate || r.Before != false || r.After != true || !r.DefaultSelected {
+		t.Errorf("priority row = %+v", r)
+	}
+	// .gan carries no priority, so the same plans say nothing (Review Focus 1).
+	changes, _ = diffPlans(cur, file, nil, ganFormat{})
+	dfxWantNoRows(t, changes)
+}
+
+func TestDiff_DescriptionNormalized(t *testing.T) {
+	cur := dfxOne(func(t *PlanTask) { t.Notes = "line 1\nline 2" })
+	same := dfxOne(func(t *PlanTask) { t.Notes = "line 1\r\nline 2  \r\n" })
+	changes, _ := diffPlans(cur, same, nil, mspdiFormat{})
+	dfxWantNoRows(t, changes)
+
+	changed := dfxOne(func(t *PlanTask) { t.Notes = "line 1\nline 3" })
+	changes, _ = diffPlans(cur, changed, nil, mspdiFormat{})
+	dfxWantKeys(t, changes, changeKey(dfxKey(dfxA), fieldDescription))
+	if changes[0].After != "line 1\nline 3" {
+		t.Errorf("After = %q", changes[0].After)
+	}
+}
+
+// TestDiff_LongNotesTruncated: Review Focus 5.
+func TestDiff_LongNotesTruncated(t *testing.T) {
+	long := strings.Repeat("{\\rtf1 é}", 1000) // markup is text: it is imported as written
+	file := dfxOne(func(t *PlanTask) { t.Notes = long })
+	changes, warnings := diffPlans(dfxOne(func(*PlanTask) {}), file, nil, mspdiFormat{})
+	row := dfxRow(t, changes, changeKey(dfxKey(dfxA), fieldDescription))
+	if got := []rune(row.After.(string)); len(got) != descriptionLimit || string(got) != string([]rune(long)[:descriptionLimit]) {
+		t.Errorf("After holds %d characters, want the first %d", len(got), descriptionLimit)
+	}
+	dfxWantWarning(t, warnings, warnNotesTruncated, "Design")
+}
+
+func dfxBaselines(tasks map[string]BaselineTask, n int) []PlanBaseline {
+	return []PlanBaseline{{Number: n, Tasks: tasks}}
+}
+
+func TestDiff_BaselineChangedIsCreate(t *testing.T) {
+	kA := dfxKey(dfxA)
+	cur := dfxOne(func(*PlanTask) {})
+	cur.Baselines = dfxBaselines(map[string]BaselineTask{kA: {Start: dfxDay(dfxMon), Duration: 2, Work: 8}}, 0)
+	same := dfxOne(func(*PlanTask) {})
+	same.Baselines = dfxBaselines(map[string]BaselineTask{kA: {Start: dfxDay(dfxMon), Duration: 2, Work: 8.001}}, 0)
+	changes, _ := diffPlans(cur, same, nil, mspdiFormat{})
+	dfxWantNoRows(t, changes)
+
+	moved := dfxOne(func(*PlanTask) {})
+	moved.Baselines = append(dfxBaselines(map[string]BaselineTask{kA: {Start: dfxDay(dfxTue), Duration: 2, Work: 8}}, 0),
+		PlanBaseline{Number: 1, Tasks: map[string]BaselineTask{kA: {Start: dfxDay(dfxMon), Duration: 1, Work: 1}}})
+	changes, _ = diffPlans(cur, moved, nil, mspdiFormat{})
+	dfxWantKeys(t, changes, "baseline:0", "baseline:1")
+	r := changes[0]
+	v, ok := r.After.(baselineValue)
+	if r.Kind != kindBaselineCreate || !r.DefaultSelected || !ok || v.Tasks != 1 ||
+		!strings.HasPrefix(v.Name, "Baseline 0 (imported ") {
+		t.Errorf("baseline row = %+v", r)
+	}
+	changes, _ = diffPlans(cur, moved, nil, ganFormat{})
+	dfxWantNoRows(t, changes)
+}
+
+func TestDiff_BaselineMissingInFileIsNothing(t *testing.T) {
+	kA := dfxKey(dfxA)
+	cur := dfxOne(func(*PlanTask) {})
+	cur.Baselines = append(dfxBaselines(map[string]BaselineTask{kA: {Start: dfxDay(dfxMon), Duration: 2}}, 0),
+		PlanBaseline{Number: 1, Tasks: map[string]BaselineTask{kA: {Start: dfxDay(dfxMon), Duration: 2}}})
+	changes, _ := diffPlans(cur, dfxOne(func(*PlanTask) {}), nil, mspdiFormat{})
+	dfxWantNoRows(t, changes)
+}
+
+func TestDiff_BaselineRequiresNewTask(t *testing.T) {
+	kA := dfxKey(dfxA)
+	cur := dfxOne(func(*PlanTask) {})
+	file := dfxPlan([]PlanTask{dfxTask(kA, "", "Design", dfxMon, 2), dfxNew("7", "", "Extra", dfxTue, 1)}, nil)
+	file.Baselines = dfxBaselines(map[string]BaselineTask{
+		kA: {Start: dfxDay(dfxMon), Duration: 2}, "new:7": {Start: dfxDay(dfxTue), Duration: 1},
+	}, 0)
+	changes, _ := diffPlans(cur, file, nil, mspdiFormat{})
+	r := dfxRow(t, changes, "baseline:0")
+	if len(r.Requires) != 1 || r.Requires[0] != "new:7" || r.After.(baselineValue).Tasks != 2 {
+		t.Errorf("baseline row = %+v, want 2 tasks requiring new:7", r)
+	}
+}
+
+func dfxCapacity(hours float64) Plan {
+	p := dfxOne(func(*PlanTask) {})
+	p.Assignments = []PlanAssign{{Task: dfxKey(dfxA), Email: "ann@x.com", Name: "Ann"}}
+	p.Resources = []PlanResource{{Email: "ann@x.com", Name: "Ann", HoursPerWeek: hours}}
+	return p
+}
+
+func TestDiff_CapacityUnticked(t *testing.T) {
+	changes, _ := diffPlans(dfxCapacity(40), dfxCapacity(24), dfxUsers(), mspdiFormat{})
+	dfxWantKeys(t, changes, "capacity:ann@x.com")
+	if r := changes[0]; r.Kind != kindCapacityUpdate || r.DefaultSelected || r.Before != 40.0 || r.After != 24.0 || r.Task != "Ann" {
+		t.Errorf("capacity row = %+v", r)
+	}
+	changes, _ = diffPlans(dfxCapacity(40), dfxCapacity(24), dfxUsers(), ganFormat{})
+	dfxWantNoRows(t, changes)
+}
+
+func TestDiff_CapacityRange(t *testing.T) {
+	for _, hours := range []float64{0, -1, 168.5} {
+		changes, warnings := diffPlans(dfxCapacity(40), dfxCapacity(hours), dfxUsers(), mspdiFormat{})
+		dfxWantNoRows(t, changes)
+		dfxWantWarning(t, warnings, warnCapacityRange, "Ann")
+	}
+	changes, _ := diffPlans(dfxCapacity(40), dfxCapacity(168), dfxUsers(), mspdiFormat{})
+	dfxWantKeys(t, changes, "capacity:ann@x.com")
+}
