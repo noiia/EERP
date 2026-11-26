@@ -88,6 +88,12 @@ func loadPlan(ctx context.Context, ex orm.Executor, tenant, pid uuid.UUID, w Wee
 	if p.Assignments, err = readPlanAssignments(ctx, ex, tenant, pid); err != nil {
 		return Plan{}, err
 	}
+	if p.Baselines, err = readPlanBaselines(ctx, ex, tenant, pid, projectStart, w); err != nil {
+		return Plan{}, err
+	}
+	if p.Resources, err = readPlanResources(ctx, ex, tenant, p.Assignments); err != nil {
+		return Plan{}, err
+	}
 	return p, nil
 }
 
@@ -134,13 +140,16 @@ type planTaskRow struct {
 	closed       bool
 	wbs          []int
 	hasChildren  bool
+	priority     bool
+	description  string
+	spentHours   float64
 }
 
 // readPlanTasks reads the project's live tasks. The order comes from Go (byWbs),
 // not from SQL: wbs_number is text, and a text sort would put 2.10 before 2.2.
 func readPlanTasks(ctx context.Context, ex orm.Executor, tenant, pid uuid.UUID) ([]planTaskRow, error) {
 	rows, err := ex.Query(ctx, `SELECT t.id, t.name, t.parent_id, t.milestone_id, t.date_start, t.deadline,
-			t.created_at, t.planned_hours, t.closed, t.wbs_number,
+			t.created_at, t.planned_hours, t.closed, t.wbs_number, t.priority, t.description, t.spent_hours,
 			EXISTS (SELECT 1 FROM project_task c
 				WHERE c.parent_id = t.id AND c.tenant_id = t.tenant_id AND c.deleted_at IS NULL)
 		FROM project_task t
@@ -158,7 +167,7 @@ func readPlanTasks(ctx context.Context, ex orm.Executor, tenant, pid uuid.UUID) 
 			hasKids bool
 		)
 		if err := rows.Scan(&row.id, &row.name, &row.parentID, &row.milestoneID, &row.dateStart, &row.deadline,
-			&row.createdAt, &row.plannedHours, &row.closed, &wbs, &hasKids); err != nil {
+			&row.createdAt, &row.plannedHours, &row.closed, &wbs, &row.priority, &row.description, &row.spentHours, &hasKids); err != nil {
 			return nil, err
 		}
 		row.wbs = wbsParts(wbs)
@@ -186,6 +195,9 @@ func (r planTaskRow) planTask(projectStart *time.Time, w Weekend) PlanTask {
 		Complete:     complete,
 		Undated:      undated,
 		HasChildren:  r.hasChildren,
+		Priority:     r.priority,
+		Notes:        r.description,
+		ActualHours:  r.spentHours,
 	}
 	if r.parentID != nil {
 		// The row's own parent_id, which is the truth of the database and not yet of
@@ -350,6 +362,108 @@ func planUserName(displayName, name, surname, email string) string {
 	return email
 }
 
+// planBaselineSlots is how many baselines a plan carries: MS Project's Baseline
+// 0..10. The newest EERP baselines fill them, newest first.
+const planBaselineSlots = 11
+
+// readPlanBaselines reads the newest planBaselineSlots live baselines, numbered
+// from 0 (the newest), each with its rows for the project's live tasks, in the
+// same day and duration terms (and the same placeholder) as the tasks themselves.
+func readPlanBaselines(ctx context.Context, ex orm.Executor, tenant, pid uuid.UUID, projectStart *time.Time, w Weekend) ([]PlanBaseline, error) {
+	rows, err := ex.Query(ctx, `WITH b AS (
+			SELECT id, (row_number() OVER (ORDER BY created_at DESC, id) - 1)::int AS n FROM project_baseline
+			WHERE tenant_id = $1 AND project_id = $2 AND deleted_at IS NULL
+			ORDER BY created_at DESC, id LIMIT $3)
+		SELECT b.n, t.id, bt.date_start, bt.deadline, bt.planned_hours, t.created_at
+		FROM b
+		LEFT JOIN project_baseline_task bt ON bt.baseline_id = b.id AND bt.tenant_id = $1 AND bt.deleted_at IS NULL
+		LEFT JOIN project_task t ON t.id = bt.task_id AND t.tenant_id = $1
+			AND t.project_id = $2 AND t.deleted_at IS NULL
+		ORDER BY b.n`, tenant, pid, planBaselineSlots)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []PlanBaseline
+	for rows.Next() {
+		var (
+			n               int
+			task            *uuid.UUID
+			start, deadline *time.Time
+			hours           *float64
+			createdAt       *time.Time
+		)
+		if err := rows.Scan(&n, &task, &start, &deadline, &hours, &createdAt); err != nil {
+			return nil, err
+		}
+		if len(out) == 0 || out[len(out)-1].Number != n {
+			out = append(out, PlanBaseline{Number: n, Tasks: map[string]BaselineTask{}})
+		}
+		if task == nil || createdAt == nil {
+			continue // no row, or a row for a task that is gone
+		}
+		first, duration, _ := planDates(start, deadline, placeholderDay(projectStart, *createdAt), w)
+		bt := BaselineTask{Start: first, Duration: duration}
+		if hours != nil {
+			bt.Work = *hours
+		}
+		out[len(out)-1].Tasks[task.String()] = bt
+	}
+	return out, rows.Err()
+}
+
+// defaultHoursPerWeek is a person's capacity when no project_capacity row says
+// otherwise: the workload page's own default.
+const defaultHoursPerWeek = 40
+
+// readPlanResources lists each assignee once, by email, with their live
+// project_capacity row's hours, else defaultHoursPerWeek.
+func readPlanResources(ctx context.Context, ex orm.Executor, tenant uuid.UUID, assigns []PlanAssign) ([]PlanResource, error) {
+	var out []PlanResource
+	var emails []string
+	seen := map[string]bool{}
+	for _, a := range assigns {
+		email := strings.ToLower(a.Email)
+		if seen[email] {
+			continue
+		}
+		seen[email] = true
+		emails = append(emails, email)
+		out = append(out, PlanResource{Email: a.Email, Name: a.Name, HoursPerWeek: defaultHoursPerWeek})
+	}
+	if len(emails) == 0 {
+		return nil, nil
+	}
+	rows, err := ex.Query(ctx, `SELECT lower(u.email), c.hours_per_week FROM project_capacity c
+		JOIN users u ON u.id = c.user_id AND u.tenant_id = c.tenant_id AND u.deleted_at IS NULL
+		WHERE c.tenant_id = $1 AND c.deleted_at IS NULL AND lower(u.email) = ANY($2)`, tenant, emails)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	hours := map[string]float64{}
+	for rows.Next() {
+		var (
+			email string
+			h     float64
+		)
+		if err := rows.Scan(&email, &h); err != nil {
+			return nil, err
+		}
+		hours[email] = h
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i := range out {
+		if h, ok := hours[strings.ToLower(out[i].Email)]; ok {
+			out[i].HoursPerWeek = h
+		}
+	}
+	return out, nil
+}
+
 // ── The file's terms ─────────────────────────────────────────────────────────
 
 // planDates turns a task's two date columns into the file's start day and
@@ -445,6 +559,19 @@ type canonicalPlan struct {
 	Tasks       []canonicalTask   `json:"tasks"`
 	Deps        []canonicalDep    `json:"deps"`
 	Assignments []canonicalAssign `json:"assignments"`
+	Baselines   []canonicalBase   `json:"baselines"`
+	Resources   []canonicalRes    `json:"resources"`
+}
+
+type canonicalBase struct {
+	Number int               `json:"number"`
+	Tasks  map[string]string `json:"tasks"` // encoding/json sorts map keys
+}
+
+type canonicalRes struct {
+	Email string `json:"email"`
+	Name  string `json:"name"`
+	Hours string `json:"hours"`
 }
 
 type canonicalTask struct {
@@ -459,6 +586,8 @@ type canonicalTask struct {
 	Milestone    bool   `json:"milestone"`
 	Undated      bool   `json:"undated"`
 	HasChildren  bool   `json:"has_children"`
+	Priority     bool   `json:"priority"`
+	Notes        string `json:"notes"`
 }
 
 type canonicalDep struct {
@@ -489,6 +618,7 @@ func canonicalJSON(p Plan) string {
 			PlannedHours: strconv.FormatFloat(task.PlannedHours, 'f', -1, 64),
 			Complete:     task.Complete, Milestone: task.Milestone,
 			Undated: task.Undated, HasChildren: task.HasChildren,
+			Priority: task.Priority, Notes: task.Notes,
 		})
 	}
 	deps := slices.Clone(p.Deps)
@@ -520,6 +650,21 @@ func canonicalJSON(p Plan) string {
 	for _, assign := range assigns {
 		c.Assignments = append(c.Assignments, canonicalAssign{Task: assign.Task, Email: assign.Email, Name: assign.Name})
 	}
+
+	for _, b := range p.Baselines {
+		cb := canonicalBase{Number: b.Number, Tasks: map[string]string{}}
+		for k, bt := range b.Tasks {
+			cb.Tasks[k] = day(bt.Start).Format("2006-01-02") + "|" + strconv.Itoa(bt.Duration) + "|" +
+				strconv.FormatFloat(bt.Work, 'f', -1, 64)
+		}
+		c.Baselines = append(c.Baselines, cb)
+	}
+	slices.SortStableFunc(c.Baselines, func(a, b canonicalBase) int { return a.Number - b.Number })
+	for _, r := range p.Resources {
+		c.Resources = append(c.Resources, canonicalRes{Email: r.Email, Name: r.Name,
+			Hours: strconv.FormatFloat(r.HoursPerWeek, 'f', -1, 64)})
+	}
+	slices.SortStableFunc(c.Resources, func(a, b canonicalRes) int { return strings.Compare(a.Email, b.Email) })
 
 	// No error is possible: every field is a string, a bool or an int, and the one
 	// float was rendered by strconv before it got here (a Postgres double precision

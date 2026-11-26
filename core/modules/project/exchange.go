@@ -1,6 +1,7 @@
 package project
 
 import (
+	"errors"
 	"io"
 	"strings"
 	"time"
@@ -67,6 +68,34 @@ type PlanTask struct {
 	// Collapsed is an export-only display hint (the Gantt's folded rows): the
 	// format shows the task folded. Never decoded, never diffed.
 	Collapsed bool
+	// Priority is EERP's high-priority flag (the Eisenhower matrix's axis).
+	Priority bool
+	// Notes is the task's description, as plain text.
+	Notes string
+	// ActualHours is the time booked on the task. Export only: an import never
+	// writes timesheets.
+	ActualHours float64
+}
+
+// BaselineTask is one task's frozen schedule in a baseline, in the file's terms.
+type BaselineTask struct {
+	Start    time.Time
+	Duration int
+	Work     float64
+}
+
+// PlanBaseline is one baseline of the plan. Number is the file's slot: 0 is the
+// newest EERP baseline, up to 10 (the eleven MS Project holds).
+type PlanBaseline struct {
+	Number int
+	Tasks  map[string]BaselineTask // by task Key()
+}
+
+// PlanResource is a person of the plan with their weekly capacity. Capacities are
+// workspace-wide in EERP: a plan carries them for its assignees only.
+type PlanResource struct {
+	Email, Name  string
+	HoursPerWeek float64
 }
 
 // Key is the task's identity inside a Plan, used by Parent, PlanDep and
@@ -184,6 +213,10 @@ type Plan struct {
 	// order would report change rows on a file nobody touched.
 	Deps        []PlanDep
 	Assignments []PlanAssign
+	// Baselines are the newest baselines, Number 0 the newest (see PlanBaseline).
+	Baselines []PlanBaseline
+	// Resources is one entry per assignee email, with their capacity.
+	Resources []PlanResource
 }
 
 // Warning is something in a file EERP cannot hold. It never blocks an import:
@@ -207,7 +240,30 @@ type Format interface {
 	Ext() string
 	Encode(w io.Writer, p Plan) error
 	Decode(r io.Reader) (Plan, []Warning, error)
+	// Carries reports whether the format's files hold field f. The diff compares
+	// only the fields both sides can hold: a field the file never carries reads as
+	// absent, and a diff that took it for "cleared" would wipe it on import.
+	Carries(f Field) bool
 }
+
+// Field is one kind of data a plan file may or may not carry (Format.Carries).
+type Field string
+
+const (
+	FieldName        Field = "name"
+	FieldDates       Field = "dates"
+	FieldHours       Field = "planned_hours"
+	FieldClosed      Field = "closed"
+	FieldMilestone   Field = "milestone_id"
+	FieldPriority    Field = "priority"
+	FieldDescription Field = "description"
+	FieldBaselines   Field = "baselines"
+	FieldCapacity    Field = "capacity"
+)
+
+// errPlanTooBig is wrapped by a decoder that stopped at the ganMaxTasks ceiling,
+// so the route can answer TOO_MANY_TASKS rather than INVALID_FILE.
+var errPlanTooBig = errors.New("the plan holds too many tasks")
 
 // formats is the registry the routes resolve :format against. Each format file
 // fills it from its init().

@@ -633,3 +633,86 @@ func exBigGan(t *testing.T, n int) []byte {
 	}
 	return exEncodeGan(t, p)
 }
+
+// ── Microsoft Project (MSPDI) ────────────────────────────────────────────────
+
+func exMspdiFile(t *testing.T, name string) []byte {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("testdata", "mspdi", name))
+	if err != nil {
+		t.Fatalf("read fixture %s: %v", name, err)
+	}
+	return raw
+}
+
+func TestExchange_MspdiExport(t *testing.T) {
+	e := exFixture(t)
+	x := exMount(t, e.f)
+	e.f.exec(`UPDATE project SET name = 'House build' WHERE id = $1`, e.pid)
+	code, head, body := exGet(t, x, e.f.caller(e.mgr), "project/"+e.pid.String()+"/exchange/mspdi/export")
+	if code != http.StatusOK {
+		t.Fatalf("export: %d %s, want 200", code, body)
+	}
+	if got := head.Get("Content-Type"); got != "application/xml" {
+		t.Errorf("Content-Type = %q", got)
+	}
+	if got := head.Get("Content-Disposition"); !strings.HasSuffix(got, `.xml"`) {
+		t.Errorf("Content-Disposition = %q, want a .xml file", got)
+	}
+	got, _, err := mspdiFormat{}.Decode(bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("the exported file does not decode: %v\n%s", err, body)
+	}
+	if len(got.Tasks) != len(e.basic.Tasks) {
+		t.Errorf("the export holds %d rows, want %d", len(got.Tasks), len(e.basic.Tasks))
+	}
+}
+
+func TestExchange_MspdiPreviewAndApply(t *testing.T) {
+	e := exFixture(t)
+	f, pid := e.f, e.pid
+	x := exMount(t, f)
+	file := exMspdiFile(t, "partner_edited.xml")
+	path := "project/" + pid.String() + "/exchange/mspdi/"
+
+	code, body := exPostFile(t, x, f.caller(e.mgr), path+"preview", "partner_edited.xml", file, "", nil)
+	if code != http.StatusOK {
+		t.Fatalf("preview: %d %v", code, body)
+	}
+	raw, _ := json.Marshal(body)
+	var got exPreviewAnswer
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	keys := exKeysOf(got.Changes)
+	for _, want := range []string{changeKey(ganFramingRef, fieldDates), changeKey(ganExcavationRef, fieldDescription),
+		"baseline:0", "baseline:1", "capacity:ann@x.com", changeKey(ganConcreteRef, "delete")} {
+		if !slices.Contains(keys, want) {
+			t.Errorf("the preview lacks %s: %s", want, strings.Join(keys, " "))
+		}
+	}
+	if dfxRow(t, got.Changes, "capacity:ann@x.com").DefaultSelected {
+		t.Error("the capacity row arrives ticked")
+	}
+
+	ticked := exDefaultKeys(got.Changes)
+	code, body = exPostFile(t, x, f.caller(e.mgr), path+"apply", "partner_edited.xml", file, got.Base, ticked)
+	if code != http.StatusOK {
+		t.Fatalf("apply: %d %v", code, body)
+	}
+	framing := uuid.MustParse(ganFramingRef)
+	if d := exColumn[*time.Time](t, f, "project_task", framing, "deadline"); d == nil || !d.Equal(exchangeDay(2026, time.January, 20)) {
+		t.Errorf("Framing's deadline = %v, want 2026-01-20", d)
+	}
+	if got := exColumn[string](t, f, "project_task", uuid.MustParse(ganExcavationRef), "description"); got != "Check the soil report first." {
+		t.Errorf("Excavation's description = %q", got)
+	}
+	if n := exCountNamed(t, f, "Roofing"); n != 1 {
+		t.Errorf("Roofing created %d times, want 1", n)
+	}
+	var baselines int
+	_ = f.app.DB.QueryRow(context.Background(), `SELECT count(*) FROM project_baseline WHERE project_id = $1 AND deleted_at IS NULL`, pid).Scan(&baselines)
+	if baselines != 2 {
+		t.Errorf("%d baselines, want the file's 2", baselines)
+	}
+}

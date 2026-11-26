@@ -347,6 +347,7 @@ var rulesByTable = map[string]func(*request) error{
 	"project_task_dependency": dependencyRules,
 	"project_task_user":       userLinkRules,
 	"project_milestone":       milestoneRules,
+	"project_capacity":        capacityRules,
 }
 
 // check runs table's rules on ex for one write of id with body, the way the

@@ -3487,3 +3487,33 @@ msgstr ""
 
 msgid "High"
 msgstr ""
+
+msgid "Priority"
+msgstr ""
+
+msgid "Capacity"
+msgstr ""
+
+msgid "Show all"
+msgstr ""
+
+msgid "Show less"
+msgstr ""
+
+msgid "h/week"
+msgstr ""
+
+msgid "Workspace-wide"
+msgstr ""
+
+msgid "Export {label}"
+msgstr ""
+
+msgid "Import {label}"
+msgstr ""
+
+msgid "Create “{name}” ({n} tasks)"
+msgstr ""
+
+msgid "MS Project's .mpp format can't be read. In MS Project, use File → Save As → XML Format, then pick that file."
+msgstr ""

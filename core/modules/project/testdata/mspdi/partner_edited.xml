@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- partner_edited.xml: basic.xml after a partner's edits: Framing ends a day later, Roofing added, Concrete pour removed, Excavation's priority dropped, a Baseline 1 on Framing. -->
+<Project xmlns="http://schemas.microsoft.com/project">
+  <SaveVersion>14</SaveVersion>
+  <Name>House build</Name>
+  <ScheduleFromStart>1</ScheduleFromStart>
+  <StartDate>2026-01-05T08:00:00</StartDate>
+  <CalendarUID>1</CalendarUID>
+  <MinutesPerDay>480</MinutesPerDay>
+  <MinutesPerWeek>2400</MinutesPerWeek>
+  <ExtendedAttributes>
+    <ExtendedAttribute><FieldID>188744006</FieldID><FieldName>Text30</FieldName><Alias>EERP id</Alias></ExtendedAttribute>
+  </ExtendedAttributes>
+  <Calendars>
+    <Calendar>
+      <UID>1</UID><Name>Standard</Name><IsBaseCalendar>1</IsBaseCalendar>
+      <WeekDays>
+        <WeekDay><DayType>1</DayType><DayWorking>0</DayWorking></WeekDay>
+        <WeekDay><DayType>2</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>08:00:00</FromTime><ToTime>12:00:00</ToTime></WorkingTime><WorkingTime><FromTime>13:00:00</FromTime><ToTime>17:00:00</ToTime></WorkingTime></WorkingTimes></WeekDay>
+        <WeekDay><DayType>3</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>08:00:00</FromTime><ToTime>12:00:00</ToTime></WorkingTime><WorkingTime><FromTime>13:00:00</FromTime><ToTime>17:00:00</ToTime></WorkingTime></WorkingTimes></WeekDay>
+        <WeekDay><DayType>4</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>08:00:00</FromTime><ToTime>12:00:00</ToTime></WorkingTime><WorkingTime><FromTime>13:00:00</FromTime><ToTime>17:00:00</ToTime></WorkingTime></WorkingTimes></WeekDay>
+        <WeekDay><DayType>5</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>08:00:00</FromTime><ToTime>12:00:00</ToTime></WorkingTime><WorkingTime><FromTime>13:00:00</FromTime><ToTime>17:00:00</ToTime></WorkingTime></WorkingTimes></WeekDay>
+        <WeekDay><DayType>6</DayType><DayWorking>1</DayWorking><WorkingTimes><WorkingTime><FromTime>08:00:00</FromTime><ToTime>12:00:00</ToTime></WorkingTime><WorkingTime><FromTime>13:00:00</FromTime><ToTime>17:00:00</ToTime></WorkingTime></WorkingTimes></WeekDay>
+        <WeekDay><DayType>7</DayType><DayWorking>0</DayWorking></WeekDay>
+      </WeekDays>
+    </Calendar>
+  </Calendars>
+  <Tasks>
+    <Task><UID>0</UID><ID>0</ID><Name>House build</Name><Manual>1</Manual><OutlineLevel>0</OutlineLevel><Summary>1</Summary></Task>
+    <Task>
+      <UID>1</UID><ID>1</ID><Name>Foundation</Name><Active>1</Active><Manual>1</Manual>
+      <OutlineLevel>1</OutlineLevel><Priority>500</Priority>
+      <Start>2026-01-05T08:00:00</Start><Finish>2026-01-09T17:00:00</Finish><Duration>PT0H0M0S</Duration>
+      <Work>PT24H0M0S</Work><Milestone>0</Milestone><Summary>1</Summary><PercentComplete>0</PercentComplete>
+      <ExtendedAttribute><FieldID>188744006</FieldID><Value>11111111-1111-4111-8111-111111111111</Value></ExtendedAttribute>
+    </Task>
+    <Task>
+      <UID>2</UID><ID>2</ID><Name>Excavation</Name><Active>1</Active><Manual>1</Manual>
+      <OutlineLevel>2</OutlineLevel><Priority>500</Priority>
+      <Start>2026-01-05T08:00:00</Start><Finish>2026-01-07T17:00:00</Finish><Duration>PT0H0M0S</Duration>
+      <Work>PT12H0M0S</Work><Milestone>0</Milestone><Summary>0</Summary><PercentComplete>0</PercentComplete>
+      <Notes>Check the soil report first.</Notes>
+      <ExtendedAttribute><FieldID>188744006</FieldID><Value>22222222-2222-4222-8222-222222222222</Value></ExtendedAttribute>
+      <Baseline><Number>0</Number><Start>2026-01-05T08:00:00</Start><Finish>2026-01-06T17:00:00</Finish><Duration>PT16H0M0S</Duration><Work>PT10H0M0S</Work></Baseline>
+    </Task>
+    <Task>
+      <UID>4</UID><ID>4</ID><Name>Superstructure</Name><Active>1</Active><Manual>1</Manual>
+      <OutlineLevel>1</OutlineLevel><Priority>500</Priority>
+      <Start>2026-01-12T08:00:00</Start><Finish>2026-01-23T17:00:00</Finish><Duration>PT0H0M0S</Duration>
+      <Work>PT40H0M0S</Work><Milestone>0</Milestone><Summary>1</Summary><PercentComplete>0</PercentComplete>
+      <ExtendedAttribute><FieldID>188744006</FieldID><Value>44444444-4444-4444-8444-444444444444</Value></ExtendedAttribute>
+    </Task>
+    <Task>
+      <UID>5</UID><ID>5</ID><Name>Framing</Name><Active>1</Active><Manual>1</Manual>
+      <OutlineLevel>2</OutlineLevel><Priority>500</Priority>
+      <Start>2026-01-12T08:00:00</Start><Finish>2026-01-20T17:00:00</Finish><Duration>PT0H0M0S</Duration>
+      <Work>PT32H0M0S</Work><Milestone>0</Milestone><Summary>0</Summary><PercentComplete>0</PercentComplete>
+      <ExtendedAttribute><FieldID>188744006</FieldID><Value>55555555-5555-4555-8555-555555555555</Value></ExtendedAttribute>
+      <Baseline><Number>1</Number><Start>2026-01-12T08:00:00</Start><Finish>2026-01-19T17:00:00</Finish><Duration>PT16H0M0S</Duration><Work>PT30H0M0S</Work></Baseline>
+    </Task>
+    <Task>
+      <UID>7</UID><ID>7</ID><Name>Roofing</Name><Active>1</Active><Manual>1</Manual>
+      <OutlineLevel>2</OutlineLevel><Priority>500</Priority>
+      <Start>2026-01-21T08:00:00</Start><Finish>2026-01-23T17:00:00</Finish><Duration>PT0H0M0S</Duration>
+      <Work>PT16H0M0S</Work><Milestone>0</Milestone><Summary>0</Summary><PercentComplete>0</PercentComplete>
+    </Task>
+    <Task>
+      <UID>6</UID><ID>6</ID><Name>Structure approved</Name><Active>1</Active><Manual>1</Manual>
+      <OutlineLevel>1</OutlineLevel><Priority>500</Priority>
+      <Start>2026-02-02T08:00:00</Start><Finish>2026-02-02T08:00:00</Finish><Duration>PT0H0M0S</Duration>
+      <Work>PT0H0M0S</Work><Milestone>1</Milestone><Summary>0</Summary><PercentComplete>0</PercentComplete>
+      <PredecessorLink><PredecessorUID>5</PredecessorUID><Type>1</Type><LinkLag>0</LinkLag><LagFormat>7</LagFormat></PredecessorLink>
+      <ExtendedAttribute><FieldID>188744006</FieldID><Value>milestone:66666666-6666-4666-8666-666666666666</Value></ExtendedAttribute>
+    </Task>
+  </Tasks>
+  <Resources>
+    <Resource><UID>0</UID><ID>0</ID><Type>1</Type></Resource>
+    <Resource><UID>1</UID><ID>1</ID><Name>Ann Lee</Name><Type>1</Type><EmailAddress>ann@x.com</EmailAddress><MaxUnits>0.60</MaxUnits></Resource>
+  </Resources>
+  <Assignments>
+    <Assignment><UID>1</UID><TaskUID>5</TaskUID><ResourceUID>1</ResourceUID><Units>1</Units></Assignment>
+  </Assignments>
+</Project>

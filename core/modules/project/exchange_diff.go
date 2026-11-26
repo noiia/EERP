@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
+	"unicode"
 
 	"core/orm"
 
@@ -87,6 +89,8 @@ const (
 	kindMilestoneCreate  = "milestone_create"
 	kindMilestoneUpdate  = "milestone_update"
 	kindMilestoneDelete  = "milestone_delete"
+	kindBaselineCreate   = "baseline_create"
+	kindCapacityUpdate   = "capacity_update"
 )
 
 // The fields a row can report, in the words the wizard prints.
@@ -97,6 +101,8 @@ const (
 	fieldClosed      = "closed"
 	fieldMilestoneID = "milestone_id"
 	fieldParent      = "parent"
+	fieldPriority    = "priority"
+	fieldDescription = "description"
 )
 
 // The warning codes the diff raises. The nine are listed on Warning; HOLIDAYS and
@@ -111,7 +117,20 @@ const (
 	warnMultiMilestone   = "MULTI_MILESTONE"
 	warnUnknownEmail     = "UNKNOWN_EMAIL"
 	warnNameTruncated    = "NAME_TRUNCATED"
+	warnNotesTruncated   = "NOTES_TRUNCATED"
+	warnCapacityRange    = "CAPACITY_RANGE"
 )
+
+// descriptionLimit is the longest description an import writes: a partner's
+// Notes beyond it are truncated, with NOTES_TRUNCATED.
+const descriptionLimit = 5000
+
+// baselineValue is a baseline_create row: the baseline the import would add.
+type baselineValue struct {
+	Number int    `json:"number"`
+	Name   string `json:"name"`
+	Tasks  int    `json:"tasks"`
+}
 
 // exchangeDayLayout is how the file writes a day, and how the wizard receives one.
 const exchangeDayLayout = "2006-01-02"
@@ -194,8 +213,11 @@ type assignValue struct {
 // Rows come back in the order the wizard shows them: the file's task order, with
 // a removal beside the neighbour it used to sit next to, and within a task its
 // create, move, updates, dependencies, assignees, then removals.
-func diffPlans(cur, file Plan, users map[string]uuid.UUID) ([]Change, []Warning) {
-	d := &diff{cur: cur, file: file, users: users}
+//
+// f is the file's format: a field it does not carry is never compared, so a file
+// that cannot hold, say, a priority never offers to clear one.
+func diffPlans(cur, file Plan, users map[string]uuid.UUID, f Format) ([]Change, []Warning) {
+	d := &diff{cur: cur, file: file, users: users, format: f}
 	return d.run()
 }
 
@@ -210,6 +232,12 @@ func (d *diff) run() ([]Change, []Warning) {
 	d.moveRows()
 	d.depRows()
 	d.assignRows()
+	if d.format.Carries(FieldBaselines) {
+		d.baselineRows()
+	}
+	if d.format.Carries(FieldCapacity) {
+		d.capacityRows()
+	}
 	return d.finish()
 }
 
@@ -218,6 +246,7 @@ func (d *diff) run() ([]Change, []Warning) {
 type diff struct {
 	cur, file Plan
 	users     map[string]uuid.UUID
+	format    Format
 
 	warnings []Warning
 	rows     []diffRow
@@ -454,13 +483,169 @@ func (d *diff) taskRows() {
 // hours nor a completion in EERP, so its rows are its name and its deadline: what
 // the file invents for the rest is not a change to anything.
 func (d *diff) updateRows(i, c int) {
-	d.nameRow(i, c)
-	d.datesRow(i, c)
+	if d.format.Carries(FieldName) {
+		d.nameRow(i, c)
+	}
+	if d.format.Carries(FieldDates) {
+		d.datesRow(i, c)
+	}
 	if d.file.Tasks[i].Milestone {
 		return
 	}
-	d.hoursRow(i, c)
-	d.closedRow(i, c)
+	if d.format.Carries(FieldHours) {
+		d.hoursRow(i, c)
+	}
+	if d.format.Carries(FieldClosed) {
+		d.closedRow(i, c)
+	}
+	if d.format.Carries(FieldPriority) {
+		d.priorityRow(i, c)
+	}
+	if d.format.Carries(FieldDescription) {
+		d.descriptionRow(i, c)
+	}
+}
+
+func (d *diff) priorityRow(i, c int) {
+	ft, ct := d.file.Tasks[i], d.cur.Tasks[c]
+	if ft.Priority == ct.Priority {
+		return
+	}
+	d.add(i, phaseUpdate, Change{
+		Key: changeKey(d.fileRows[i].key, fieldPriority), Kind: kindUpdate, Task: ct.Name, Wbs: d.wbs[c],
+		Field: fieldPriority, Before: ct.Priority, After: ft.Priority, DefaultSelected: true,
+	})
+}
+
+// descriptionRow compares the notes as text: trailing whitespace and Windows line
+// ends are how a planner saves, not a change. A note past descriptionLimit is
+// truncated, with a warning.
+func (d *diff) descriptionRow(i, c int) {
+	ft, ct := d.file.Tasks[i], d.cur.Tasks[c]
+	want := normalizeNotes(ft.Notes)
+	if runes := []rune(want); len(runes) > descriptionLimit {
+		want = strings.TrimRightFunc(string(runes[:descriptionLimit]), unicode.IsSpace)
+		d.warn(warnNotesTruncated, ft.Name,
+			fmt.Sprintf("notes longer than %d characters do not fit; they are truncated", descriptionLimit))
+	}
+	have := normalizeNotes(ct.Notes)
+	if want == have {
+		return
+	}
+	d.add(i, phaseUpdate, Change{
+		Key: changeKey(d.fileRows[i].key, fieldDescription), Kind: kindUpdate, Task: ct.Name, Wbs: d.wbs[c],
+		Field: fieldDescription, Before: have, After: want, DefaultSelected: true,
+	})
+}
+
+func normalizeNotes(s string) string {
+	return strings.TrimRightFunc(strings.ReplaceAll(s, "\r\n", "\n"), unicode.IsSpace)
+}
+
+// baselineRows offers each file baseline that differs from EERP's baseline of the
+// same number (or that EERP lacks) as one new baseline. EERP baselines are frozen
+// snapshots: an import only ever adds one, and a file holding fewer is nothing.
+// Only tasks both plans hold are compared, so a task the partner removed does not
+// make every baseline look edited.
+func (d *diff) baselineRows() {
+	cur := map[int]map[string]BaselineTask{}
+	for _, b := range d.cur.Baselines {
+		cur[b.Number] = b.Tasks
+	}
+	for _, b := range d.file.Baselines {
+		tasks := d.fileBaselineTasks(b)
+		have, had := cur[b.Number]
+		if had && sameBaseline(have, tasks, d.consumedKeys()) {
+			continue
+		}
+		var requires []string
+		for key := range tasks {
+			if d.needsCreate(key) {
+				requires = append(requires, key)
+			}
+		}
+		sort.Strings(requires)
+		name := fmt.Sprintf("Baseline %d (imported %s)", b.Number, time.Now().UTC().Format(exchangeDayLayout))
+		d.add(len(d.file.Tasks), phaseCreate, Change{
+			Key: "baseline:" + strconv.Itoa(b.Number), Kind: kindBaselineCreate, Task: name,
+			After: baselineValue{Number: b.Number, Name: name, Tasks: len(tasks)}, DefaultSelected: true, Requires: requires,
+		})
+	}
+}
+
+// fileBaselineTasks is a file baseline keyed by the diff's identities; entries
+// for rows the file does not hold, or for milestones, are dropped.
+func (d *diff) fileBaselineTasks(b PlanBaseline) map[string]BaselineTask {
+	out := map[string]BaselineTask{}
+	for key, bt := range b.Tasks {
+		id, ok := d.identity(key)
+		if !ok || namesMilestone(id) {
+			continue
+		}
+		out[id] = bt
+	}
+	return out
+}
+
+// consumedKeys is the set of current task keys the file still holds.
+func (d *diff) consumedKeys() map[string]bool {
+	out := map[string]bool{}
+	for c, t := range d.cur.Tasks {
+		if d.consumed[c] {
+			out[t.Key()] = true
+		}
+	}
+	return out
+}
+
+func sameBaseline(cur, file map[string]BaselineTask, held map[string]bool) bool {
+	n := 0
+	for key, c := range cur {
+		if !held[key] {
+			continue
+		}
+		n++
+		f, ok := file[key]
+		if !ok || !day(f.Start).Equal(day(c.Start)) || f.Duration != c.Duration || !samePlannedHours(f.Work, c.Work) {
+			return false
+		}
+	}
+	return n == len(file)
+}
+
+// capacityRows offers each known person whose weekly hours the file changes, as
+// an unticked row: a capacity applies across every project of the workspace.
+//
+// shortcut: only people EERP already assigns in this project are compared (the
+// plan holds no other capacity); load every staff capacity if partners start
+// sizing people EERP has not assigned yet.
+func (d *diff) capacityRows() {
+	cur := map[string]float64{}
+	for _, r := range d.cur.Resources {
+		cur[strings.ToLower(r.Email)] = r.HoursPerWeek
+	}
+	for _, r := range d.file.Resources {
+		email := strings.ToLower(strings.TrimSpace(r.Email))
+		have, ok := cur[email]
+		if !ok {
+			continue
+		}
+		if _, known := d.users[email]; !known {
+			continue
+		}
+		if math.IsNaN(r.HoursPerWeek) || r.HoursPerWeek <= 0 || r.HoursPerWeek > 168 {
+			d.warn(warnCapacityRange, r.Name,
+				fmt.Sprintf("a capacity of %g hours per week is not between 0 and 168; it is not imported", r.HoursPerWeek))
+			continue
+		}
+		if samePlannedHours(have, r.HoursPerWeek) {
+			continue
+		}
+		d.add(len(d.file.Tasks), phaseUpdate, Change{
+			Key: "capacity:" + email, Kind: kindCapacityUpdate, Task: r.Name, Field: "hours_per_week",
+			Before: have, After: r.HoursPerWeek, DefaultSelected: false,
+		})
+	}
 }
 
 func (d *diff) nameRow(i, c int) {
@@ -974,7 +1159,9 @@ func (d *diff) knownEnds(pred, succ string, fromFile bool) (string, string, bool
 
 func (d *diff) depRows() {
 	d.dependencyRows()
-	d.linkRows()
+	if d.format.Carries(FieldMilestone) {
+		d.linkRows()
+	}
 }
 
 // dependencyRows reports the links EERP does not have and the ones it has and the

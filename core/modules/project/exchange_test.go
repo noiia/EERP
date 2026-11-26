@@ -101,6 +101,7 @@ func (stubFormat) Key() string                                 { return "stub" }
 func (stubFormat) Ext() string                                 { return ".stub" }
 func (stubFormat) Encode(w io.Writer, p Plan) error            { return nil }
 func (stubFormat) Decode(r io.Reader) (Plan, []Warning, error) { return Plan{}, nil, nil }
+func (stubFormat) Carries(Field) bool                          { return true }
 
 func TestFormatRegistry(t *testing.T) {
 	registerFormat(stubFormat{})

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -224,9 +225,14 @@ func exRenamed(p Plan, from, to string) Plan {
 // have sent back with the ticked keys: the project read on the FILE's calendar,
 // which is the only one whose durations mean the same as the file's.
 func exPreview(t *testing.T, f *fixture, pid uuid.UUID, file Plan) (string, []Change, []Warning) {
+	return exPreviewAs(t, f, pid, file, ganFormat{})
+}
+
+// exPreviewAs is exPreview for a file of another format.
+func exPreviewAs(t *testing.T, f *fixture, pid uuid.UUID, file Plan, format Format) (string, []Change, []Warning) {
 	t.Helper()
 	cur := exLoad(t, f, pid, file.Weekend)
-	changes, warnings := diffPlans(cur, file, exUsers(t, f))
+	changes, warnings := diffPlans(cur, file, exUsers(t, f), format)
 	return planHash(cur), changes, warnings
 }
 
@@ -259,8 +265,13 @@ func exApply(t *testing.T, f *fixture, who auth.Identity, pid uuid.UUID, file Pl
 // exTryApply is applyPlan as the route calls it (the base and the staff map fresh
 // from the project, the caller stamped on the context), with its error handed back.
 func exTryApply(f *fixture, who auth.Identity, pid uuid.UUID, file Plan, name string, keys []string) (int, error) {
-	base, _, _ := exPreview(f.t, f, pid, file)
-	return f.handler().applyPlan(ctxFor(who), who.TenantID, pid, file, base, keys, exUsers(f.t, f), name)
+	return exTryApplyAs(f, who, pid, file, ganFormat{}, name, keys)
+}
+
+// exTryApplyAs is exTryApply for a file of another format.
+func exTryApplyAs(f *fixture, who auth.Identity, pid uuid.UUID, file Plan, format Format, name string, keys []string) (int, error) {
+	base, _, _ := exPreviewAs(f.t, f, pid, file, format)
+	return f.handler().applyPlan(ctxFor(who), who.TenantID, pid, file, format, base, keys, exUsers(f.t, f), name)
 }
 
 // exRejection is err as the route would answer it.
@@ -609,7 +620,7 @@ func TestApply_StaleBase409(t *testing.T) {
 	// while the manager was reading the wizard.
 	stale, _, _ := exPreview(t, f, pid, e.basic)
 	f.exec(`UPDATE project_task SET planned_hours = 5 WHERE id = $1`, uuid.MustParse(ganExcavationRef))
-	_, err := f.handler().applyPlan(ctxFor(f.caller(e.mgr)), f.tenant, pid, e.partner, stale,
+	_, err := f.handler().applyPlan(ctxFor(f.caller(e.mgr)), f.tenant, pid, e.partner, ganFormat{}, stale,
 		[]string{key}, exUsers(t, f), "partner_edited.gan")
 	rej := exRejection(t, err)
 	if rej.status != http.StatusConflict || rej.code != "PROJECT_CHANGED" {
@@ -624,7 +635,7 @@ func TestApply_StaleBase409(t *testing.T) {
 	// the hash really does move when the project changes.
 	fresh, _, _ := exPreview(t, f, pid, e.partner)
 	exApply(t, f, f.caller(e.mgr), pid, e.partner, "partner_edited.gan", key)
-	_, err = f.handler().applyPlan(ctxFor(f.caller(e.mgr)), f.tenant, pid, e.partner, fresh,
+	_, err = f.handler().applyPlan(ctxFor(f.caller(e.mgr)), f.tenant, pid, e.partner, ganFormat{}, fresh,
 		[]string{key}, exUsers(t, f), "partner_edited.gan")
 	if rej := exRejection(t, err); rej.status != http.StatusConflict || rej.code != "PROJECT_CHANGED" {
 		t.Fatalf("replaying a spent base: %d %s, want 409 PROJECT_CHANGED", rej.status, rej.code)
@@ -1296,7 +1307,7 @@ func TestApply_RefusedPlacementNamesTheCreate(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		a, err := newApplier(f.handler(), ctx, tx, f.tenant, pid, cur, file, users, []string{"new:7", "new:8"})
+		a, err := newApplier(f.handler(), ctx, tx, f.tenant, pid, cur, file, ganFormat{}, users, []string{"new:7", "new:8"})
 		if err != nil {
 			return err
 		}
@@ -1391,5 +1402,199 @@ func TestApply_BulkRemovalOfADeepTree(t *testing.T) {
 	}
 	if live != 0 {
 		t.Errorf("%d tasks still live, want the whole tree gone", live)
+	}
+}
+
+// ── MS Project extras ────────────────────────────────────────────────────────
+
+// exClone copies a plan deeply enough for a test to edit its tasks.
+func exClone(p Plan) Plan {
+	p.Tasks = append([]PlanTask(nil), p.Tasks...)
+	return p
+}
+
+func exSetTask(p *Plan, key string, mod func(*PlanTask)) {
+	for i := range p.Tasks {
+		if p.Tasks[i].Key() == key {
+			mod(&p.Tasks[i])
+		}
+	}
+}
+
+// exCapacityRole is a role granting the capacity write permission, by name.
+func exCapacityRole(t *testing.T, f *fixture) string {
+	t.Helper()
+	ctx := context.Background()
+	var permID uuid.UUID
+	if err := f.app.DB.QueryRow(ctx, `SELECT id FROM permissions WHERE code = $1 AND deleted_at IS NULL LIMIT 1`,
+		capacityPermission).Scan(&permID); err != nil {
+		permID = f.id(`INSERT INTO permissions (code) VALUES ($1) RETURNING id`, capacityPermission)
+		t.Cleanup(func() { _, _ = f.app.DB.Exec(ctx, `DELETE FROM permissions WHERE id = $1`, permID) })
+	}
+	name := "exchange-capacity-" + uuid.NewString()
+	roleID := f.id(`INSERT INTO roles (tenant_id, name) VALUES ($1, $2) RETURNING id`, f.tenant, name)
+	f.exec(`INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2)`, roleID, permID)
+	t.Cleanup(func() {
+		_, _ = f.app.DB.Exec(ctx, `DELETE FROM role_permissions WHERE role_id = $1`, roleID)
+		_, _ = f.app.DB.Exec(ctx, `DELETE FROM roles WHERE id = $1`, roleID)
+	})
+	return name
+}
+
+func TestApply_PriorityAndDescription(t *testing.T) {
+	e := exFixture(t)
+	file := exClone(e.basic)
+	exSetTask(&file, ganExcavationRef, func(t *PlanTask) { t.Priority = true; t.Notes = "Check the soil\r\n" })
+	_, changes, _ := exPreviewAs(t, e.f, e.pid, file, mspdiFormat{})
+	dfxWantKeys(t, changes, changeKey(ganExcavationRef, fieldPriority), changeKey(ganExcavationRef, fieldDescription))
+	if n := exApplyAs(t, e, file, exKeysOf(changes)...); n != 2 {
+		t.Errorf("applied %d, want 2", n)
+	}
+	id := uuid.MustParse(ganExcavationRef)
+	if !exColumn[bool](t, e.f, "project_task", id, "priority") || exColumn[string](t, e.f, "project_task", id, "description") != "Check the soil" {
+		t.Error("priority/description not written")
+	}
+}
+
+func exApplyAs(t *testing.T, e exProject, file Plan, keys ...string) int {
+	t.Helper()
+	n, err := exTryApplyAs(e.f, e.f.caller(e.mgr), e.pid, file, mspdiFormat{}, "plan.xml", keys)
+	if err != nil {
+		t.Fatalf("applyPlan(%s): %v", strings.Join(keys, " "), err)
+	}
+	return n
+}
+
+// exBaseline snapshots the project the way POST /project/:id/baseline does.
+func exBaseline(t *testing.T, f *fixture, pid, by uuid.UUID, name string) uuid.UUID {
+	t.Helper()
+	id := f.id(`INSERT INTO project_baseline (tenant_id, project_id, name, created_by) VALUES ($1, $2, $3, $4) RETURNING id`,
+		f.tenant, pid, name, by)
+	f.exec(`INSERT INTO project_baseline_task (tenant_id, baseline_id, project_id, task_id, date_start, deadline, planned_hours)
+		SELECT $1, $2, project_id, id, date_start, deadline, planned_hours FROM project_task
+		WHERE project_id = $3 AND tenant_id = $1 AND deleted_at IS NULL`, f.tenant, id, pid)
+	return id
+}
+
+func exBaselineRows(t *testing.T, f *fixture, pid uuid.UUID) string {
+	t.Helper()
+	var out string
+	if err := f.app.DB.QueryRow(context.Background(), `SELECT coalesce(string_agg(
+			b.id || b.name || b.updated_at || bt.task_id || coalesce(bt.date_start::text, '') || coalesce(bt.deadline::text, '')
+			|| bt.planned_hours || bt.updated_at, ',' ORDER BY b.id, bt.task_id), '')
+		FROM project_baseline b JOIN project_baseline_task bt ON bt.baseline_id = b.id
+		WHERE b.project_id = $1`, pid).Scan(&out); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// TestApply_BaselineCreateLeavesOthers: Review Focus 3. A re-baselined Baseline 0 is
+// one new baseline; EERP's own stay exactly as they were.
+func TestApply_BaselineCreateLeavesOthers(t *testing.T) {
+	e := exFixture(t)
+	exBaseline(t, e.f, e.pid, e.mgr, "Kick-off")
+	before := exBaselineRows(t, e.f, e.pid)
+
+	file := exClone(exLoad(t, e.f, e.pid, DefaultWeekend))
+	file.Baselines = []PlanBaseline{{Number: 0, Tasks: map[string]BaselineTask{
+		ganExcavationRef: {Start: exchangeDay(2026, time.January, 6), Duration: 3, Work: 9},
+	}}}
+	file.Resources = nil
+	_, changes, _ := exPreviewAs(t, e.f, e.pid, file, mspdiFormat{})
+	dfxWantKeys(t, changes, "baseline:0")
+	exApplyAs(t, e, file, "baseline:0")
+
+	var (
+		n               int
+		start, deadline time.Time
+		hours           float64
+		name            string
+	)
+	if err := e.f.app.DB.QueryRow(context.Background(), `SELECT b.name, bt.date_start, bt.deadline, bt.planned_hours,
+			(SELECT count(*) FROM project_baseline_task x WHERE x.baseline_id = b.id)
+		FROM project_baseline b JOIN project_baseline_task bt ON bt.baseline_id = b.id
+		WHERE b.project_id = $1 AND b.name LIKE 'Baseline 0 (imported %'`, e.pid).Scan(&name, &start, &deadline, &hours, &n); err != nil {
+		t.Fatalf("the new baseline: %v", err)
+	}
+	if n != 1 || start.Format(exchangeDayLayout) != "2026-01-06" || deadline.Format(exchangeDayLayout) != "2026-01-08" || hours != 9 {
+		t.Errorf("new baseline %q = %d rows, %s → %s, %v h; want 1 row, 2026-01-06 → 2026-01-08, 9 h", name, n, start, deadline, hours)
+	}
+	if after := strings.Split(exBaselineRows(t, e.f, e.pid), ","); !strings.Contains(strings.Join(after, ","), before) {
+		t.Error("the existing baseline's rows changed")
+	}
+}
+
+func TestApply_BaselineLimit422(t *testing.T) {
+	e := exFixture(t)
+	for i := 0; i < baselineLimit; i++ {
+		exBaseline(t, e.f, e.pid, e.mgr, "B"+strconv.Itoa(i))
+	}
+	file := exClone(exLoad(t, e.f, e.pid, DefaultWeekend))
+	file.Resources = nil
+	file.Baselines = append(file.Baselines, PlanBaseline{Number: 0, Tasks: map[string]BaselineTask{
+		ganExcavationRef: {Start: exchangeDay(2026, time.March, 2), Duration: 1},
+	}})
+	file.Baselines = file.Baselines[len(file.Baselines)-1:]
+	_, err := exTryApplyAs(e.f, e.f.caller(e.mgr), e.pid, file, mspdiFormat{}, "plan.xml", []string{"baseline:0"})
+	rej := exRejection(t, err)
+	if rej.status != http.StatusUnprocessableEntity || len(rej.fields) != 1 || rej.fields[0] != "baseline:0" {
+		t.Errorf("rejection = %+v, want 422 on baseline:0", rej)
+	}
+}
+
+func exCapacityFile(t *testing.T, e exProject, hours float64) Plan {
+	t.Helper()
+	file := exClone(exLoad(t, e.f, e.pid, DefaultWeekend))
+	file.Resources = []PlanResource{{Email: "ann@x.com", Name: "Ann", HoursPerWeek: hours}}
+	return file
+}
+
+func exCapacity(t *testing.T, f *fixture, user uuid.UUID) (float64, int) {
+	t.Helper()
+	var (
+		h float64
+		n int
+	)
+	if err := f.app.DB.QueryRow(context.Background(), `SELECT coalesce(max(hours_per_week), 0), count(*) FROM project_capacity
+		WHERE tenant_id = $1 AND user_id = $2 AND deleted_at IS NULL`, f.tenant, user).Scan(&h, &n); err != nil {
+		t.Fatal(err)
+	}
+	return h, n
+}
+
+// TestApply_CapacityNeedsPermission: Review Focus 4. A manager without the capacity
+// write permission gets 422 on that key, and nothing of the batch lands.
+func TestApply_CapacityNeedsPermission(t *testing.T) {
+	e := exFixture(t)
+	file := exCapacityFile(t, e, 24)
+	exSetTask(&file, ganExcavationRef, func(t *PlanTask) { t.Priority = true })
+	_, changes, _ := exPreviewAs(t, e.f, e.pid, file, mspdiFormat{})
+	dfxWantKeys(t, changes, changeKey(ganExcavationRef, fieldPriority), "capacity:ann@x.com")
+	_, err := exTryApplyAs(e.f, e.f.caller(e.mgr), e.pid, file, mspdiFormat{}, "plan.xml", exKeysOf(changes))
+	rej := exRejection(t, err)
+	if rej.status != http.StatusUnprocessableEntity || len(rej.fields) != 1 || rej.fields[0] != "capacity:ann@x.com" {
+		t.Errorf("rejection = %+v, want 422 on capacity:ann@x.com", rej)
+	}
+	if exColumn[bool](t, e.f, "project_task", uuid.MustParse(ganExcavationRef), "priority") {
+		t.Error("the priority landed although the batch was refused")
+	}
+	if _, n := exCapacity(t, e.f, e.ann); n != 0 {
+		t.Error("a capacity row was written")
+	}
+}
+
+func TestApply_CapacityUpsert(t *testing.T) {
+	e := exFixture(t)
+	who := e.f.caller(e.mgr)
+	who.Roles = []string{exCapacityRole(t, e.f)}
+	for _, hours := range []float64{24, 30} {
+		file := exCapacityFile(t, e, hours)
+		if _, err := exTryApplyAs(e.f, who, e.pid, file, mspdiFormat{}, "plan.xml", []string{"capacity:ann@x.com"}); err != nil {
+			t.Fatalf("apply %v h: %v", hours, err)
+		}
+		if h, n := exCapacity(t, e.f, e.ann); h != hours || n != 1 {
+			t.Errorf("capacity = %v h in %d live rows, want %v in 1", h, n, hours)
+		}
 	}
 }

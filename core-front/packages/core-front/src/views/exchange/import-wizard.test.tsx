@@ -443,3 +443,63 @@ describe('ImportWizard', () => {
   })
 
 })
+
+describe('ImportWizard: MS Project rows', () => {
+  beforeEach(() => {
+    fetchMock.mockReset()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+  })
+
+  const baselineRow = row({
+    key: 'baseline:0',
+    kind: 'baseline_create',
+    task: 'Baseline 0 (imported 2026-11-26)',
+    after: { number: 0, name: 'Baseline 0 (imported 2026-11-26)', tasks: 12 },
+  })
+  const capacityRow = row({
+    key: 'capacity:ann@x.com',
+    kind: 'capacity_update',
+    task: 'Ann Lee',
+    field: 'hours_per_week',
+    before: 40,
+    after: 24,
+    default_selected: false,
+  })
+  const notesRow = row({
+    key: 'task:t1:description',
+    kind: 'update',
+    task: 'Design review',
+    field: 'description',
+    before: 'old',
+    after: 'line 1\nline 2\nline 3\nline 4',
+  })
+
+  it('renders baseline, capacity and description rows', async () => {
+    fetchMock.mockResolvedValue(previewOK([baselineRow, capacityRow, notesRow], []))
+    renderWizard()
+    pickFile()
+    await screen.findByText('Ann Lee')
+    expect(within(rowEl(baselineRow.key)).getByText('Baseline')).toBeInTheDocument()
+    expect(within(rowEl(baselineRow.key)).getByText('Create “Baseline 0 (imported 2026-11-26)” (12 tasks)')).toBeInTheDocument()
+    expect(checkbox(baselineRow.key)).toBeChecked()
+    expect(within(rowEl(capacityRow.key)).getByText('40 h/week → 24 h/week')).toBeInTheDocument()
+    expect(within(rowEl(capacityRow.key)).getByText('Workspace-wide')).toBeInTheDocument()
+    expect(checkbox(capacityRow.key)).not.toBeChecked()
+    const show = within(rowEl(notesRow.key)).getByRole('button', { name: 'Show all' })
+    fireEvent.click(show)
+    expect(within(rowEl(notesRow.key)).getByRole('button', { name: 'Show less' })).toBeInTheDocument()
+  })
+
+  it('refuses a .mpp without sending it', () => {
+    renderWizard()
+    fireEvent.change(screen.getByLabelText('Plan file'), { target: { files: [new File(['x'], 'Plan.MPP')] } })
+    expect(
+      screen.getByText("MS Project's .mpp format can't be read. In MS Project, use File → Save As → XML Format, then pick that file."),
+    ).toBeInTheDocument()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ComponentType, ReactNode } from 'react'
+import type { GanttExchangeConfig } from '../../api/view-fields'
 
 // React Flow stubbed as in wbs-renderer.test.tsx: each node drawn through its nodeTypes component.
 type RfNode = { id: string; type: string; data: unknown; className?: string; position: { x: number; y: number } }
@@ -76,7 +77,7 @@ const diamondLinks = (): Link[] => [
   { id: 'l4', depends_on_id: 'C', task_id: 'D' },
 ]
 
-function setup(opts: { tasks?: Task[]; links?: Link[]; write?: boolean; linkWrite?: boolean; create?: RelationOps['create']; update?: EntityActions<Task>['update']; listPage?: RelationOps['listPage']; serverOptions?: object; list?: RelationOps['list']; colorTagsField?: string; descriptor?: ViewDescriptor } = {}) {
+function setup(opts: { tasks?: Task[]; links?: Link[]; write?: boolean; linkWrite?: boolean; create?: RelationOps['create']; update?: EntityActions<Task>['update']; listPage?: RelationOps['listPage']; serverOptions?: object; exchange?: GanttExchangeConfig; list?: RelationOps['list']; colorTagsField?: string; descriptor?: ViewDescriptor } = {}) {
   const { tasks = diamond(), links = diamondLinks(), write = true, linkWrite = write } = opts
   useSessionStore.setState({
     identity: {
@@ -117,6 +118,7 @@ function setup(opts: { tasks?: Task[]; links?: Link[]; write?: boolean; linkWrit
         boxFields={['name', 'planned_hours', 'name', 'nope']}
         onRecordsChange={onRecordsChange}
         serverOptions={opts.serverOptions}
+        exchange={opts.exchange}
       />
     </RelationOpsProvider>,
   )
@@ -395,5 +397,30 @@ describe('PertRenderer', () => {
     expect(ops.remove).not.toHaveBeenCalled()
     expect(rf.props.edges.every((e) => e.deletable === false)).toBe(true)
     expect(screen.getAllByLabelText('Name').every((i) => (i as HTMLInputElement).disabled)).toBe(true)
+  })
+})
+
+describe('PERT plan exchange', () => {
+  const exchange: GanttExchangeConfig = {
+    scopeField: 'project_id',
+    scopeEntity: 'project',
+    formats: [{ key: 'mspdi', label: 'Microsoft Project (.xml)', accept: '.xml' }],
+  }
+  it('offers the plan file menu on a pinned project only', async () => {
+    const links = diamondLinks()
+    setup({
+      exchange,
+      serverOptions: { filter: { project_id: 'p1' } },
+      listPage: vi.fn(async (_e: string, o?: { filter?: Record<string, string>; in?: Record<string, string[]> }) => {
+        const records = o?.filter ? diamond() : links.filter((l) => o?.in?.task_id?.includes(l.task_id) || o?.in?.depends_on_id?.includes(l.depends_on_id))
+        return { records, total: records.length }
+      }) as unknown as RelationOps['listPage'],
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Plan file' }))
+    expect(screen.getByRole('menuitem', { name: 'Export Microsoft Project (.xml)' })).toHaveAttribute('href', '/api/exchange/project/p1/mspdi/export')
+    cleanup()
+    setup({ exchange })
+    await act(async () => {})
+    expect(screen.queryByRole('button', { name: 'Plan file' })).toBeNull()
   })
 })

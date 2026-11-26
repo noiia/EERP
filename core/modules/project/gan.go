@@ -97,6 +97,16 @@ func init() { registerFormat(ganFormat{}) }
 func (ganFormat) Key() string { return ganFormatKey }
 func (ganFormat) Ext() string { return ganFormatExt }
 
+// Carries is what a .gan holds: no priority, notes, baselines or capacities, so
+// a .gan import never reports those as cleared.
+func (ganFormat) Carries(f Field) bool {
+	switch f {
+	case FieldName, FieldDates, FieldHours, FieldClosed, FieldMilestone:
+		return true
+	}
+	return false
+}
+
 // The document, as far as EERP cares. Field order is attribute order on encode.
 // Two elements of the real file are left out on purpose: <notes> (reading or
 // writing notes is not part of the exchange) and the <view> blocks, which are
@@ -309,7 +319,7 @@ type ganPendingDep struct {
 
 func (w *ganWalker) walk(el ganTaskEl, parentKey string) error {
 	if len(w.tasks)+len(w.milestones) >= ganMaxTasks {
-		return fmt.Errorf("%w: more than %d tasks", errNotGan, ganMaxTasks)
+		return fmt.Errorf("%w: %w: more than %d tasks", errNotGan, errPlanTooBig, ganMaxTasks)
 	}
 	// The file's own id is what a row is named by: Key() falls back to it for a
 	// row EERP does not know, and Parent, PlanDep and PlanAssign all hold Key()s.

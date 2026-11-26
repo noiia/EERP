@@ -183,7 +183,7 @@ func dfxWantNoRows(t *testing.T, changes []Change) {
 // produce neither a row nor a warning.
 func dfxWantNoChange(t *testing.T, cur, file Plan, users map[string]uuid.UUID) {
 	t.Helper()
-	changes, warnings := diffPlans(cur, file, users)
+	changes, warnings := diffPlans(cur, file, users, ganFormat{})
 	dfxWantEmpty(t, changes, warnings)
 }
 
@@ -237,7 +237,7 @@ func TestDiff_WeekendDeadlineStable(t *testing.T) {
 	// calendar days: five days from Monday end Friday, six end the next Monday.
 	t.Run("the ends are working days", func(t *testing.T) {
 		file := dfxPlan([]PlanTask{dfxTask(kA, "", "Design", dfxMon, 6)}, nil)
-		changes, warnings := diffPlans(cur, file, nil)
+		changes, warnings := diffPlans(cur, file, nil, ganFormat{})
 		dfxWantKeys(t, changes, "task:"+kA+":dates")
 		if len(warnings) != 0 {
 			t.Errorf("warnings = %+v, want none", warnings)
@@ -282,7 +282,7 @@ func TestDiff_UndatedMovedIsWasUnscheduled(t *testing.T) {
 	kA := dfxKey(dfxA)
 	cur := dfxPlan([]PlanTask{{Ref: kA, Name: "Design", Start: day(dfxDay(dfxMon)), Duration: 1, Undated: true}}, nil)
 	file := dfxPlan([]PlanTask{dfxTask(kA, "", "Design", dfxWed, 2)}, nil)
-	changes, warnings := diffPlans(cur, file, nil)
+	changes, warnings := diffPlans(cur, file, nil, ganFormat{})
 	dfxWantKeys(t, changes, "task:"+kA+":dates")
 	if len(warnings) != 0 {
 		t.Errorf("warnings = %+v, want none", warnings)
@@ -300,7 +300,7 @@ func TestDiff_UndatedMovedIsWasUnscheduled(t *testing.T) {
 
 	// A dated task is never labelled that way.
 	dated := dfxPlan([]PlanTask{dfxTask(kA, "", "Design", dfxMon, 1)}, nil)
-	rows, _ := diffPlans(dated, file, nil)
+	rows, _ := diffPlans(dated, file, nil, ganFormat{})
 	row = dfxRow(t, rows, "task:"+kA+":dates")
 	if row.WasUnscheduled {
 		t.Errorf("row = %+v, want no was_unscheduled on a dated task", row)
@@ -325,7 +325,7 @@ func TestDiff_SummaryDatesIgnored(t *testing.T) {
 		dfxTask(kB, kA, "Draft", dfxTue, 1),
 	}, nil)
 
-	changes, warnings := diffPlans(cur, file, nil)
+	changes, warnings := diffPlans(cur, file, nil, ganFormat{})
 	dfxWantKeys(t, changes, "task:"+kB+":dates")
 	if len(warnings) != 0 {
 		t.Errorf("warnings = %+v, want none", warnings)
@@ -338,14 +338,14 @@ func TestDiff_SummaryDatesIgnored(t *testing.T) {
 		{Ref: kA, Name: "Design v2", Start: day(dfxDay(dfxWed)), Duration: 9, Complete: 40, HasChildren: true},
 		dfxTask(kB, kA, "Draft", dfxTue, 1),
 	}, nil)
-	renamed, _ := diffPlans(cur, file, nil)
+	renamed, _ := diffPlans(cur, file, nil, ganFormat{})
 	dfxWantKeys(t, renamed, "task:"+kA+":name", "task:"+kB+":dates")
 
 	file = dfxPlan([]PlanTask{
 		{Ref: kA, Name: "Design", Start: day(dfxDay(dfxWed)), Duration: 9, Complete: 40},
 		dfxTask(kB, kA, "Draft", dfxTue, 1),
 	}, nil)
-	changes, _ = diffPlans(cur, file, nil)
+	changes, _ = diffPlans(cur, file, nil, ganFormat{})
 	dfxWantKeys(t, changes,
 		"task:"+kA+":dates",
 		"task:"+kA+":closed",
@@ -362,7 +362,7 @@ func TestDiff_SameNameIsCreate(t *testing.T) {
 		dfxTask(kA, "", "Design", dfxMon, 3),
 		dfxNew("7", "", "Design", dfxMon, 3),
 	}, nil)
-	changes, warnings := diffPlans(cur, file, nil)
+	changes, warnings := diffPlans(cur, file, nil, ganFormat{})
 	dfxWantKeys(t, changes, "new:7")
 	if len(warnings) != 0 {
 		t.Errorf("warnings = %+v, want none: a name the file repeats is not a warning", warnings)
@@ -398,7 +398,7 @@ func TestDiff_ForeignIdsAreCreates(t *testing.T) {
 		file.Tasks[i].FileID = string(rune('1' + i))
 	}
 
-	changes, warnings := diffPlans(cur, file, nil)
+	changes, warnings := diffPlans(cur, file, nil, ganFormat{})
 	dfxWantKeys(t, changes,
 		// Draft produced Deliverable; the foreign file names no such link, and
 		// that removal is a row of its own, unticked like every other removal.
@@ -465,7 +465,7 @@ func TestDiff_InsertAtTopNoMoves(t *testing.T) {
 		dfxTask(kB, "", "Build", dfxTue, 1),
 		dfxTask(kC, "", "Ship", dfxWed, 1),
 	}, nil)
-	changes, warnings := diffPlans(cur, file, nil)
+	changes, warnings := diffPlans(cur, file, nil, ganFormat{})
 	dfxWantKeys(t, changes, "new:9")
 	if got := dfxCount(changes, "move"); got != 0 {
 		t.Errorf("%d move rows, want none: an insert is not a move of everything after it", got)
@@ -487,7 +487,7 @@ func TestDiff_SwapTwoIsOneMove(t *testing.T) {
 		dfxTask(kB, "", "Build", dfxTue, 1),
 		dfxTask(kA, "", "Design", dfxMon, 1),
 	}, nil)
-	changes, warnings := diffPlans(cur, file, nil)
+	changes, warnings := diffPlans(cur, file, nil, ganFormat{})
 	if len(changes) != 1 {
 		t.Fatalf("rows = %s, want exactly one move", strings.Join(dfxKeys(changes), " "))
 	}
@@ -533,7 +533,7 @@ func TestDiff_LcsMovesAreMinimal(t *testing.T) {
 		dfxTask(kB, "", "Build", dfxTue, 1),
 		dfxTask(kA, "", "Design", dfxMon, 1),
 	}, nil)
-	changes, warnings := diffPlans(cur, file, nil)
+	changes, warnings := diffPlans(cur, file, nil, ganFormat{})
 	if got := dfxCount(changes, "move"); got != 2 {
 		t.Errorf("%d move rows in %s, want 2", got, strings.Join(dfxKeys(changes), " "))
 	}
@@ -565,7 +565,7 @@ func TestDiff_MoveUnderANewParent(t *testing.T) {
 		dfxTask(kA, "new:1", "Design", dfxMon, 1),
 		dfxTask(kB, "new:2", "Build", dfxTue, 1),
 	}, nil)
-	changes, warnings := diffPlans(cur, file, nil)
+	changes, warnings := diffPlans(cur, file, nil, ganFormat{})
 	dfxWantKeys(t, changes,
 		"new:1",
 		"new:2",
@@ -620,7 +620,7 @@ func TestDiff_MoveAfterANewSibling(t *testing.T) {
 		dfxTask(kC, "", "Review", dfxWed, 1),
 		dfxTask(kB, "", "Build", dfxTue, 1),
 	}, nil)
-	changes, warnings := diffPlans(cur, file, nil)
+	changes, warnings := diffPlans(cur, file, nil, ganFormat{})
 	dfxWantKeys(t, changes, "new:9", "task:"+kC+":move")
 	if len(warnings) != 0 {
 		t.Errorf("warnings = %+v, want none", warnings)
@@ -656,7 +656,7 @@ func TestDiff_MoveRowCarriesNames(t *testing.T) {
 		dfxTask(kB, kA, "Build", dfxTue, 1),
 		dfxTask(kC, kA, "Review", dfxWed, 1),
 	}, nil)
-	changes, warnings := diffPlans(cur, file, nil)
+	changes, warnings := diffPlans(cur, file, nil, ganFormat{})
 	dfxWantKeys(t, changes, "task:"+kB+":move", "task:"+kC+":move")
 	if len(warnings) != 0 {
 		t.Errorf("warnings = %+v, want none", warnings)
@@ -685,7 +685,7 @@ func TestDiff_ParentDeleteRequiresChildren(t *testing.T) {
 		dfxTask(kB, kA, "Draft", dfxMon, 1),
 		dfxTask(kC, kA, "Review", dfxTue, 1),
 	}, nil)
-	changes, warnings := diffPlans(cur, dfxPlan(nil, nil), nil)
+	changes, warnings := diffPlans(cur, dfxPlan(nil, nil), nil, ganFormat{})
 	dfxWantKeys(t, changes,
 		"task:"+kA+":delete",
 		"task:"+kB+":delete",
@@ -723,7 +723,7 @@ func TestDiff_DepKinds(t *testing.T) {
 
 	t.Run("a type EERP has not is a warning", func(t *testing.T) {
 		file := dfxPlan(curTasks, []PlanDep{{Pred: kA, Succ: kB, Type: DepSS}})
-		changes, warnings := diffPlans(curTasksPlan(), file, nil)
+		changes, warnings := diffPlans(curTasksPlan(), file, nil, ganFormat{})
 		dfxWantNoRows(t, changes)
 		dfxWantWarning(t, warnings, "DEP_TYPE", "Design")
 		if len(warnings) != 1 {
@@ -733,7 +733,7 @@ func TestDiff_DepKinds(t *testing.T) {
 
 	t.Run("a lag is dropped with a warning", func(t *testing.T) {
 		file := dfxPlan(curTasks, []PlanDep{{Pred: kA, Succ: kB, Type: DepFS, Lag: 2}})
-		changes, warnings := diffPlans(curTasksPlan(), file, nil)
+		changes, warnings := diffPlans(curTasksPlan(), file, nil, ganFormat{})
 		dfxWantKeys(t, changes, "dep:"+kA+":"+kB)
 		dfxWantWarning(t, warnings, "DEP_LAG", "Design")
 		row := dfxRow(t, changes, "dep:"+kA+":"+kB)
@@ -753,7 +753,7 @@ func TestDiff_DepKinds(t *testing.T) {
 
 	t.Run("a milestone predecessor is not a link EERP has", func(t *testing.T) {
 		file := dfxPlan(curTasks, []PlanDep{{Pred: kG, Succ: kA}})
-		changes, warnings := diffPlans(curTasksPlan(), file, nil)
+		changes, warnings := diffPlans(curTasksPlan(), file, nil, ganFormat{})
 		dfxWantNoRows(t, changes)
 		dfxWantWarning(t, warnings, "DEP_FROM_MILESTONE", "Design")
 		if len(warnings) != 1 {
@@ -763,7 +763,7 @@ func TestDiff_DepKinds(t *testing.T) {
 
 	t.Run("a milestone successor sets the deliverable", func(t *testing.T) {
 		file := dfxPlan(curTasks, []PlanDep{{Pred: kA, Succ: kG}})
-		changes, warnings := diffPlans(curTasksPlan(), file, nil)
+		changes, warnings := diffPlans(curTasksPlan(), file, nil, ganFormat{})
 		dfxWantKeys(t, changes, "task:"+kA+":milestone_id")
 		if len(warnings) != 0 {
 			t.Errorf("warnings = %+v, want none", warnings)
@@ -823,7 +823,7 @@ func TestDiff_MultiMilestoneFirstWins(t *testing.T) {
 		dfxMilestone(kG2, "Second", dfxFri),
 	}, nil)
 	file := dfxPlan(cur.Tasks, []PlanDep{{Pred: kA, Succ: kG}, {Pred: kA, Succ: kG2}})
-	changes, warnings := diffPlans(cur, file, nil)
+	changes, warnings := diffPlans(cur, file, nil, ganFormat{})
 	dfxWantKeys(t, changes, "task:"+kA+":milestone_id")
 	row := dfxRow(t, changes, "task:"+kA+":milestone_id")
 	if got, want := dfxJSON(t, row.After), `{"id":"`+kG+`","name":"Deliverable"}`; got != want {
@@ -844,7 +844,7 @@ func TestDiff_MilestoneLinkOfNewTaskGoesInCreate(t *testing.T) {
 		dfxNew("4", "", "Draft", dfxMon, 1),
 		dfxMilestone(kG, "Deliverable", dfxFri),
 	}, []PlanDep{{Pred: "new:4", Succ: kG}})
-	changes, warnings := diffPlans(cur, file, nil)
+	changes, warnings := diffPlans(cur, file, nil, ganFormat{})
 	dfxWantKeys(t, changes, "new:4")
 	if len(warnings) != 0 {
 		t.Errorf("warnings = %+v, want none", warnings)
@@ -865,7 +865,7 @@ func TestDiff_NewMilestoneLinkRequiresItsCreate(t *testing.T) {
 		dfxTask(kA, "", "Design", dfxMon, 1),
 		dfxNewMilestone("9", "Ship", dfxFri),
 	}, []PlanDep{{Pred: kA, Succ: "new-milestone:9"}})
-	changes, warnings := diffPlans(cur, file, nil)
+	changes, warnings := diffPlans(cur, file, nil, ganFormat{})
 	// The update reads under the task it is about, the create where the file
 	// placed the milestone; Requires is what apply has to honour.
 	dfxWantKeys(t, changes, "task:"+kA+":milestone_id", "new-milestone:9")
@@ -917,7 +917,7 @@ func TestDiff_RemovalsUnticked(t *testing.T) {
 		dfxNew("9", "", "Ship", dfxWed, 1),
 		dfxMilestone(kG, "Deliverable", dfxFri),
 	}, nil)
-	changes, warnings := diffPlans(cur, file, dfxUsers())
+	changes, warnings := diffPlans(cur, file, dfxUsers(), ganFormat{})
 	if len(warnings) != 0 {
 		t.Fatalf("warnings = %+v, want none", warnings)
 	}
@@ -980,7 +980,7 @@ func TestDiff_RequiresNewEnds(t *testing.T) {
 		{Pred: "new:7", Succ: kB},
 		{Pred: kA, Succ: "new:7"},
 	}, PlanAssign{Task: "new:7", Email: "ann@x.com", Name: "Ann"})
-	changes, warnings := diffPlans(cur, file, dfxUsers())
+	changes, warnings := diffPlans(cur, file, dfxUsers(), ganFormat{})
 	// A dependency is grouped under its predecessor, the way the file draws it.
 	dfxWantKeys(t, changes,
 		"dep:"+kA+":new:7",
@@ -1019,7 +1019,7 @@ func TestDiff_UnknownEmail(t *testing.T) {
 		PlanAssign{Task: kA, Email: "Ghost@X.com", Name: "Ghost"},
 		PlanAssign{Task: kA, Email: "ann@x.com", Name: "Ann"},
 	)
-	changes, warnings := diffPlans(cur, file, dfxUsers())
+	changes, warnings := diffPlans(cur, file, dfxUsers(), ganFormat{})
 	dfxWantKeys(t, changes, "assign:"+kA+":ann@x.com")
 	dfxWantWarning(t, warnings, "UNKNOWN_EMAIL", "Design")
 	if len(warnings) != 1 {
@@ -1060,7 +1060,7 @@ func TestDiff_DuplicateRefConsumeAndMark(t *testing.T) {
 	first.FileID = "1"
 	second := dfxTask(kA, "", "Design", dfxTue, 2)
 	second.FileID = "2"
-	changes, warnings := diffPlans(cur, dfxPlan([]PlanTask{first, second}, nil), nil)
+	changes, warnings := diffPlans(cur, dfxPlan([]PlanTask{first, second}, nil), nil, ganFormat{})
 	dfxWantKeys(t, changes, "new:2")
 	dfxWantWarning(t, warnings, "DUPLICATE_ID", "Design")
 	row := dfxRow(t, changes, "new:2")
@@ -1087,7 +1087,7 @@ func TestDiff_DuplicateCurrentRowStillRemoves(t *testing.T) {
 		dfxTask(kA, "", "Design", dfxTue, 1),
 	}, nil)
 	file := dfxPlan([]PlanTask{dfxTask(kA, "", "Design", dfxMon, 1)}, nil)
-	changes, warnings := diffPlans(cur, file, nil)
+	changes, warnings := diffPlans(cur, file, nil, ganFormat{})
 	dfxWantKeys(t, changes, "task:"+kA+":delete")
 	if len(warnings) != 0 {
 		t.Errorf("warnings = %+v, want none", warnings)
@@ -1104,7 +1104,7 @@ func TestDiff_DuplicateCurrentRowStillRemoves(t *testing.T) {
 func TestDiff_DuplicateFileIdKeepsBothRows(t *testing.T) {
 	one := dfxNew("3", "", "One", dfxMon, 1)
 	two := dfxNew("3", "", "Two", dfxTue, 1)
-	changes, warnings := diffPlans(Plan{Weekend: DefaultWeekend}, dfxPlan([]PlanTask{one, two}, nil), nil)
+	changes, warnings := diffPlans(Plan{Weekend: DefaultWeekend}, dfxPlan([]PlanTask{one, two}, nil), nil, ganFormat{})
 	if len(changes) != 2 {
 		t.Fatalf("rows = %s, want two creates", strings.Join(dfxKeys(changes), " "))
 	}
@@ -1136,7 +1136,7 @@ func TestDiff_KindMismatchIsCreate(t *testing.T) {
 		cur := dfxPlan([]PlanTask{dfxMilestone(kG, "Deliverable", dfxFri)}, nil)
 		rogue := dfxTask(kG, "", "Deliverable", dfxFri, 0)
 		rogue.FileID = "1"
-		changes, warnings := diffPlans(cur, dfxPlan([]PlanTask{rogue}, nil), nil)
+		changes, warnings := diffPlans(cur, dfxPlan([]PlanTask{rogue}, nil), nil, ganFormat{})
 		dfxWantKeys(t, changes, "milestone:"+dfxKey(dfxGate)+":delete", "new:1")
 		dfxWantWarning(t, warnings, "UNKNOWN_ID", "Deliverable")
 		// The row says it is a task, so it becomes one: the milestone it
@@ -1153,7 +1153,7 @@ func TestDiff_KindMismatchIsCreate(t *testing.T) {
 		cur := dfxPlan([]PlanTask{dfxTask(kA, "", "Design", dfxMon, 3)}, nil)
 		rogue := dfxMilestone(kA, "Design", dfxMon)
 		rogue.FileID = "1"
-		changes, warnings := diffPlans(cur, dfxPlan([]PlanTask{rogue}, nil), nil)
+		changes, warnings := diffPlans(cur, dfxPlan([]PlanTask{rogue}, nil), nil, ganFormat{})
 		dfxWantKeys(t, changes, "task:"+kA+":delete", "new-milestone:1")
 		dfxWantWarning(t, warnings, "UNKNOWN_ID", "Design")
 	})
@@ -1171,7 +1171,7 @@ func TestDiff_HostileRefCannotStealAKey(t *testing.T) {
 	stealer := dfxTask("new:7", "", "Stealer", dfxMon, 1)
 	stealer.FileID = "9"
 	victim := dfxNew("7", "", "Victim", dfxMon, 1)
-	changes, warnings := diffPlans(cur, dfxPlan([]PlanTask{stealer, victim}, nil), nil)
+	changes, warnings := diffPlans(cur, dfxPlan([]PlanTask{stealer, victim}, nil), nil, ganFormat{})
 	dfxWantKeys(t, changes, "task:"+kA+":delete", "new:9", "new:7")
 	dfxWantWarning(t, warnings, "UNKNOWN_ID", "Stealer")
 	// One row, one complaint: the id is refused once, not once for being malformed
@@ -1225,7 +1225,7 @@ func TestDiff_DepsAreASet(t *testing.T) {
 		{Pred: kC, Succ: kD},
 		{Pred: kB, Succ: kC},
 	})
-	changes, warnings := diffPlans(empty, fileWithNew, nil)
+	changes, warnings := diffPlans(empty, fileWithNew, nil, ganFormat{})
 	dfxWantKeys(t, changes, "dep:"+kB+":"+kA)
 	if len(warnings) != 0 {
 		t.Errorf("warnings = %+v, want none", warnings)
@@ -1248,7 +1248,7 @@ func TestDiff_MilestoneRowsAreNameAndDeadline(t *testing.T) {
 	dfxWantNoChange(t, cur, file, nil)
 
 	file.Tasks[1].Name = "Ship gate"
-	changes, warnings := diffPlans(cur, file, nil)
+	changes, warnings := diffPlans(cur, file, nil, ganFormat{})
 	dfxWantKeys(t, changes, "milestone:"+dfxKey(dfxGate)+":name")
 	if len(warnings) != 0 {
 		t.Errorf("warnings = %+v, want none", warnings)
@@ -1262,7 +1262,7 @@ func TestDiff_MilestoneRowsAreNameAndDeadline(t *testing.T) {
 	}
 
 	file.Tasks[1].Start = day(dfxDay(dfxMon2))
-	changes, _ = diffPlans(cur, file, nil)
+	changes, _ = diffPlans(cur, file, nil, ganFormat{})
 	dfxWantKeys(t, changes,
 		"milestone:"+dfxKey(dfxGate)+":name",
 		"milestone:"+dfxKey(dfxGate)+":dates",
@@ -1289,7 +1289,7 @@ func TestDiff_ClosedOnlyCrossesAtHundred(t *testing.T) {
 	})
 
 	t.Run("closing", func(t *testing.T) {
-		changes, _ := diffPlans(open, closed, nil)
+		changes, _ := diffPlans(open, closed, nil, ganFormat{})
 		dfxWantKeys(t, changes, "task:"+kA+":closed")
 		row := dfxRow(t, changes, "task:"+kA+":closed")
 		if got, want := dfxJSON(t, row.Before), "false"; got != want {
@@ -1301,7 +1301,7 @@ func TestDiff_ClosedOnlyCrossesAtHundred(t *testing.T) {
 	})
 
 	t.Run("reopening", func(t *testing.T) {
-		changes, _ := diffPlans(closed, open, nil)
+		changes, _ := diffPlans(closed, open, nil, ganFormat{})
 		row := dfxRow(t, changes, "task:"+kA+":closed")
 		if got, want := dfxJSON(t, row.Before), "true"; got != want {
 			t.Errorf("before = %s, want %s", got, want)
@@ -1319,7 +1319,7 @@ func TestDiff_ClosedOnlyCrossesAtHundred(t *testing.T) {
 			return p
 		}
 		dfxWantNoChange(t, withHours(8), withHours(8.001), nil)
-		changes, _ := diffPlans(withHours(8), withHours(8.5), nil)
+		changes, _ := diffPlans(withHours(8), withHours(8.5), nil, ganFormat{})
 		dfxWantKeys(t, changes, "task:"+kA+":planned_hours")
 		row := dfxRow(t, changes, "task:"+kA+":planned_hours")
 		if got, want := dfxJSON(t, row.Before), "8"; got != want {
@@ -1338,7 +1338,7 @@ func TestDiff_NameTruncated(t *testing.T) {
 	long := strings.Repeat("é", 201)
 	cur := dfxPlan([]PlanTask{dfxTask(kA, "", "Design", dfxMon, 1)}, nil)
 	file := dfxPlan([]PlanTask{dfxTask(kA, "", long, dfxMon, 1)}, nil)
-	changes, warnings := diffPlans(cur, file, nil)
+	changes, warnings := diffPlans(cur, file, nil, ganFormat{})
 	dfxWantKeys(t, changes, "task:"+kA+":name")
 	dfxWantWarning(t, warnings, "NAME_TRUNCATED", long)
 	row := dfxRow(t, changes, "task:"+kA+":name")
@@ -1373,7 +1373,7 @@ func TestDiff_DeleteRowsFollowFormerNeighbours(t *testing.T) {
 		dfxTask(kA, "", "Design v2", dfxMon, 1),
 		dfxTask(kB, "", "Build", dfxWed, 1),
 	}, nil)
-	changes, _ := diffPlans(cur, file, nil)
+	changes, _ := diffPlans(cur, file, nil, ganFormat{})
 	dfxWantKeys(t, changes,
 		"task:"+kA+":name",
 		"task:"+kDrop+":delete",
@@ -1385,7 +1385,7 @@ func TestDiff_DeleteRowsFollowFormerNeighbours(t *testing.T) {
 		dfxTask(kA, "", "Design", dfxMon, 1),
 	}, nil)
 	file = dfxPlan([]PlanTask{dfxTask(kA, "", "Design v2", dfxMon, 1)}, nil)
-	changes, _ = diffPlans(cur, file, nil)
+	changes, _ = diffPlans(cur, file, nil, ganFormat{})
 	dfxWantKeys(t, changes, "task:"+kDrop+":delete", "task:"+kA+":name")
 
 	// A create inserted above the lost row. Scratch used to sit right after Build,
@@ -1403,7 +1403,7 @@ func TestDiff_DeleteRowsFollowFormerNeighbours(t *testing.T) {
 			dfxTask(kA, "", "Design v2", dfxMon, 1),
 			dfxTask(kB, "", "Build v2", dfxTue, 1),
 		}, nil)
-		changes, warnings := diffPlans(cur, file, nil)
+		changes, warnings := diffPlans(cur, file, nil, ganFormat{})
 		if len(warnings) != 0 {
 			t.Fatalf("warnings = %+v, want none", warnings)
 		}
@@ -1428,7 +1428,7 @@ func TestDiff_DeleteRowsFollowFormerNeighbours(t *testing.T) {
 			dfxTask(kB, "", "Build", dfxTue, 1),
 			dfxTask(kA, "", "Design v2", dfxMon, 1),
 		}, nil)
-		changes, warnings := diffPlans(cur, file, nil)
+		changes, warnings := diffPlans(cur, file, nil, ganFormat{})
 		if len(warnings) != 0 {
 			t.Fatalf("warnings = %+v, want none", warnings)
 		}
@@ -1462,7 +1462,7 @@ func TestDiff_RowOrder(t *testing.T) {
 		dfxMilestone(kG, "Deliverable", dfxFri),
 	}, nil, PlanAssign{Task: "new:9", Email: "ann@x.com", Name: "Ann"})
 
-	changes, warnings := diffPlans(cur, file, dfxUsers())
+	changes, warnings := diffPlans(cur, file, dfxUsers(), ganFormat{})
 	if len(warnings) != 0 {
 		t.Fatalf("warnings = %+v, want none", warnings)
 	}
@@ -1500,7 +1500,7 @@ func TestDiff_WbsFromTheCurrentTree(t *testing.T) {
 		dfxTask(kQ, "", "Phase 2 v2", dfxWed, 1),
 		dfxNew("9", "", "Extra", dfxThu, 1),
 	}, nil)
-	changes, warnings := diffPlans(cur, file, nil)
+	changes, warnings := diffPlans(cur, file, nil, ganFormat{})
 	if len(warnings) != 0 {
 		t.Fatalf("warnings = %+v, want none", warnings)
 	}
@@ -1540,7 +1540,7 @@ func TestDiff_DeletionOfATaskNeverSubsumesItsRows(t *testing.T) {
 		}, []PlanDep{{Pred: kA, Succ: kB}},
 			PlanAssign{Task: kA, Email: "ann@x.com", Name: "Ann"})
 		file := dfxPlan([]PlanTask{dfxTask(kB, "", "Build", dfxTue, 1)}, nil)
-		changes, warnings := diffPlans(cur, file, dfxUsers())
+		changes, warnings := diffPlans(cur, file, dfxUsers(), ganFormat{})
 		// The task's own removal first: nothing is ticked, so the default still
 		// keeps the task, its link and its person, and each loss is ticked on its own.
 		dfxWantKeys(t, changes,
@@ -1574,7 +1574,7 @@ func TestDiff_DeletionOfATaskNeverSubsumesItsRows(t *testing.T) {
 			dfxMilestone(kG, "Deliverable", dfxFri),
 		}, []PlanDep{{Pred: kA, Succ: kG}})
 		file := dfxPlan([]PlanTask{dfxMilestone(kG, "Deliverable", dfxFri)}, nil)
-		changes, warnings := diffPlans(cur, file, nil)
+		changes, warnings := diffPlans(cur, file, nil, ganFormat{})
 		dfxWantKeys(t, changes,
 			"task:"+kA+":milestone_id",
 			"task:"+kA+":delete",
@@ -1607,7 +1607,7 @@ func TestDiff_DeletionOfATaskNeverSubsumesItsRows(t *testing.T) {
 			dfxNew("9", "", "Design", dfxMon, 1),
 			dfxMilestone(kG, "Deliverable", dfxFri),
 		}, []PlanDep{{Pred: "new:9", Succ: kG}})
-		changes, warnings := diffPlans(cur, file, nil)
+		changes, warnings := diffPlans(cur, file, nil, ganFormat{})
 		// The file's Design is a new row (its eerp_id is absent, so it never matched),
 		// EERP's Design is offered for removal with its deliverable, and the new row
 		// carries its own deliverable inside its create.
@@ -1656,7 +1656,7 @@ func TestDiff_AssignmentsOfUnknownRowsAreIgnored(t *testing.T) {
 		dfxTask(kA, "", "Design", dfxMon, 1),
 		dfxNewMilestone("9", "Ship", dfxFri),
 	}, nil, PlanAssign{Task: "new-milestone:9", Email: "ann@x.com", Name: "Ann"})
-	changes, warnings := diffPlans(dfxPlan([]PlanTask{dfxTask(kA, "", "Design", dfxMon, 1)}, nil), added, dfxUsers())
+	changes, warnings := diffPlans(dfxPlan([]PlanTask{dfxTask(kA, "", "Design", dfxMon, 1)}, nil), added, dfxUsers(), ganFormat{})
 	dfxWantKeys(t, changes, "new-milestone:9")
 	if len(warnings) != 0 {
 		t.Errorf("warnings = %+v, want none", warnings)
@@ -1765,11 +1765,11 @@ func TestDiff_NestedDependency(t *testing.T) {
 	nested := []PlanDep{{Pred: kC, Succ: kA}, {Pred: kA, Succ: kB}}
 
 	t.Run("EERP's own is no removal", func(t *testing.T) {
-		changes, warnings := diffPlans(dfxPlan(tasks, append(nested, PlanDep{Pred: kC, Succ: kD})), dfxPlan(tasks, []PlanDep{{Pred: kC, Succ: kD}}), nil)
+		changes, warnings := diffPlans(dfxPlan(tasks, append(nested, PlanDep{Pred: kC, Succ: kD})), dfxPlan(tasks, []PlanDep{{Pred: kC, Succ: kD}}), nil, ganFormat{})
 		dfxWantEmpty(t, changes, warnings)
 	})
 	t.Run("the file's is reported, not imported", func(t *testing.T) {
-		changes, warnings := diffPlans(dfxPlan(tasks, nil), dfxPlan(tasks, append(nested, PlanDep{Pred: kC, Succ: kD})), nil)
+		changes, warnings := diffPlans(dfxPlan(tasks, nil), dfxPlan(tasks, append(nested, PlanDep{Pred: kC, Succ: kD})), nil, ganFormat{})
 		dfxWantKeys(t, changes, "dep:"+kC+":"+kD)
 		dfxWantWarning(t, warnings, "DEP_NESTED", "Outline")
 		dfxWantWarning(t, warnings, "DEP_NESTED", "Design")
@@ -1777,4 +1777,144 @@ func TestDiff_NestedDependency(t *testing.T) {
 			t.Errorf("%d warnings, want two: %+v", len(warnings), warnings)
 		}
 	})
+}
+
+// nameOnlyFormat carries task names and nothing else.
+type nameOnlyFormat struct{ ganFormat }
+
+func (nameOnlyFormat) Carries(f Field) bool { return f == FieldName }
+
+// TestDiff_FormatCarries: a field the format does not carry is never compared, so a
+// file that cannot hold it never offers to change it (Review Focus 1).
+func TestDiff_FormatCarries(t *testing.T) {
+	kA := dfxKey(dfxA)
+	cur := dfxPlan([]PlanTask{dfxTask(kA, "", "Design", dfxMon, 2)}, nil)
+	file := dfxPlan([]PlanTask{dfxTask(kA, "", "Design v2", dfxTue, 3)}, nil)
+	file.Tasks[0].PlannedHours = 9
+	changes, _ := diffPlans(cur, file, nil, nameOnlyFormat{})
+	dfxWantKeys(t, changes, changeKey(kA, fieldName))
+}
+
+// ── MS Project extras (priority, notes, baselines, capacity) ─────────────────
+
+func dfxOne(mod func(*PlanTask)) Plan {
+	t := dfxTask(dfxKey(dfxA), "", "Design", dfxMon, 2)
+	mod(&t)
+	return dfxPlan([]PlanTask{t}, nil)
+}
+
+func TestDiff_Priority(t *testing.T) {
+	cur, file := dfxOne(func(*PlanTask) {}), dfxOne(func(t *PlanTask) { t.Priority = true })
+	changes, _ := diffPlans(cur, file, nil, mspdiFormat{})
+	dfxWantKeys(t, changes, changeKey(dfxKey(dfxA), fieldPriority))
+	if r := changes[0]; r.Kind != kindUpdate || r.Before != false || r.After != true || !r.DefaultSelected {
+		t.Errorf("priority row = %+v", r)
+	}
+	// .gan carries no priority, so the same plans say nothing (Review Focus 1).
+	changes, _ = diffPlans(cur, file, nil, ganFormat{})
+	dfxWantNoRows(t, changes)
+}
+
+func TestDiff_DescriptionNormalized(t *testing.T) {
+	cur := dfxOne(func(t *PlanTask) { t.Notes = "line 1\nline 2" })
+	same := dfxOne(func(t *PlanTask) { t.Notes = "line 1\r\nline 2  \r\n" })
+	changes, _ := diffPlans(cur, same, nil, mspdiFormat{})
+	dfxWantNoRows(t, changes)
+
+	changed := dfxOne(func(t *PlanTask) { t.Notes = "line 1\nline 3" })
+	changes, _ = diffPlans(cur, changed, nil, mspdiFormat{})
+	dfxWantKeys(t, changes, changeKey(dfxKey(dfxA), fieldDescription))
+	if changes[0].After != "line 1\nline 3" {
+		t.Errorf("After = %q", changes[0].After)
+	}
+}
+
+// TestDiff_LongNotesTruncated: Review Focus 5.
+func TestDiff_LongNotesTruncated(t *testing.T) {
+	long := strings.Repeat("{\\rtf1 é}", 1000) // markup is text: it is imported as written
+	file := dfxOne(func(t *PlanTask) { t.Notes = long })
+	changes, warnings := diffPlans(dfxOne(func(*PlanTask) {}), file, nil, mspdiFormat{})
+	row := dfxRow(t, changes, changeKey(dfxKey(dfxA), fieldDescription))
+	if got := []rune(row.After.(string)); len(got) != descriptionLimit || string(got) != string([]rune(long)[:descriptionLimit]) {
+		t.Errorf("After holds %d characters, want the first %d", len(got), descriptionLimit)
+	}
+	dfxWantWarning(t, warnings, warnNotesTruncated, "Design")
+}
+
+func dfxBaselines(tasks map[string]BaselineTask, n int) []PlanBaseline {
+	return []PlanBaseline{{Number: n, Tasks: tasks}}
+}
+
+func TestDiff_BaselineChangedIsCreate(t *testing.T) {
+	kA := dfxKey(dfxA)
+	cur := dfxOne(func(*PlanTask) {})
+	cur.Baselines = dfxBaselines(map[string]BaselineTask{kA: {Start: dfxDay(dfxMon), Duration: 2, Work: 8}}, 0)
+	same := dfxOne(func(*PlanTask) {})
+	same.Baselines = dfxBaselines(map[string]BaselineTask{kA: {Start: dfxDay(dfxMon), Duration: 2, Work: 8.001}}, 0)
+	changes, _ := diffPlans(cur, same, nil, mspdiFormat{})
+	dfxWantNoRows(t, changes)
+
+	moved := dfxOne(func(*PlanTask) {})
+	moved.Baselines = append(dfxBaselines(map[string]BaselineTask{kA: {Start: dfxDay(dfxTue), Duration: 2, Work: 8}}, 0),
+		PlanBaseline{Number: 1, Tasks: map[string]BaselineTask{kA: {Start: dfxDay(dfxMon), Duration: 1, Work: 1}}})
+	changes, _ = diffPlans(cur, moved, nil, mspdiFormat{})
+	dfxWantKeys(t, changes, "baseline:0", "baseline:1")
+	r := changes[0]
+	v, ok := r.After.(baselineValue)
+	if r.Kind != kindBaselineCreate || !r.DefaultSelected || !ok || v.Tasks != 1 ||
+		!strings.HasPrefix(v.Name, "Baseline 0 (imported ") {
+		t.Errorf("baseline row = %+v", r)
+	}
+	changes, _ = diffPlans(cur, moved, nil, ganFormat{})
+	dfxWantNoRows(t, changes)
+}
+
+func TestDiff_BaselineMissingInFileIsNothing(t *testing.T) {
+	kA := dfxKey(dfxA)
+	cur := dfxOne(func(*PlanTask) {})
+	cur.Baselines = append(dfxBaselines(map[string]BaselineTask{kA: {Start: dfxDay(dfxMon), Duration: 2}}, 0),
+		PlanBaseline{Number: 1, Tasks: map[string]BaselineTask{kA: {Start: dfxDay(dfxMon), Duration: 2}}})
+	changes, _ := diffPlans(cur, dfxOne(func(*PlanTask) {}), nil, mspdiFormat{})
+	dfxWantNoRows(t, changes)
+}
+
+func TestDiff_BaselineRequiresNewTask(t *testing.T) {
+	kA := dfxKey(dfxA)
+	cur := dfxOne(func(*PlanTask) {})
+	file := dfxPlan([]PlanTask{dfxTask(kA, "", "Design", dfxMon, 2), dfxNew("7", "", "Extra", dfxTue, 1)}, nil)
+	file.Baselines = dfxBaselines(map[string]BaselineTask{
+		kA: {Start: dfxDay(dfxMon), Duration: 2}, "new:7": {Start: dfxDay(dfxTue), Duration: 1},
+	}, 0)
+	changes, _ := diffPlans(cur, file, nil, mspdiFormat{})
+	r := dfxRow(t, changes, "baseline:0")
+	if len(r.Requires) != 1 || r.Requires[0] != "new:7" || r.After.(baselineValue).Tasks != 2 {
+		t.Errorf("baseline row = %+v, want 2 tasks requiring new:7", r)
+	}
+}
+
+func dfxCapacity(hours float64) Plan {
+	p := dfxOne(func(*PlanTask) {})
+	p.Assignments = []PlanAssign{{Task: dfxKey(dfxA), Email: "ann@x.com", Name: "Ann"}}
+	p.Resources = []PlanResource{{Email: "ann@x.com", Name: "Ann", HoursPerWeek: hours}}
+	return p
+}
+
+func TestDiff_CapacityUnticked(t *testing.T) {
+	changes, _ := diffPlans(dfxCapacity(40), dfxCapacity(24), dfxUsers(), mspdiFormat{})
+	dfxWantKeys(t, changes, "capacity:ann@x.com")
+	if r := changes[0]; r.Kind != kindCapacityUpdate || r.DefaultSelected || r.Before != 40.0 || r.After != 24.0 || r.Task != "Ann" {
+		t.Errorf("capacity row = %+v", r)
+	}
+	changes, _ = diffPlans(dfxCapacity(40), dfxCapacity(24), dfxUsers(), ganFormat{})
+	dfxWantNoRows(t, changes)
+}
+
+func TestDiff_CapacityRange(t *testing.T) {
+	for _, hours := range []float64{0, -1, 168.5} {
+		changes, warnings := diffPlans(dfxCapacity(40), dfxCapacity(hours), dfxUsers(), mspdiFormat{})
+		dfxWantNoRows(t, changes)
+		dfxWantWarning(t, warnings, warnCapacityRange, "Ann")
+	}
+	changes, _ := diffPlans(dfxCapacity(40), dfxCapacity(168), dfxUsers(), mspdiFormat{})
+	dfxWantKeys(t, changes, "capacity:ann@x.com")
 }

@@ -631,3 +631,20 @@ describe('WBS milestones (deliverables)', () => {
     }, { timeout: 2000 })
   })
 })
+
+describe('WBS plan exchange', () => {
+  const exchange = {
+    scopeField: 'project_id',
+    scopeEntity: 'project',
+    formats: [{ key: 'mspdi', label: 'Microsoft Project (.xml)', accept: '.xml' }],
+  }
+  it('offers the plan file menu on a pinned project only', async () => {
+    setup(undefined, true, { exchange, serverOptions: { filter: { project_id: 'p1' } } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Plan file' }))
+    expect(screen.getByRole('menuitem', { name: 'Export Microsoft Project (.xml)' })).toHaveAttribute('href', '/api/exchange/project/p1/mspdi/export')
+    cleanup()
+    setup(undefined, true, { exchange })
+    await act(async () => {})
+    expect(screen.queryByRole('button', { name: 'Plan file' })).toBeNull()
+  })
+})
