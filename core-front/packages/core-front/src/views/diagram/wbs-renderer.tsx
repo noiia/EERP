@@ -9,7 +9,7 @@ import Typography from '@mui/material/Typography'
 import { MarkerType, Position, type Connection, type Edge, type Node } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { serializeError, toApiError, type SerializedError } from '../../api/errors'
-import type { WbsDeliverablesConfig } from '../../api/view-fields'
+import { pinnedId, type GanttExchangeConfig, type WbsDeliverablesConfig } from '../../api/view-fields'
 import type { EntityListOptions } from '../../api/list-options'
 import { usePermission } from '../../auth/Can'
 import { useT } from '../../i18n/translate'
@@ -24,6 +24,7 @@ import { layoutWbs } from './auto-layout'
 import { DELIVERABLE_BOX_SIZE, type DeliverableBoxData } from './deliverable-box'
 import { DiagramCanvas, DiagramCapNotice, DiagramLoading, useDiagramRecords } from './diagram-canvas'
 import { ToolButton } from './toolbar'
+import { ExchangeMenu } from '../exchange/exchange-menu'
 import { useUndoHistory } from './history'
 import type { Point } from './collide'
 import { colorTagsFieldOf, useRecordColors } from '../use-record-colors'
@@ -73,6 +74,8 @@ export interface WbsRendererProps<T extends HasId> {
   deliverables?: WbsDeliverablesConfig
   onRecordsChange?: (records: T[]) => void
   serverOptions?: EntityListOptions
+  /** Set ⇒ the pinned scope's plan exchange menu (ADR-042), in the canvas toolbar. */
+  exchange?: GanttExchangeConfig
   /** ViewModeDefaults.colorTagsField: each box shows its color groups as a bar along its top. */
   colorTagsField?: string
 }
@@ -89,6 +92,7 @@ export function WbsRenderer<T extends HasId>({
   deliverables,
   onRecordsChange,
   serverOptions,
+  exchange,
   colorTagsField,
 }: WbsRendererProps<T>) {
   const t = useT()
@@ -97,6 +101,11 @@ export function WbsRenderer<T extends HasId>({
   const { entity, formPath } = descriptor
   const canWrite = usePermission(`${entity}:${entity}:write`)
   const loaded = useDiagramRecords(entity, serverOptions, initialData)
+  const exchangePin = exchange ? pinnedId(serverOptions, exchange.scopeField) : null
+  const exchangeMenu =
+    exchange && exchangePin ? (
+      <ExchangeMenu config={exchange} scopeId={exchangePin} variant="menuItems" onImported={loaded.reload} />
+    ) : null
   const [rows, setRows] = useState(loaded.records)
   const { colors } = useRecordColors(entity, colorTagsFieldOf(descriptor, colorTagsField), rows.map((r) => r.id))
   const [seen, setSeen] = useState(loaded.records)
@@ -459,9 +468,12 @@ export function WbsRenderer<T extends HasId>({
         history={history}
         legend={[{ color: FOLDED_COLOR, label: t('Folded branch') }]}
         toolbarExtra={
-          layers.length ? (
-            <ToolButton icon="layer-group" label={t('Layers')} aria-haspopup="menu" onClick={(e) => setLayersAnchor(e.currentTarget)} />
-          ) : undefined
+          <>
+            {layers.length ? (
+              <ToolButton icon="layer-group" label={t('Layers')} aria-haspopup="menu" onClick={(e) => setLayersAnchor(e.currentTarget)} />
+            ) : null}
+            {exchangeMenu}
+          </>
         }
       />
       <Menu

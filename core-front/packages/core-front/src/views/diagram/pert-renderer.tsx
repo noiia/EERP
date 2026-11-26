@@ -13,7 +13,7 @@ import type { Connection, Edge, MarkerType, Node } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { serializeError, toApiError, type SerializedError } from '../../api/errors'
 import type { EntityListOptions } from '../../api/list-options'
-import type { GanttDependenciesConfig } from '../../api/view-fields'
+import { pinnedId, type GanttExchangeConfig, type GanttDependenciesConfig } from '../../api/view-fields'
 import { usePermission } from '../../auth/Can'
 import { useT } from '../../i18n/translate'
 import { erpPath } from '../../navigation'
@@ -27,6 +27,7 @@ import type { EntityActions, HasId } from '../stores'
 import { layoutPert, layoutRectangle } from './auto-layout'
 import { DiagramCanvas, DiagramCapNotice, DiagramLoading, useDiagramRecords } from './diagram-canvas'
 import { ToolButton } from './toolbar'
+import { ExchangeMenu } from '../exchange/exchange-menu'
 import { useUndoHistory } from './history'
 import { computePert, offsetToDate } from './pert'
 import { colorTagsFieldOf, useRecordColors } from '../use-record-colors'
@@ -60,6 +61,8 @@ export interface PertRendererProps<T extends HasId> {
   boxFields?: (string | null | undefined)[]
   onRecordsChange?: (records: T[]) => void
   serverOptions?: EntityListOptions
+  /** Set ⇒ the pinned scope's plan exchange menu (ADR-042), in the canvas toolbar. */
+  exchange?: GanttExchangeConfig
   /** ViewModeDefaults.colorTagsField: each box shows its color groups as a bar along its top. */
   colorTagsField?: string
 }
@@ -76,6 +79,7 @@ export function PertRenderer<T extends HasId>({
   boxFields = ['name'],
   onRecordsChange,
   serverOptions,
+  exchange,
   colorTagsField,
 }: PertRendererProps<T>) {
   const t = useT()
@@ -90,6 +94,11 @@ export function PertRenderer<T extends HasId>({
   // Arrows are rows of the dependency entity: its own write right gates them.
   const canLink = usePermission(`${dep.entity}:${dep.entity}:write`)
   const loaded = useDiagramRecords(entity, serverOptions, initialData)
+  const exchangePin = exchange ? pinnedId(serverOptions, exchange.scopeField) : null
+  const exchangeMenu =
+    exchange && exchangePin ? (
+      <ExchangeMenu config={exchange} scopeId={exchangePin} variant="menuItems" onImported={loaded.reload} />
+    ) : null
   const [rows, setRows] = useState(loaded.records)
   const { colors } = useRecordColors(entity, colorTagsFieldOf(descriptor, colorTagsField), rows.map((r) => r.id))
   const [seen, setSeen] = useState(loaded.records)
@@ -327,7 +336,10 @@ export function PertRenderer<T extends HasId>({
           simpleExport
           legend={[{ color: red, label: t('Critical path') }]}
           toolbarExtra={
-            <ToolButton icon="route" label={t('Critical path only')} aria-pressed onClick={() => setCriticalOnly(false)} />
+            <>
+              <ToolButton icon="route" label={t('Critical path only')} aria-pressed onClick={() => setCriticalOnly(false)} />
+              {exchangeMenu}
+            </>
           }
         />
       ) : (
@@ -368,6 +380,7 @@ export function PertRenderer<T extends HasId>({
             />
             <ToolButton icon="route" label={t('Critical path only')} aria-pressed={false} disabled={!criticalIds.length} onClick={() => setCriticalOnly(true)} />
             {pert.hiddenLinks > 0 ? <Chip size="small" label={pert.hiddenLinks === 1 ? t('1 hidden link') : t('{n} hidden links').replace('{n}', String(pert.hiddenLinks))} /> : null}
+            {exchangeMenu}
           </>
         }
       />

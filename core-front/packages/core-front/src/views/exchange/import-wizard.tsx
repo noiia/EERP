@@ -60,6 +60,8 @@ const KIND_LABEL: Record<string, string> = {
   milestone_create: 'Create milestone',
   milestone_update: 'Update milestone',
   milestone_delete: 'Delete milestone',
+  baseline_create: 'Baseline',
+  capacity_update: 'Capacity',
 }
 
 /** The field a row reports, in the words the review list shows. */
@@ -70,6 +72,25 @@ const FIELD_LABEL: Record<string, string> = {
   closed: 'Closed',
   milestone_id: 'Milestone',
   parent: 'Parent',
+  priority: 'Priority',
+  description: 'Description',
+  hours_per_week: 'Capacity',
+}
+
+/** The exact refusal of a `.mpp` pick: MS Project's binary format is never uploaded. */
+export const MPP_MESSAGE =
+  "MS Project's .mpp format can't be read. In MS Project, use File → Save As → XML Format, then pick that file."
+
+/** A long text side of a description row: three lines, unless the reader opened it. */
+function ClampedText({ text, open }: { text: string; open: boolean }) {
+  return (
+    <Typography
+      variant="body2"
+      sx={open ? { whiteSpace: 'pre-wrap' } : { whiteSpace: 'pre-wrap', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+    >
+      {text}
+    </Typography>
+  )
 }
 
 /** A whole day read as the file's own day, never shifted by the machine's zone. */
@@ -163,6 +184,8 @@ export function ImportWizard({ open, onClose, onApplied, config, scopeId, format
   const [highlight, setHighlight] = useState<ReadonlySet<string>>(() => new Set())
   const [stale, setStale] = useState(false)
   const [applied, setApplied] = useState<number | null>(null)
+  const [mpp, setMpp] = useState(false)
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
   // The same file is posted twice (preview, then apply) and again after a 409: held in
   // state, not re-read from the input, which a re-render would have cleared.
   const inputRef = useRef<HTMLInputElement>(null)
@@ -245,6 +268,8 @@ export function ImportWizard({ open, onClose, onApplied, config, scopeId, format
     setStale(false)
     setHighlight(new Set())
     setSel(new Set())
+    setMpp(false)
+    setExpanded(new Set())
   }
 
   /** One group of the review list: every row about one task, in the preview's order.
@@ -295,10 +320,13 @@ export function ImportWizard({ open, onClose, onApplied, config, scopeId, format
                   disabled={busy}
                   onChange={(e) => {
                     const pick = e.target.files?.[0]
-                    if (pick) void runPreview(pick)
+                    // A .mpp never leaves the browser: Go could not read it anyway.
+                    setMpp(!!pick && /\.mpp$/i.test(pick.name))
+                    if (pick && !/\.mpp$/i.test(pick.name)) void runPreview(pick)
                   }}
                 />
               </Box>
+              {mpp ? <Banner status="warning" title={t(MPP_MESSAGE)} /> : null}
               {tooLarge ? (
                 <Banner status="warning" title={t('The file is too large.')} />
               ) : null}
@@ -393,6 +421,41 @@ export function ImportWizard({ open, onClose, onApplied, config, scopeId, format
                             onChange={(e) => setSel(toggle(changes, sel, c.key, e.target.checked))}
                           />
                           <Chip size="small" label={t(KIND_LABEL[c.kind] ?? c.kind)} />
+                          {c.kind === 'baseline_create' ? (
+                            <Typography variant="body2">
+                              {t('Create “{name}” ({n} tasks)')
+                                .replace('{name}', String((c.after as { name?: string } | null)?.name ?? c.task))
+                                .replace('{n}', String((c.after as { tasks?: number } | null)?.tasks ?? 0))}
+                            </Typography>
+                          ) : c.kind === 'capacity_update' ? (
+                            <>
+                              <Typography variant="body2">
+                                {`${valueText(c.before)} ${t('h/week')} → ${valueText(c.after)} ${t('h/week')}`}
+                              </Typography>
+                              <Chip size="small" variant="outlined" label={t('Workspace-wide')} />
+                            </>
+                          ) : c.field === 'description' ? (
+                            <Box sx={{ minWidth: 0, flex: 1 }}>
+                              <Typography variant="body2">{t(FIELD_LABEL.description)}</Typography>
+                              <ClampedText text={valueText(c.before)} open={expanded.has(c.key)} />
+                              <Typography variant="body2">→</Typography>
+                              <ClampedText text={valueText(c.after)} open={expanded.has(c.key)} />
+                              <Button
+                                size="small"
+                                onClick={() =>
+                                  setExpanded((prev) => {
+                                    const next = new Set(prev)
+                                    if (next.has(c.key)) next.delete(c.key)
+                                    else next.add(c.key)
+                                    return next
+                                  })
+                                }
+                              >
+                                {expanded.has(c.key) ? t('Show less') : t('Show all')}
+                              </Button>
+                            </Box>
+                          ) : (
+                          <>
                           {c.field ? (
                             <Typography variant="body2" sx={{ minWidth: 88 }}>
                               {t(FIELD_LABEL[c.field] ?? c.field)}
@@ -403,6 +466,8 @@ export function ImportWizard({ open, onClose, onApplied, config, scopeId, format
                           ) : null}
                           {c.before != null && c.after != null ? <Typography variant="body2">→</Typography> : null}
                           {c.after != null ? <Typography variant="body2">{valueText(c.after)}</Typography> : null}
+                          </>
+                          )}
                           {c.was_unscheduled ? (
                             <Typography variant="caption" color="text.secondary">
                               {t('(was unscheduled)')}

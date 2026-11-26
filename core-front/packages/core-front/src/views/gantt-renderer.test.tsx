@@ -1407,12 +1407,11 @@ describe('GanttRenderer', () => {
       expect(await screen.findByText('Import GanttProject (.gan)')).toBeInTheDocument()
     })
 
-    it('on phone Export is an icon button and Import sits in the More menu', async () => {
+    it('on phone Export and Import are icon buttons', async () => {
       setViewportWidth(390)
       registerKanbanColumnsGuard('test.exchange', async () => true)
       renderExchange(PINNED, exchangeCfg)
       expect(screen.getByRole('button', { name: 'Export' })).not.toHaveTextContent('Export')
-      expect(screen.queryByRole('button', { name: 'Import' })).toBeNull()
       fireEvent.click(screen.getByRole('button', { name: 'Export' }))
       expect(await screen.findByRole('menuitem', { name: 'GanttProject (.gan)' })).toHaveAttribute(
         'href',
@@ -1421,8 +1420,9 @@ describe('GanttRenderer', () => {
       cleanup()
       setViewportWidth(390)
       renderExchange(PINNED, exchangeCfg)
-      fireEvent.click(await screen.findByRole('button', { name: 'More' }))
-      fireEvent.click(await screen.findByRole('menuitem', { name: 'Import' }))
+      const importButton = await screen.findByRole('button', { name: 'Import' })
+      expect(importButton).not.toHaveTextContent('Import')
+      fireEvent.click(importButton)
       expect(await screen.findByRole('menuitem', { name: 'MS Project (MSPDI)' })).toBeInTheDocument()
     })
   })

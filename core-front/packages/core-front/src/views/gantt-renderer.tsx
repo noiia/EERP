@@ -21,7 +21,7 @@ import { erpPath } from '../navigation'
 import { usePermission } from '../auth/Can'
 import { serializeError, toApiError, type SerializedError } from '../api/errors'
 import { mergeListOptions, type EntityListOptions } from '../api/list-options'
-import { pinnedId, type ExchangeFormat, type GanttBaselineConfig, type GanttDependenciesConfig, type GanttExchangeConfig, type GanttMilestonesConfig, type GanttScheduleConfig } from '../api/view-fields'
+import { pinnedId, type GanttBaselineConfig, type GanttDependenciesConfig, type GanttExchangeConfig, type GanttMilestonesConfig, type GanttScheduleConfig } from '../api/view-fields'
 import { useT } from '../i18n/translate'
 import { ganttTree } from './gantt-tree'
 import { GanttRoadmap } from './gantt-roadmap'
@@ -30,10 +30,9 @@ import type { ViewDescriptor } from './descriptor'
 import { BannerScope, BannerSlot } from './banner'
 import { colorStripes } from './color-tags'
 import { ErrorAlert } from './error-alert'
-import { ImportWizard } from './exchange/import-wizard'
+import { ExchangeMenu, exchangeExportUrl } from './exchange/exchange-menu'
 import { byPrefixAndName, FontAwesomeIcon } from './icons'
 import { ExportMenu, ToolButton } from './diagram/toolbar'
-import { kanbanColumnsGuard } from './kanban-columns'
 import { orderedFields, orderLabel } from './layout-fields'
 import { useRelationOps } from './relation-ops'
 import { RelationColorTagsWidget } from './relation-widgets'
@@ -972,31 +971,7 @@ export function GanttRenderer<T extends HasId>({
   // the module names a guard, resolved exactly like the OBS renderer's `canEdit`
   // (same registry, same scope id and ops arguments) — and Go re-checks it anyway.
   const exchangePin = exchange ? pinnedId(serverOptions, exchange.scopeField) : null
-  const [canImport, setCanImport] = useState(false)
-  useEffect(() => {
-    const name = exchange?.canImport
-    if (!name || exchangePin == null) {
-      setCanImport(false)
-      return
-    }
-    const guard = kanbanColumnsGuard(name)
-    if (!guard) {
-      setCanImport(false)
-      return
-    }
-    let cancelled = false
-    guard(exchangePin, relationOps).then(
-      (ok) => !cancelled && setCanImport(ok),
-      () => !cancelled && setCanImport(false),
-    )
-    return () => {
-      cancelled = true
-    }
-  }, [exchange?.canImport, exchangePin, relationOps])
-  const [importAnchor, setImportAnchor] = useState<HTMLElement | null>(null)
-  const [importFormat, setImportFormat] = useState<ExchangeFormat | null>(null)
-  const exchangeUrl = (key: string, action: string) =>
-    `/api/exchange/${exchange?.scopeEntity}/${encodeURIComponent(exchangePin ?? '')}/${key}/${action}`
+
 
   const finishRef = useRef(finishDrag)
   finishRef.current = finishDrag
@@ -1257,15 +1232,15 @@ export function GanttRenderer<T extends HasId>({
                       key: `plan-${f.key}`,
                       label: t(f.label),
                       icon: 'file-export',
-                      href: exchangeUrl(f.key, 'export') + (collapsed.length ? `?collapsed=${encodeURIComponent(collapsed.join(','))}` : ''),
+                      href: exchangeExportUrl(exchange, exchangePin, f.key) + (collapsed.length ? `?collapsed=${encodeURIComponent(collapsed.join(','))}` : ''),
                     }))
                   : []),
               ]}
             />
-            {!phone && exchangePin && canImport ? (
-              <ToolButton icon="upload" label={t('Import')} aria-haspopup="menu" onClick={(e) => setImportAnchor(e.currentTarget)} />
+            {exchange && exchangePin ? (
+              <ExchangeMenu config={exchange} scopeId={exchangePin} variant="toolbar" onImported={() => setReloads((n) => n + 1)} />
             ) : null}
-            {phone && (schedulePin || baselinePin || (exchangePin && canImport)) ? (
+            {phone && (schedulePin || baselinePin) ? (
               <IconButton aria-label={t('More')} sx={{ minWidth: 40, minHeight: 40 }} onClick={(e) => setMoreAnchor(e.currentTarget)}>
                 <FontAwesomeIcon icon={byPrefixAndName.fas['ellipsis-vertical']} />
               </IconButton>
@@ -1588,34 +1563,7 @@ export function GanttRenderer<T extends HasId>({
               ))}
             </>
           ) : null}
-          {exchangePin && canImport ? (
-            <MenuItem onClick={() => { const el = moreAnchor; setMoreAnchor(null); setImportAnchor(el) }}>
-              {t('Import')}
-            </MenuItem>
-          ) : null}
         </Menu>
-      ) : null}
-
-      {exchange && exchangePin ? (
-        <>
-          <Menu open={!!importAnchor} anchorEl={importAnchor} onClose={() => setImportAnchor(null)}>
-            {exchange.formats.map((f) => (
-              <MenuItem key={f.key} onClick={() => { setImportAnchor(null); setImportFormat(f) }}>
-                {t(f.label)}
-              </MenuItem>
-            ))}
-          </Menu>
-          {importFormat ? (
-            <ImportWizard
-              open
-              onClose={() => setImportFormat(null)}
-              onApplied={() => setReloads((n) => n + 1)}
-              config={exchange}
-              scopeId={exchangePin}
-              format={importFormat}
-            />
-          ) : null}
-        </>
       ) : null}
     </Box>
   )
