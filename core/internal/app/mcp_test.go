@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"mime/multipart"
+	"net"
 	"net/http/httptest"
 	"net/url"
 	"strings"
@@ -175,6 +176,14 @@ func TestApp_PublicLinkDownload(t *testing.T) {
 	c := buildApp(t)
 	if !pictures.S3Configured(c.a.cfg) {
 		t.Skip("teams file routes need s3_*")
+	}
+	// CI's config names s3_* but runs no Garage: skip like pictures' devStore.
+	if u, err := url.Parse(c.a.cfg.S3Endpoint); err != nil {
+		t.Fatalf("parse s3_endpoint: %v", err)
+	} else if conn, err := net.DialTimeout("tcp", u.Host, time.Second); err != nil {
+		t.Skipf("garage unreachable at %s", u.Host)
+	} else {
+		_ = conn.Close()
 	}
 	code, body := c.do("POST", "/api/v1/teams", map[string]string{"name": "links-" + t.Name()})
 	team, _ := decode(t, body)["id"].(string)
