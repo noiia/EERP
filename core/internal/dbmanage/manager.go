@@ -29,7 +29,7 @@ type Manager struct {
 	presenceHub *presence.Hub
 	objects     pictures.ObjectStore // nil when s3_* isn't configured
 	provisioner Provisioner
-	conn        connInfo
+	conn        Conn
 	masterKey   string
 	configPath  string
 	pool        func(dsn string) orm.Config // cfg.PoolConfig: size + timings for a standby pool
@@ -57,7 +57,7 @@ func NewManager(
 	cfg *types.Config,
 	configPath string,
 ) *Manager {
-	conn := connInfo{Host: cfg.DbHost, Port: cfg.DbPort, User: cfg.DbUser, Password: cfg.DbPassword}
+	conn := ConnFromConfig(cfg)
 	return &Manager{
 		app:         app,
 		presenceHub: presenceHub,
@@ -110,5 +110,5 @@ func (m *Manager) DatabaseNames(ctx context.Context) ([]string, error) {
 // one that no database switch, delete or restore ever touches (server-wide
 // advisory locks).
 func (m *Manager) MaintenanceConn(ctx context.Context) (*pgx.Conn, error) {
-	return pgx.Connect(ctx, m.conn.dsn("postgres"))
+	return pgx.Connect(ctx, m.conn.DSN("postgres"))
 }

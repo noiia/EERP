@@ -95,7 +95,7 @@ func TestBuildManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	conn := connInfo{Host: cfg.DbHost, Port: cfg.DbPort, User: cfg.DbUser, Password: cfg.DbPassword}
+	conn := Conn{Host: cfg.DbHost, Port: cfg.DbPort, User: cfg.DbUser, Password: cfg.DbPassword}
 	entries, err := BuildManifest(ctx, conn, cfg.DbName)
 	if err != nil {
 		t.Fatalf("manifest: %v", err)

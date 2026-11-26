@@ -64,7 +64,7 @@ func (m *Manager) Restore(c *echo.Context) error {
 	if err := CreateDatabase(ctx, m.conn, name); err != nil {
 		return err
 	}
-	if err := pgRestore(ctx, m.conn, name, dumpPath); err != nil {
+	if err := PgRestore(ctx, m.conn, name, dumpPath); err != nil {
 		// Drop the half-restored database, so a retry can reuse the name.
 		if dropErr := DropDatabase(ctx, m.conn, name, m.ActiveName()); dropErr != nil && common.Logger != nil {
 			common.Logger.Warn("dbmanage: drop failed restore", zap.String("database", name), zap.Error(dropErr))

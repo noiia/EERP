@@ -9,14 +9,25 @@ import (
 	"io"
 	"net/http"
 
+	"core/internal/version"
+
 	"github.com/labstack/echo/v5"
 )
+
+// VersionEntry is the bundle entry recording which EERP release wrote it, so
+// the upgrade tool (tools/eerp-upgrade) knows which migrations still apply.
+const VersionEntry = "version.json"
+
+// VersionFile is VersionEntry's content.
+type VersionFile struct {
+	Version string `json:"version"`
+}
 
 // ErrNoObjectStore: S3 content was requested but s3_* isn't configured.
 var ErrNoObjectStore = errors.New("dbmanage: S3 content was requested but this instance has no s3_* object store configured")
 
-// dumpDB is pgDump; a var so tests can run without pg_dump installed.
-var dumpDB = pgDump
+// dumpDB is PgDump; a var so tests can run without pg_dump installed.
+var dumpDB = PgDump
 
 // Extract streams dbName's bundle (WriteBundle) as a zip download.
 func (m *Manager) Extract(c *echo.Context, dbName string, includeS3 bool) error {
@@ -51,6 +62,13 @@ func (m *Manager) WriteBundle(ctx context.Context, w io.Writer, dbName string, i
 }
 
 func (m *Manager) writeBundle(ctx context.Context, zw *zip.Writer, dbName string, includeS3 bool) (int, error) {
+	versionEntry, err := zw.Create(VersionEntry)
+	if err != nil {
+		return 0, fmt.Errorf("dbmanage: create %s entry: %w", VersionEntry, err)
+	}
+	if err := json.NewEncoder(versionEntry).Encode(VersionFile{Version: version.Version}); err != nil {
+		return 0, fmt.Errorf("dbmanage: encode %s: %w", VersionEntry, err)
+	}
 	dumpEntry, err := zw.Create("dump.dump")
 	if err != nil {
 		return 0, fmt.Errorf("dbmanage: create dump.dump entry: %w", err)

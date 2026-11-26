@@ -4,12 +4,14 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"strings"
 	"testing"
 
 	"core/internal/testdb"
+	"core/internal/version"
 
 	"github.com/google/uuid"
 )
@@ -30,7 +32,7 @@ func (m memStore) Get(_ context.Context, key string) (io.ReadCloser, string, err
 func stubDump(t *testing.T) {
 	t.Helper()
 	prev := dumpDB
-	dumpDB = func(_ context.Context, _ connInfo, db string, w io.Writer) error {
+	dumpDB = func(_ context.Context, _ Conn, db string, w io.Writer) error {
 		_, err := io.WriteString(w, "DUMP:"+db)
 		return err
 	}
@@ -53,6 +55,26 @@ func readZip(t *testing.T, b []byte) map[string]string {
 	return out
 }
 
+func TestWriteBundle_RecordsVersion(t *testing.T) {
+	stubDump(t)
+	prev := version.Version
+	version.Version = "0.170.0"
+	t.Cleanup(func() { version.Version = prev })
+
+	var buf bytes.Buffer
+	if _, err := (&Manager{}).WriteBundle(context.Background(), &buf, "x", false); err != nil {
+		t.Fatal(err)
+	}
+	got := readZip(t, buf.Bytes())
+	var vf VersionFile
+	if err := json.Unmarshal([]byte(got[VersionEntry]), &vf); err != nil || vf.Version != "0.170.0" {
+		t.Fatalf("version.json = %q (%v)", got[VersionEntry], err)
+	}
+	if got["dump.dump"] != "DUMP:x" {
+		t.Fatalf("dump.dump = %q", got["dump.dump"])
+	}
+}
+
 func TestWriteBundle(t *testing.T) {
 	stubDump(t)
 	ctx := context.Background()
@@ -71,7 +93,7 @@ func TestWriteBundle(t *testing.T) {
 			t.Fatalf("n=%d err=%v", n, err)
 		}
 		files := readZip(t, buf.Bytes())
-		if files["dump.dump"] != "DUMP:poc" || len(files) != 1 {
+		if files["dump.dump"] != "DUMP:poc" || len(files) != 2 {
 			t.Errorf("zip = %v", files)
 		}
 	})
@@ -88,14 +110,14 @@ func TestWriteBundle(t *testing.T) {
 			t.Fatal(err)
 		}
 		store := memStore{}
-		entries, err := BuildManifest(ctx, connInfo{Host: cfg.DbHost, Port: cfg.DbPort, User: cfg.DbUser, Password: cfg.DbPassword}, cfg.DbName)
+		entries, err := BuildManifest(ctx, Conn{Host: cfg.DbHost, Port: cfg.DbPort, User: cfg.DbUser, Password: cfg.DbPassword}, cfg.DbName)
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, e := range entries {
 			store[e.ObjectKey] = "bytes:" + e.ObjectKey
 		}
-		m := &Manager{objects: store, conn: connInfo{Host: cfg.DbHost, Port: cfg.DbPort, User: cfg.DbUser, Password: cfg.DbPassword}}
+		m := &Manager{objects: store, conn: Conn{Host: cfg.DbHost, Port: cfg.DbPort, User: cfg.DbUser, Password: cfg.DbPassword}}
 		var buf bytes.Buffer
 		n, err := m.WriteBundle(ctx, &buf, cfg.DbName, true)
 		if err != nil {
@@ -111,7 +133,7 @@ func TestWriteBundle(t *testing.T) {
 func TestDatabaseNamesAndMaintenanceConn(t *testing.T) {
 	ctx := context.Background()
 	cfg := testdb.Config(t)
-	m := &Manager{conn: connInfo{Host: cfg.DbHost, Port: cfg.DbPort, User: cfg.DbUser, Password: cfg.DbPassword}}
+	m := &Manager{conn: Conn{Host: cfg.DbHost, Port: cfg.DbPort, User: cfg.DbUser, Password: cfg.DbPassword}}
 	names, err := m.DatabaseNames(ctx)
 	if err != nil {
 		t.Fatal(err)

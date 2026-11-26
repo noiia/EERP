@@ -42,8 +42,8 @@ var manifestSources = []struct {
 // enumerate the whole bucket) is what keeps an extraction scoped to exactly
 // this database's own objects out of a bucket potentially shared by several
 // EERP databases on the same instance.
-func BuildManifest(ctx context.Context, conn connInfo, dbName string) ([]ManifestEntry, error) {
-	c, err := pgx.Connect(ctx, conn.dsn(dbName))
+func BuildManifest(ctx context.Context, conn Conn, dbName string) ([]ManifestEntry, error) {
+	c, err := pgx.Connect(ctx, conn.DSN(dbName))
 	if err != nil {
 		return nil, fmt.Errorf("dbmanage: connect to %s: %w", dbName, err)
 	}

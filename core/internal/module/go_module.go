@@ -144,3 +144,46 @@ func columnSnapshot() map[string]map[string]bool {
 	}
 	return snap
 }
+
+// orderGoModules puts every module after the Go modules its module.json
+// `depends` names, otherwise keeping registration order. Registration order
+// is package init() order, which follows Go imports, not depends: without
+// this, warehouse and notify migrated before auth had created `users` on an
+// empty database. Unknown names are ignored; a cycle falls back to
+// registration order for the modules caught in it.
+func orderGoModules(mods []GoModule, depends map[string][]string) []GoModule {
+	known := make(map[string]bool, len(mods))
+	for _, m := range mods {
+		known[m.Name()] = true
+	}
+	placed := make(map[string]bool, len(mods))
+	out := make([]GoModule, 0, len(mods))
+	ready := func(m GoModule) bool {
+		for _, d := range depends[m.Name()] {
+			if known[d] && !placed[d] {
+				return false
+			}
+		}
+		return true
+	}
+	for len(out) < len(mods) {
+		progressed := false
+		for _, m := range mods {
+			if !placed[m.Name()] && ready(m) {
+				placed[m.Name()] = true
+				out = append(out, m)
+				progressed = true
+				break
+			}
+		}
+		if !progressed { // cycle: take the rest as registered
+			for _, m := range mods {
+				if !placed[m.Name()] {
+					placed[m.Name()] = true
+					out = append(out, m)
+				}
+			}
+		}
+	}
+	return out
+}
