@@ -1,9 +1,10 @@
-# ADR-042: Project plan exchange with GanttProject (.gan)
+# ADR-042: Project plan exchange with GanttProject (.gan) and Microsoft Project (MSPDI)
 
 Status: accepted · 2026-11-20 · Spec:
 `docs/superpowers/specs/2026-11-18-project-gantt-exchange-design.md` · builds on
 [ADR-041](ADR-041-project-analytics-views.md) (the Gantt schedule and baselines) and
-[ADR-006](ADR-006-runtime-configurable-view-fields.md) (view fields)
+[ADR-006](ADR-006-runtime-configurable-view-fields.md) (view fields) · MS Project section:
+`docs/superpowers/specs/2026-11-18-project-msproject-exchange-design.md`
 
 ## Context
 
@@ -48,7 +49,7 @@ for new ones, name, parent, position, start, duration in working days, planned h
 completion, is-milestone), its finish-to-start dependencies, and its assignments (email,
 display name). A format family is one `Format` implementation (`Key`, `Ext`, `Encode`,
 `Decode`) added to the registry with `registerFormat` from its `init()`; the routes resolve
-`:format` against that registry. `gan.go` is the first (and so far only) family. A decode
+`:format` against that registry. `gan.go` and `mspdi.go` are the two families. A decode
 that means "this is not this format" is an error and the route answers 422 `INVALID_FILE`;
 a file that *is* the format but carries something EERP cannot hold decodes and returns
 `[]Warning` instead (an unknown `eerp_id`, a dependency type EERP has no column for, a lag,
@@ -161,11 +162,78 @@ of the formats, a plain `<a download>` through the BFF, so the browser names the
 the project, with the rows folded in the Gantt passed as `?collapsed=` so the file opens
 folded the same way — a display hint only: every task is still in the file, so a round trip
 never proposes removals) and **Import** while one project is pinned — the formats as entries of the Gantt's single Export menu,
-beside its PNG/PDF image exports, Import in the More menu on a phone;
+beside its PNG/PDF image exports, Import an icon button on a phone;
 Import appears only when the `canImport` guard (`project.canEditStages`, an async server
 check) passes. The wizard is a three-step dialog (file, review, result) whose fetches keep
 the status code, because the status code *is* the control flow: 413 explains the size, 409
 offers *Preview again*, 422 returns to the review with the refused rows highlighted.
+
+## MS Project (MSPDI XML)
+
+A second format family for partners who plan in Microsoft Project, through the same
+pipeline and wizard (format key `mspdi`, extension `.xml`, `mspdi.go`).
+
+**MSPDI, not `.mpp`.** `.mpp` is a closed binary format: nothing reasonable writes it, and
+reading it needs MPXJ, a Java library, so a second runtime would sit beside `core`. MSPDI
+(Microsoft Project Data Interchange) is the XML format Microsoft documents; MS Project opens
+and saves it natively (*File → Save As → XML Format*), and so do ProjectLibre and most
+planners. The wizard refuses a `.mpp` pick client-side with that instruction and uploads
+nothing. An MPXJ sidecar was rejected for now; it can come back if partners cannot re-save.
+
+**Format capabilities.** `.gan` holds no priority, notes, baselines or capacities, and a
+diff must never read a field the file cannot hold as "cleared". So `Format` declares
+`Carries(Field)` (`name`, `dates`, `planned_hours`, `closed`, `milestone_id`, `priority`,
+`description`, `baselines`, `capacity`), and `diffPlans(cur, file, users, format)` compares
+only the fields the format carries. `.gan` carries the first five; MSPDI carries all.
+
+**Mapping.**
+
+| EERP | MSPDI |
+|---|---|
+| task identity | task extended attribute Text30, alias `EERP id` (the decoder finds its `FieldID` by the alias in `<ExtendedAttributes>`, never a hard-coded id); the `GUID` is set to the task uuid and ignored on read |
+| hierarchy, order | `OutlineLevel` + document order (`OutlineNumber`/`WBS` written, ignored on read); UID 0 is MS Project's project summary row |
+| `date_start` / `deadline` | `Start` 08:00 / `Finish` 17:00, **`Manual` = 1** so MS Project keeps EERP's dates; the duration is read from the dates, never from `Duration`, so a task the partner switched to auto-scheduling still imports as a date change |
+| `planned_hours` / `spent_hours` | `Work` / `ActualWork` (actual work is **export-only**: an import never writes timesheets) |
+| closed, milestone, dependency, assignee | as `.gan`: `PercentComplete` 100/0, `Milestone` 1, `PredecessorLink` (types FF 0, FS 1, SF 2, SS 3; `LinkLag` in tenths of a minute), `Resource` + `Assignment` |
+| `priority` | `Priority` 1000 / 500; on import above 500 is the flag |
+| `description` | `Notes`, plain text, truncated at 5000 characters with `NOTES_TRUNCATED` |
+| baselines | the newest 11 live baselines → `Baseline` `Number` 0..10 on each task, 0 the newest |
+| capacity | `Resource.MaxUnits` = hours per week / 40 (40 h without a `project_capacity` row) |
+
+**Baselines are append-only.** An EERP baseline is a frozen snapshot. A file baseline whose
+tasks differ from EERP's baseline of the same number (or a number EERP lacks) becomes one
+ticked `baseline_create` row (`baseline:<n>`, named *Baseline n (imported YYYY-MM-DD)*,
+`requires` the creates of new tasks it holds); applying it adds a baseline (still capped at
+20, else 422) and never touches the existing ones. A file with fewer baselines deletes
+nothing.
+
+**Capacity is workspace-wide.** A changed `MaxUnits` becomes an **unticked**
+`capacity_update` row (`capacity:<email>`), flagged *Workspace-wide* in the wizard, because a
+capacity applies to every project. Applying it needs
+`project_capacity:project_capacity:write` beyond managing the project (else 422 on the key),
+and outside (0, 168] hours it is a `CAPACITY_RANGE` warning and no row. Only people the
+project already assigns are compared.
+
+**Shared views.** In MS Project views are lenses over one file, so one file carries what each
+shared view needs:
+
+| EERP view | MS Project view | In scope |
+|---|---|---|
+| Gantt | Gantt Chart | yes |
+| PERT | Network Diagram | yes, menu added to the PERT mode |
+| WBS | WBS codes / outline | yes, menu added to the WBS mode |
+| Calendar | Calendar | yes (task dates) |
+| Gantt baselines | Tracking Gantt, Baseline 0–10 | yes |
+| Workload | Resource Sheet / Usage | capacity only |
+| Eisenhower matrix | Priority field | yes |
+| Task description | Notes | yes |
+| Insights | Earned value reports | actual work exported only |
+| Kanban, OBS, PBS, Risk, RACI, DSM, Portfolio | none | no |
+
+So the engine's `ExchangeMenu` (`views/exchange/exchange-menu.tsx`, owning the import guard,
+the format menu and the wizard) serves the Gantt (an Import button; the downloads stay in its
+Export menu) and the WBS and PERT canvases (a *Plan file* menu of *Export <format>* and
+*Import <format>* entries) of a pinned project, for every registered format.
 
 ## Consequences
 
@@ -220,7 +288,8 @@ catches an encoder change GanttProject would rewrite on save.
 
 ## Pitfalls
 
-- A new format is **one** `Format` implementation, one `registerFormat` call, and one
+- A new format must declare what it **carries** (`Carries`): a field it reports by mistake
+  is read as cleared on every import. A new format is **one** `Format` implementation, one `registerFormat` call, and one
   `formats` entry in the `ganttExchange` descriptor. Nothing in the diff, the apply, the
   routes or the wizard changes. A format family that skips the descriptor entry is invisible
   in the UI; one that registers a `Key()` already taken silently replaces it (init order, so
@@ -231,7 +300,7 @@ catches an encoder change GanttProject would rewrite on save.
   cap dies with a 413 the wizard can only explain; drop the middleware and they inherit the
   small cap.
 - The **5000-task cap** (`ganMaxTasks`) is the real bound on an import, and it is enforced
-  while decoding: it is what keeps a 6000-task or a billion-laughs file from pinning the
+  while decoding (a decoder wraps `errPlanTooBig`, which the route answers TOO_MANY_TASKS): it is what keeps a 6000-task or a billion-laughs file from pinning the
   server. Raising it means raising the decode guard, the handler's refusal and the tests
   together.
 - Round-trip stability is a property of the **encoder**, not of the diff: apply must write

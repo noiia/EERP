@@ -555,3 +555,6 @@ msgstr ""
 
 msgid "Drag to resize, double-click to reset"
 msgstr ""
+
+msgid "Microsoft Project (.xml)"
+msgstr ""

@@ -205,7 +205,7 @@ const taskViewModeDefaults: ViewDescriptor['viewModeDefaults'] = {
   ganttBaseline: { entity: 'project_baseline', taskEntity: 'project_baseline_task', scopeField: 'project_id', linkField: 'task_id', startField: 'date_start', endField: 'deadline' },
   // Plan exchange with GanttProject over the pinned project (ADR-042): the Gantt
   // toolbar's Export/Import menus list these formats, and canImport gates Import.
-  ganttExchange: { scopeField: 'project_id', scopeEntity: 'project', formats: [{ key: 'gan', label: 'GanttProject (.gan)', accept: '.gan' }], canImport: 'project.canEditStages' },
+  ganttExchange: { scopeField: 'project_id', scopeEntity: 'project', formats: [{ key: 'gan', label: 'GanttProject (.gan)', accept: '.gan' }, { key: 'mspdi', label: 'Microsoft Project (.xml)', accept: '.xml' }], canImport: 'project.canEditStages' },
   // Milestones of the pinned project as diamonds on their deadline.
   ganttMilestones: { entity: 'project_milestone', scopeField: 'project_id', dateField: 'deadline', labelField: 'name', reachedField: 'reached', formPath: '/project/milestones/:id' },
   // Kanban swimlanes: one lane per assignee, over the task's assignees junction.
