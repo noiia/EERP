@@ -78,11 +78,21 @@ describe('teams pages', () => {
     await expect(SharedPage()).rejects.toThrow('NOT_FOUND')
   })
 
-  it('a download link page signs in first, then links to the BFF download', async () => {
+  it('a download link page signs in first, names the file and links to the BFF download', async () => {
     const { requireAuth } = await import('@/lib/session')
+    apiRequest.mockResolvedValue({ name: 'doc.txt', size: 5 })
     render(await LinkPage({ params: Promise.resolve({ token: 'abc' }) }))
     expect(requireAuth).toHaveBeenCalledWith('/teams/links/abc')
+    expect(apiRequest).toHaveBeenCalledWith('GET', '/teams/links/abc')
+    expect(screen.getByText('doc.txt')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Download file' })).toHaveAttribute('href', '/api/teams/links/abc/download')
+  })
+
+  it('a dead download link says so instead of offering a download', async () => {
+    apiRequest.mockRejectedValue(new Error('404'))
+    render(await LinkPage({ params: Promise.resolve({ token: 'abc' }) }))
+    expect(screen.getByText('This link has expired, been revoked, or does not exist.')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Download file' })).toBeNull()
   })
 
   it('a download link page is a 404 while the module is inactive', async () => {

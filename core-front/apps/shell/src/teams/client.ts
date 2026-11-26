@@ -286,12 +286,14 @@ export type FileLink = {
   created_at: string
   download_count: number
   last_download_at: string | null
+  /** Anyone with the URL downloads, no account. */
+  public: boolean
   url?: string
   token?: string
 }
 export const getLinks = (file: string) => list<FileLink>(`/files/${file}/links`)
-export const createLink = (file: string, expiresAt: string) =>
-  call<FileLink>('POST', `/files/${file}/links`, { expires_at: expiresAt })
+export const createLink = (file: string, expiresAt: string, isPublic = false) =>
+  call<FileLink>('POST', `/files/${file}/links`, { expires_at: expiresAt, public: isPublic })
 export const revokeLink = (link: string) => call<void>('DELETE', `/files/links/${link}`)
 
 // Team groups and conversation access (owners)

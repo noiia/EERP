@@ -90,10 +90,10 @@ describe('teams client', () => {
     await getLinks('f1')
     expect(fetchMock.mock.calls[0]![0]).toBe('/api/teams/files/f1/links')
     fetchMock.mockImplementation(async () => ok({ id: 'l1' }))
-    await createLink('f1', '2030-01-01T00:00:00.000Z')
+    await createLink('f1', '2030-01-01T00:00:00.000Z', true)
     expect(fetchMock.mock.calls[1]).toEqual([
       '/api/teams/files/f1/links',
-      expect.objectContaining({ method: 'POST', body: JSON.stringify({ expires_at: '2030-01-01T00:00:00.000Z' }) }),
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({ expires_at: '2030-01-01T00:00:00.000Z', public: true }) }),
     ])
     fetchMock.mockImplementation(async () => new Response(null, { status: 204 }))
     await revokeLink('l1')

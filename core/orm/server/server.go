@@ -165,6 +165,23 @@ func AuthRateLimiter(perMinute int) echo.MiddlewareFunc {
 	return middleware.RateLimiter(store)
 }
 
+// RateLimiterBy is AuthRateLimiter keyed by key(c) instead of the client IP —
+// e.g. the signed-in user, so colleagues behind one office NAT don't share a bucket.
+func RateLimiterBy(perMinute int, key func(c *echo.Context) string) echo.MiddlewareFunc {
+	if perMinute <= 0 {
+		perMinute = 20
+	}
+	store := middleware.NewRateLimiterMemoryStoreWithConfig(middleware.RateLimiterMemoryStoreConfig{
+		Rate:      float64(perMinute) / 60.0,
+		Burst:     perMinute,
+		ExpiresIn: 3 * time.Minute,
+	})
+	return middleware.RateLimiterWithConfig(middleware.RateLimiterConfig{
+		Store:               store,
+		IdentifierExtractor: func(c *echo.Context) (string, error) { return key(c), nil },
+	})
+}
+
 // RegisterRoutes mounts each handler's routes under /api/v1 with optional
 // JWT and permission middleware on the protected group.
 // authGroup receives public auth routes (no middleware).
