@@ -65,6 +65,8 @@ func (m *teamsModule) Migrate(ctx context.Context, db *orm.DB) error {
 		// owners_only: the folder lost its private conversation; only team owners see it until relinked.
 		`ALTER TABLE team_folder ADD COLUMN IF NOT EXISTS owners_only boolean`,
 		notNullFalse("team_folder", "owners_only"),
+		`ALTER TABLE team_file_link ADD COLUMN IF NOT EXISTS public boolean`,
+		notNullFalse("team_file_link", "public"),
 		`DO $$ BEGIN
 			IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_chat_channel_access_one') THEN
 				ALTER TABLE chat_channel_access ADD CONSTRAINT ck_chat_channel_access_one CHECK ((user_id IS NULL) <> (group_id IS NULL));

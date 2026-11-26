@@ -146,16 +146,21 @@ func TestApp_TeamsDownloadLinkRoutes(t *testing.T) {
 	if code, _ := c.do("GET", "/api/v1/teams/links/unknown/download", nil); code != 401 {
 		t.Fatalf("anonymous: %d", code)
 	}
+	// The public route answers anonymously, with the same 404 for an unknown token.
+	if code, body := c.do("GET", "/api/v1/file-links/unknown", nil); code != 404 || !strings.Contains(string(body), "No such file.") {
+		t.Fatalf("public unknown token: %d %s", code, body)
+	}
 	c.token = token
 	req := httptest.NewRequest("POST", "/api/v1/mcp", bytes.NewBufferString(
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"eerp_list_operations","arguments":{"search":"/links"}}}`))
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"eerp_list_operations","arguments":{"search":"links"}}}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	rec := httptest.NewRecorder()
 	c.h.ServeHTTP(rec, req)
 	if !strings.Contains(rec.Body.String(), "GET /api/v1/teams/files/:file/links") ||
-		!strings.Contains(rec.Body.String(), "GET /api/v1/teams/links/:token/download") {
+		!strings.Contains(rec.Body.String(), "GET /api/v1/teams/links/:token/download") ||
+		strings.Contains(rec.Body.String(), "/api/v1/file-links") {
 		t.Fatalf("MCP operations: %d %s", rec.Code, rec.Body.String())
 	}
 }

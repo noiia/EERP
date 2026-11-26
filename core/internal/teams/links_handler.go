@@ -26,6 +26,7 @@ type linkJSON struct {
 	CreatedAt      time.Time  `json:"created_at"`
 	DownloadCount  int        `json:"download_count"`
 	LastDownloadAt *time.Time `json:"last_download_at"`
+	Public         bool       `json:"public"`
 }
 
 // linkManager resolves the file and applies the share rule (an owner, or the
@@ -43,7 +44,7 @@ func (h *Handler) linkManager(c *echo.Context, fid uuid.UUID) (File, bool, error
 
 func toLinkJSON(l Link, users map[uuid.UUID]auth.Users) linkJSON {
 	return linkJSON{ID: l.ID, ExpiresAt: l.ExpiresAt, CreatedByName: displayName(users[l.CreatedBy]),
-		CreatedAt: l.CreatedAt, DownloadCount: l.DownloadCount, LastDownloadAt: l.LastDownloadAt}
+		CreatedAt: l.CreatedAt, DownloadCount: l.DownloadCount, LastDownloadAt: l.LastDownloadAt, Public: l.Public}
 }
 
 // ListLinks serves GET /files/:file/links: the file's live links, to its managers.
@@ -85,6 +86,7 @@ func (h *Handler) CreateLink(c *echo.Context) error {
 	}
 	var b struct {
 		ExpiresAt time.Time `json:"expires_at"`
+		Public    bool      `json:"public"`
 	}
 	if err := c.Bind(&b); err != nil {
 		return errorJSON(c, http.StatusBadRequest, "VALIDATION_ERROR", "Malformed request body.")
@@ -98,7 +100,7 @@ func (h *Handler) CreateLink(c *echo.Context) error {
 	}
 	token := base64.RawURLEncoding.EncodeToString(raw)
 	l, err := h.repo.CreateLink(c.Request().Context(), Link{TenantID: f.TenantID, TeamID: f.TeamID, FileID: f.ID,
-		CreatedBy: auth.MustIdentity(c.Request().Context()).UserID, TokenHash: HashToken(token), ExpiresAt: b.ExpiresAt})
+		CreatedBy: auth.MustIdentity(c.Request().Context()).UserID, TokenHash: HashToken(token), ExpiresAt: b.ExpiresAt, Public: b.Public})
 	if err != nil {
 		return err
 	}
@@ -108,6 +110,9 @@ func (h *Handler) CreateLink(c *echo.Context) error {
 	}
 	out := toLinkJSON(l, users)
 	out.Token, out.URL = token, "/app/teams/links/"+token
+	if l.Public {
+		out.URL = "/api/v1/file-links/" + token
+	}
 	return c.JSON(http.StatusCreated, out)
 }
 
@@ -147,6 +152,25 @@ func (h *Handler) DownloadLink(c *echo.Context) error {
 	if err != nil {
 		return err
 	}
+	return h.serveLink(c, l)
+}
+
+// PublicDownload serves GET /api/v1/file-links/:token to anyone, account or
+// not, for links created public. Every failure is the same 404.
+func (h *Handler) PublicDownload(c *echo.Context) error {
+	l, err := h.repo.ResolveLink(c.Request().Context(), HashToken(c.Param("token")))
+	if errors.Is(err, orm.ErrNotFound) || (err == nil && !l.Public) {
+		return notFound(c, "file")
+	}
+	if err != nil {
+		return err
+	}
+	return h.serveLink(c, l)
+}
+
+// serveLink streams a resolved link's file while its creator can still read it.
+func (h *Handler) serveLink(c *echo.Context, l Link) error {
+	ctx := c.Request().Context()
 	f, err := h.repo.FindFile(ctx, l.TenantID, l.FileID)
 	if errors.Is(err, orm.ErrNotFound) {
 		return notFound(c, "file")
@@ -172,6 +196,14 @@ func (h *Handler) DownloadLink(c *echo.Context) error {
 	c.Response().Header().Set("Cache-Control", "private, no-store")
 	c.Response().Header().Set("X-Content-Type-Options", "nosniff")
 	return h.streamFile(c, f)
+}
+
+// MountPublicLinks registers the anonymous public-link route. Needs S3.
+func MountPublicLinks(g *echo.Group, h *Handler) {
+	if h.objects == nil {
+		return
+	}
+	g.GET("/:token", h.PublicDownload)
 }
 
 // MountLinks registers the download-link route, rate-limited by limit. Needs S3.

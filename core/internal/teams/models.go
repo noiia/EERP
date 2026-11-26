@@ -140,6 +140,8 @@ type Link struct {
 	ExpiresAt      time.Time  `db:"expires_at"`
 	DownloadCount  int        `db:"download_count"`
 	LastDownloadAt *time.Time `db:"last_download_at"`
+	// Public: anyone with the token downloads, no account (fixed at creation).
+	Public bool `db:"public"`
 }
 
 // Group is a team's hand-managed set of members, used in channel access lists.

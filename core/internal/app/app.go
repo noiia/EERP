@@ -325,7 +325,7 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		// uploadLimit from MountExchange.
 		BodyLimitExempt: []string{"/api/v1/pictures", "/api/v1/attachments", "/api/v1/teams/channels", "/api/v1/teams/*/files", "/api/v1/project/*/exchange", dbRestorePath},
 		// A Teams download link's token is a bearer secret: never in the request log.
-		LogRedact: []string{"/api/v1/teams/links/"},
+		LogRedact: []string{"/api/v1/teams/links/", "/api/v1/file-links/"},
 	}
 	uploadLimit := ormserver.BodyLimit(configContent.UploadBodyLimitOrDefault())
 	if len(configContent.AllowedOrigins) == 0 {
@@ -733,6 +733,9 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 	teamsGroup := srv.Echo().Group("/api/v1/teams", jwtMw, teams.ActiveGate(moduleRuntime.IsActive))
 	teams.Mount(teamsGroup, teamsHandler, uploadLimit)
 	teams.MountLinks(teamsGroup, teamsHandler, ormserver.AuthRateLimiter(publicRateLimit(configContent)))
+	// Public download links: no JWT, the token is the only key (ADR-037).
+	teams.MountPublicLinks(srv.Echo().Group("/api/v1/file-links",
+		ormserver.AuthRateLimiter(publicRateLimit(configContent)), teams.ActiveGate(moduleRuntime.IsActive)), teamsHandler)
 	officeService, err := office.New(configContent, teamsObjects, userRepo)
 	if err != nil {
 		return fmt.Errorf("configure Euro-Office: %w", err)

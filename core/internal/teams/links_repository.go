@@ -19,7 +19,7 @@ func HashToken(raw string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-const linkColumns = `id, tenant_id, team_id, file_id, created_by, token_hash, expires_at, download_count, last_download_at, created_at, updated_at`
+const linkColumns = `id, tenant_id, team_id, file_id, created_by, token_hash, expires_at, download_count, last_download_at, created_at, updated_at, public`
 
 // liveLink: not revoked and not expired.
 const liveLink = `deleted_at IS NULL AND expires_at > now()`
@@ -27,7 +27,7 @@ const liveLink = `deleted_at IS NULL AND expires_at > now()`
 func scanLink(row pgx.Row) (Link, error) {
 	var l Link
 	err := row.Scan(&l.ID, &l.TenantID, &l.TeamID, &l.FileID, &l.CreatedBy, &l.TokenHash, &l.ExpiresAt,
-		&l.DownloadCount, &l.LastDownloadAt, &l.CreatedAt, &l.UpdatedAt)
+		&l.DownloadCount, &l.LastDownloadAt, &l.CreatedAt, &l.UpdatedAt, &l.Public)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Link{}, orm.ErrNotFound
 	}
