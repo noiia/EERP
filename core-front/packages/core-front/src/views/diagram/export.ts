@@ -142,11 +142,24 @@ export function revealClippedText(root: HTMLElement): () => void {
     restores.push(() => (old ? el.style.setProperty(prop, old) : el.style.removeProperty(prop)))
     el.style.setProperty(prop, value)
   }
-  const clipped = Array.from(root.querySelectorAll<HTMLElement>('*')).filter((el) => {
+  // A text that fits keeps its single line (wrapped, a viewer whose font runs a little wider
+  // would break it inside its box), but loses its ellipsis and clip: in that viewer it runs a
+  // few pixels long instead of turning into "Tas…". Only a text cut right now wraps.
+  const clipped: HTMLElement[] = []
+  for (const el of Array.from(root.querySelectorAll<HTMLElement>('*'))) {
     const cs = getComputedStyle(el)
     const clamp = cs.getPropertyValue('-webkit-line-clamp')
-    return cs.textOverflow === 'ellipsis' || (clamp !== '' && clamp !== 'none')
-  })
+    if (cs.textOverflow === 'ellipsis' && el.scrollWidth <= el.clientWidth) {
+      set(el, 'text-overflow', 'clip')
+      set(el, 'overflow', 'visible')
+      // Its own parent often clips too (a label's button, a box): nothing overflows it here, so
+      // unclipping changes nothing on screen.
+      const p = el.parentElement
+      if (p && p !== root && getComputedStyle(p).overflowX === 'hidden' && p.scrollWidth <= p.clientWidth) set(p, 'overflow', 'visible')
+    } else if (cs.textOverflow === 'ellipsis' || (clamp !== '' && clamp !== 'none' && el.scrollHeight > el.clientHeight)) {
+      clipped.push(el)
+    }
+  }
   for (const el of clipped) {
     set(el, 'white-space', 'normal')
     set(el, 'overflow-wrap', 'anywhere')

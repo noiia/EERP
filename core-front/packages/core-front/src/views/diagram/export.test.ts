@@ -315,7 +315,9 @@ describe('revealClippedText', () => {
     box.appendChild(title)
     root.appendChild(box)
     document.body.appendChild(root)
-    // jsdom has no layout: the box reports its wrapped title as taller than itself.
+    // jsdom has no layout: the title reports itself cut, the box its wrapped title as taller than itself.
+    Object.defineProperty(title, 'scrollWidth', { configurable: true, value: 300 })
+    Object.defineProperty(title, 'clientWidth', { configurable: true, value: 100 })
     Object.defineProperty(box, 'scrollHeight', { configurable: true, value: 120 })
     Object.defineProperty(box, 'clientHeight', { configurable: true, value: 64 })
     Object.defineProperty(box, 'offsetHeight', { configurable: true, value: 64 })
@@ -341,6 +343,21 @@ describe('revealClippedText', () => {
     expect(box.style.height).toBe('64px')
     expect(box.style.overflow).toBe('hidden')
     expect(box.style.minHeight).toBe('')
+  })
+
+  it('keeps a title that fits on its one line, with no ellipsis or clip a wider font could trigger', () => {
+    const { root, box, title } = setup()
+    Object.defineProperty(title, 'scrollWidth', { configurable: true, value: 100 })
+    const restore = revealClippedText(root)
+    expect(title.style.whiteSpace).toBe('nowrap')
+    expect(title.style.textOverflow).toBe('clip')
+    expect(title.style.overflow).toBe('visible')
+    expect(box.style.height).toBe('64px')
+    expect(box.style.overflow).toBe('visible')
+    restore()
+    expect(title.style.textOverflow).toBe('ellipsis')
+    expect(title.style.overflow).toBe('hidden')
+    expect(box.style.overflow).toBe('hidden')
   })
 
   it('applies to every element capture and leaves the element as it was', async () => {

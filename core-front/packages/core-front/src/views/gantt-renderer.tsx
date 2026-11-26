@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -149,6 +149,22 @@ const BASELINE_CHUNK = 100
 const HEADER_H = 24
 const ROW_H = 32
 const ROW_GAP = 4
+/** Dependency arrows (px): line thickness and arrowhead length, drawn as HTML boxes (see the overlay). */
+const ARROW_STROKE = 1.5
+const ARROW_HEAD = 6
+const ARROW_LINE_SX = { position: 'absolute', bgcolor: 'text.secondary' } as const
+const arrowHead = (side: 'borderLeft' | 'borderRight') =>
+  ({
+    position: 'absolute',
+    width: 0,
+    height: 0,
+    borderTop: `${ARROW_HEAD / 2}px solid transparent`,
+    borderBottom: `${ARROW_HEAD / 2}px solid transparent`,
+    [side]: `${ARROW_HEAD}px solid`,
+    [`${side}Color`]: 'text.secondary',
+  }) as const
+const ARROW_HEAD_RIGHT_SX = arrowHead('borderLeft')
+const ARROW_HEAD_LEFT_SX = arrowHead('borderRight')
 
 function addDays(d: Date, n: number): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n)
@@ -1108,7 +1124,6 @@ export function GanttRenderer<T extends HasId>({
 
   const now = new Date()
   const todayIdx = dayDiff(new Date(now.getFullYear(), now.getMonth(), now.getDate()), range.start)
-  const markerId = useId()
   const visibleMilestones = milestoneRows.filter((m) => {
     const d = dayDiff(m.day, range.start)
     return d >= 0 && d < totalDays
@@ -1136,7 +1151,7 @@ export function GanttRenderer<T extends HasId>({
   const msRow = milestoneRows.length > 0 ? 1 : 0
   const rowY = (i: number) => HEADER_H + ROW_GAP + (i + msRow) * (ROW_H + ROW_GAP) + ROW_H / 2
   const rowIndex = new Map(rows.map((r, i) => [r.record.id, i]))
-  const clampX = (days: number) => pct(Math.min(Math.max(days, 0), totalDays))
+  const clampDays = (days: number) => Math.min(Math.max(days, 0), totalDays)
   const arrows: { id: string; x1: number; y1: number; x2: number; y2: number }[] = []
   if (dependencies) {
     for (const link of links) {
@@ -1442,29 +1457,27 @@ export function GanttRenderer<T extends HasId>({
                   style={{ left: pct(todayIdx + 0.5) }}
                 />
               ) : null}
-              {arrows.length > 0 ? (
-                <Box
-                  component="svg"
-                  aria-hidden
-                  sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible', color: 'text.secondary' }}
-                >
-                  <defs>
-                    <marker id={markerId} viewBox="0 0 6 6" refX="6" refY="3" markerWidth="6" markerHeight="6" orient="auto">
-                      <path d="M0,0 L6,3 L0,6 z" fill="currentColor" />
-                    </marker>
-                  </defs>
-                  {arrows.map((a) => {
-                    const xm = clampX((a.x1 + a.x2) / 2)
-                    return (
-                      <g key={a.id} data-testid={`gantt-arrow-${a.id}`} stroke="currentColor" strokeWidth={1.5}>
-                        <line x1={clampX(a.x1)} y1={a.y1} x2={xm} y2={a.y1} />
-                        <line x1={xm} y1={a.y1} x2={xm} y2={a.y2} />
-                        <line x1={xm} y1={a.y2} x2={clampX(a.x2)} y2={a.y2} markerEnd={`url(#${markerId})`} />
-                      </g>
-                    )
-                  })}
-                </Box>
-              ) : null}
+              {/* Plain positioned boxes, like the bars, not an inline <svg>: an SVG export carries the
+                  page as HTML in a <foreignObject>, where a nested svg (its marker refs, % coordinates,
+                  currentColor) is what viewers drop — anything that shows the bars shows these. */}
+              {arrows.map((a) => {
+                const x1 = clampDays(a.x1)
+                const x2 = clampDays(a.x2)
+                const xm = clampDays((a.x1 + a.x2) / 2)
+                const right = x2 >= xm
+                return (
+                  <Box key={a.id} data-testid={`gantt-arrow-${a.id}`} aria-hidden sx={{ position: 'absolute', inset: 0 }}>
+                    <Box sx={ARROW_LINE_SX} style={{ left: pct(Math.min(x1, xm)), width: pct(Math.abs(xm - x1)), top: a.y1 - ARROW_STROKE / 2, height: ARROW_STROKE }} />
+                    <Box sx={ARROW_LINE_SX} style={{ left: pct(xm), marginLeft: -ARROW_STROKE / 2, width: ARROW_STROKE, top: Math.min(a.y1, a.y2), height: Math.abs(a.y2 - a.y1) }} />
+                    <Box sx={ARROW_LINE_SX} style={{ left: pct(Math.min(xm, x2)), width: pct(Math.abs(x2 - xm)), top: a.y2 - ARROW_STROKE / 2, height: ARROW_STROKE }} />
+                    <Box
+                      data-testid={`gantt-arrow-head-${a.id}`}
+                      sx={right ? ARROW_HEAD_RIGHT_SX : ARROW_HEAD_LEFT_SX}
+                      style={{ left: pct(x2), marginLeft: right ? -ARROW_HEAD : 0, top: a.y2 - ARROW_HEAD / 2 }}
+                    />
+                  </Box>
+                )
+              })}
             </Box>
           </Box>
           <Box sx={{ display: 'grid', gridTemplateColumns: phone ? '88px minmax(0, 1fr)' : 'minmax(96px, 200px) minmax(0, 1fr)', px: 1 }}>

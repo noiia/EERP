@@ -836,6 +836,18 @@ describe('GanttRenderer', () => {
       expect(listPage).toHaveBeenCalledWith('dep', expect.objectContaining({ in: { task_id: ['1', '3'] }, page: 1 }))
     })
 
+    it('draws each arrow as HTML boxes (no inline svg an SVG export viewer could drop), head at the target bar', async () => {
+      const listPage = vi.fn<ListPage>(async () => ({ records: [{ id: 'd1', depends_on_id: '1', task_id: '3' }], total: 1 }))
+      depRender([alpha, gamma], listPage)
+      const arrow = await screen.findByTestId('gantt-arrow-d1')
+      expect(arrow.querySelector('svg, line, marker')).toBeNull()
+      // Three segments plus the head; Week zoom from 2 March: 84 days, Gamma starts on day 7.
+      expect(arrow.children).toHaveLength(4)
+      const head = screen.getByTestId('gantt-arrow-head-d1')
+      expect(parseFloat(head.style.left)).toBeCloseTo((7 / 84) * 100, 3)
+      expect(head.style.marginLeft).toBe('-6px')
+    })
+
     it('loads links in chunks of 100 ids, paging each until a short page, never again on a move', async () => {
       const many = Array.from({ length: 150 }, (_, i) => ({ ...alpha, id: `t${i}` }))
       const listPage = vi.fn<ListPage>(async (_e: string, o?: EntityListOptions) =>

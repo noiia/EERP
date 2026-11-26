@@ -110,7 +110,8 @@ else 1×.
 
 No export loses text: for the capture only, `revealClippedText` (`views/diagram/export.ts`) wraps every
 text cut by an ellipsis or a line clamp and grows the boxes clipping it, in every project export (diagrams,
-Gantt, RACI, risk views). On a diagram canvas a grown box then pushes the boxes below it in its column down
+Gantt, RACI, risk views). A text that fits keeps its single line but loses its ellipsis and clip, so a
+viewer whose font runs a little wider shows it a few pixels long rather than as "Tas…". On a diagram canvas a grown box then pushes the boxes below it in its column down
 by its growth, keeping their gaps (`pushDown`, `collide.ts`), so none covers another; the positions are
 never saved.
 
@@ -119,6 +120,10 @@ last day the list's scheduled tasks cover, the timeline is redrawn over that spa
 (whole columns, a fixed width per day: 48 px in Day, 16 in Week, 5 in Month), every row unfolded and every
 title on one line, and the capture waits until that span's tasks and their dependency links are read
 (60 s at most). It holds the Gantt's 1 000-task cap; the screen returns to its own range afterwards.
+The Gantt's dependency arrows are plain positioned boxes and a CSS-triangle head, like its bars, not an
+inline `<svg>`: an SVG export carries the page as HTML inside a `<foreignObject>`, and a nested svg there
+(its `url(#marker)` arrowheads, `%` coordinates, `currentColor`) is what SVG viewers render least
+consistently — the arrows went missing while the bars showed.
 
 Folds decide what an export holds: the WBS exports the boxes on screen, so a folded branch is
 left out. The WBS **Layers** menu folds whole levels at once: one checkbox per task level, named
