@@ -2779,17 +2779,26 @@ msgstr "Exporter en PNG"
 msgid "Export PDF"
 msgstr "Exporter en PDF"
 
+msgid "Export SVG"
+msgstr "Exporter en SVG"
+
 msgid "Export PNG (simple)"
 msgstr "Exporter en PNG (simple)"
 
 msgid "Export PDF (simple)"
 msgstr "Exporter en PDF (simple)"
 
+msgid "Export SVG (simple)"
+msgstr "Exporter en SVG (simple)"
+
 msgid "Export PNG (complete)"
 msgstr "Exporter en PNG (complet)"
 
 msgid "Export PDF (complete)"
 msgstr "Exporter en PDF (complet)"
+
+msgid "Export SVG (complete)"
+msgstr "Exporter en SVG (complet)"
 
 msgid "Export XLSX"
 msgstr "Exporter en XLSX"

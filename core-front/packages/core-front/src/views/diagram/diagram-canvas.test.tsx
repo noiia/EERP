@@ -99,11 +99,12 @@ vi.mock('@xyflow/react', () => ({
 }))
 const exportPng = vi.hoisted(() => vi.fn(async () => {}))
 const exportPdf = vi.hoisted(() => vi.fn(async () => {}))
+const exportSvg = vi.hoisted(() => vi.fn(async () => {}))
 // Counts module loads: the export code must load on the first click, not with the canvas.
 const exportLoads = vi.hoisted(() => ({ n: 0 }))
 vi.mock('./export', () => {
   exportLoads.n++
-  return { exportPng, exportPdf }
+  return { exportPng, exportPdf, exportSvg }
 })
 
 import { DIAGRAM_RECORD_CAP, DiagramCanvas, DiagramCapNotice, handleSize, trimPositions, useDiagramRecords, type DiagramCanvasProps } from './diagram-canvas'
@@ -216,6 +217,16 @@ describe('DiagramCanvas', () => {
     await act(async () => fireEvent.click(screen.getByRole('menuitem', { name: 'Export PNG' })))
     await exportFrames()
     expect(exportLoads.n).toBe(1)
+  })
+
+  it('exports the diagram as SVG', async () => {
+    setup()
+    await flush()
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Export' })) })
+    await act(async () => fireEvent.click(screen.getByRole('menuitem', { name: 'Export SVG' })))
+    await exportFrames()
+    expect(exportSvg).toHaveBeenCalledTimes(1)
+    expect(exportPng).not.toHaveBeenCalled()
   })
 
   it('places a box by its own declared height (a short WBS group root)', async () => {
@@ -872,7 +883,7 @@ describe('DiagramCanvas full screen and phone toolbar', () => {
     expect(screen.queryByRole('button', { name: 'More' })).toBeNull()
     expect(within(screen.getByTestId('diagram-legend')).getByText('Critical')).toBeInTheDocument()
     act(() => fireEvent.click(screen.getByRole('button', { name: 'Export' })))
-    for (const name of ['Export PNG', 'Export PDF']) expect(screen.getByRole('menuitem', { name })).toBeInTheDocument()
+    for (const name of ['Export PNG', 'Export SVG', 'Export PDF']) expect(screen.getByRole('menuitem', { name })).toBeInTheDocument()
     act(() => fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' }))
     act(() => fireEvent.click(screen.getByRole('button', { name: 'Add note' })))
     expect(rf.props.nodes.some((n) => n.type === 'note')).toBe(true)

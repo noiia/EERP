@@ -101,7 +101,7 @@ tasks are all leaves, or all folded, keeps the single column.
 
 ### Export
 
-A PNG/PDF export draws every box in full (also when zoomed out) and prints its fields as plain wrapping
+A PNG/SVG/PDF export draws every box in full (also when zoomed out) and prints its fields as plain wrapping
 text, a label over each value, rather than the editing widgets: an input can't wrap, so a long name was
 clipped and a multi-line field showed a scrollbar in the image. Each box grows to its content. Many2one
 values print by label (read once for the whole diagram), dates and numbers in the workspace formats. The
@@ -164,8 +164,12 @@ labels below the same zoom.
 
 ### Client-side export
 
-PNG and PDF are produced in the browser (`html-to-image` + `jspdf`, loaded on the first export), not through
-`internal/reports`. That pipeline renders a server-known print route; the server cannot see the
+PNG, SVG and PDF are produced in the browser (`html-to-image` + `jspdf`, loaded on the first export), not through
+`internal/reports`. The SVG is html-to-image's vector capture of the same element the PNG is taken from (same
+framing, background and edge preparation, no pixel ratio): boxes are HTML inside `<foreignObject>`, which browsers
+and Inkscape render but some vector editors show as empty, so the PNG stays the format for slides and documents.
+Every project-task view with an Export menu (WBS, PERT, OBS, PBS, Gantt and its roadmap, RACI, the risk matrix,
+Ishikawa and register) offers it. That pipeline renders a server-known print route; the server cannot see the
 user's arrangement, which lives in their layout and the current viewport.
 
 ### PERT conventions

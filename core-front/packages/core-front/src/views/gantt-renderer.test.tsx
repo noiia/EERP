@@ -8,7 +8,8 @@ vi.mock('next/navigation', () => ({
 
 const exportElementPng = vi.hoisted(() => vi.fn<(el: HTMLElement, name: string, bg?: string) => Promise<void>>(async () => {}))
 const exportElementPdf = vi.hoisted(() => vi.fn<(el: HTMLElement, meta: unknown, name: string) => Promise<void>>(async () => {}))
-vi.mock('./diagram/export', () => ({ exportElementPng, exportElementPdf }))
+const exportElementSvg = vi.hoisted(() => vi.fn<(el: HTMLElement, name: string, bg?: string) => Promise<void>>(async () => {}))
+vi.mock('./diagram/export', () => ({ exportElementPng, exportElementPdf, exportElementSvg }))
 
 import { createTheme, ThemeProvider } from '@mui/material/styles'
 import { GanttRenderer } from './gantt-renderer'
@@ -130,6 +131,9 @@ describe('GanttRenderer', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Export' }))
       fireEvent.click(screen.getByRole('menuitem', { name: 'Export PDF' }))
       await waitFor(() => expect(exportElementPdf).toHaveBeenCalledWith(el, expect.objectContaining({ title: name }), name))
+      fireEvent.click(screen.getByRole('button', { name: 'Export' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Export SVG' }))
+      await waitFor(() => expect(exportElementSvg).toHaveBeenCalledWith(el, name, expect.any(String)))
     })
 
     it('shows no chevron or toggle without a parent field', () => {
@@ -1275,7 +1279,7 @@ describe('GanttRenderer', () => {
       await act(async () => {})
       // The image exports stay; no plan file is offered.
       fireEvent.click(screen.getByRole('button', { name: 'Export' }))
-      expect(screen.getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Export PNG', 'Export PDF'])
+      expect(screen.getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Export PNG', 'Export SVG', 'Export PDF'])
     })
 
     it('Export lists every format as a download of the pinned project', async () => {

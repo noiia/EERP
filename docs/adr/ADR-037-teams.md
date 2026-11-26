@@ -180,6 +180,52 @@ rules still decide:
 - **Dates**: folders and files carry `created_at` and `updated_at` (a rename, move or document save
   bumps it), shown as *Created* / *Last modified* columns.
 
+### Download links (2026-11-26)
+
+**Problem.** A member wants to hand one file to a colleague outside the team — without adding them
+to it or picking them in the share list — by sending a link that always serves the latest version
+and stops working at a chosen date.
+
+**Decision: a link to the file itself, not a replica.** A `team_file_link` row points at the file
+id. Edits (uploads, the office editor) replace the file's object but keep its id, so the link
+always serves the current bytes with nothing to sync. A copy in a "public" folder was rejected: every
+write path would have to re-copy it, a missed copy serves a stale file, and it needs a second
+permission model. Serving bytes straight from S3 through a presigned URL is a possible later
+improvement for very large files; Garage is not reachable through the gateway today.
+
+```mermaid
+sequenceDiagram
+    participant M as Member
+    participant B as Colleague (staff)
+    participant G as core-back
+    M->>G: POST /files/:file/links {expires_at}
+    G-->>M: {url: /app/teams/links/<token>} (token shown once, sha256 stored)
+    M-->>B: sends the URL
+    B->>G: GET /links/<token>/download (signed in)
+    G->>G: live link? same tenant? file exists? creator still sees it?
+    G-->>B: current file bytes (or 404)
+```
+
+- **Who manages**: the users who may share the file (an owner, or the member who uploaded it):
+  `GET|POST /api/v1/teams/files/:file/links`, `DELETE /api/v1/teams/files/links/:link` (revoke =
+  soft delete). The create answer is the only place the token appears; Go keeps its sha256.
+- **Expiry is mandatory**: `now < expires_at ≤ now + 90 days` (422 otherwise). The Share dialog
+  proposes 7 days and caps the picked day just under 90.
+- **Who downloads**: any signed-in **staff** user of the link's tenant (website accounts are refused
+  by the audience check), while the link's creator is still a live user, at `GET /api/v1/teams/links/:token/download`, rate-limited like the
+  public routes. The token grants that one file only — no listing, no folder, no other route.
+- **One answer for every failure**: unknown, revoked, expired, other tenant, deleted file, or a
+  creator who can no longer read the file (left the team, or the file is now in a private folder
+  they can't see) — all 404, so a token can't be probed and a link never outlives its creator's
+  own access.
+- **Response**: `Content-Disposition: attachment`, `ETag`, `Cache-Control: private, no-store`,
+  `X-Content-Type-Options: nosniff`. Each download bumps the link's `download_count` and
+  `last_download_at`, shown in the Share dialog.
+- **Frontend**: the Share dialog's *Download links* section (create + copy, list, revoke), a Share
+  button in the office viewer header (`OfficeDialog`'s `headerActions`), and the page
+  `/app/teams/links/<token>`, which signs the visitor in and downloads through the Teams BFF.
+- Deleting the file, its folder tree or the team deletes its links in the same transaction.
+
 ## Consequences
 
 - Teams has no admin override: an administrator who isn't a member can't read a team. Recovering a
@@ -208,3 +254,9 @@ rules still decide:
   channel means owners-only, not open.
 - A file and a folder may share a name in one folder (separate namespaces); a zip download then
   holds both `x` and `x/`, which some extractors refuse.
+- A download link dies with its creator's access to the file: removing the uploader from the team
+  silently breaks every link they made. Create a new one as an owner if it must keep working.
+- Never return or log a link token after its creation answer; only its sha256 is stored. Go's
+  request log redacts `/api/v1/teams/links/` (`ormserver.Config.LogRedact`) and nginx's failed-request
+  log skips the three link paths (`$eerp_loggable` in `infra/nginx/nginx.conf`); a new route
+  carrying a token in its path needs the same two entries.

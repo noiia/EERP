@@ -35,7 +35,7 @@ func TestErrorHandler_LogsWrappedCause(t *testing.T) {
 func TestZapMiddleware_Levels(t *testing.T) {
 	core, logs := observer.New(zap.DebugLevel)
 	e := echo.New()
-	e.Use(zapMiddleware(zap.New(core)))
+	e.Use(zapMiddleware(zap.New(core), nil))
 	e.GET("/ok", func(c *echo.Context) error { return c.NoContent(http.StatusOK) })
 	e.GET("/missing", func(*echo.Context) error { return echo.ErrNotFound })
 	for _, path := range []string{"/ok", "/missing"} {
@@ -44,5 +44,19 @@ func TestZapMiddleware_Levels(t *testing.T) {
 	all := logs.All()
 	if len(all) != 2 || all[0].Level != zap.DebugLevel || all[1].Level != zap.InfoLevel || all[1].ContextMap()["status"] != int64(http.StatusNotFound) {
 		t.Fatalf("levels: %+v", all)
+	}
+}
+
+// A path under a LogRedact prefix is logged without what follows it (a secret token).
+func TestZapMiddleware_RedactsSecretPaths(t *testing.T) {
+	core, logs := observer.New(zap.DebugLevel)
+	e := echo.New()
+	e.Use(zapMiddleware(zap.New(core), []string{"/links/"}))
+	for _, path := range []string{"/links/s3cr3t/download", "/other/s3cr3t"} {
+		e.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
+	}
+	all := logs.All()
+	if len(all) != 2 || all[0].ContextMap()["uri"] != "/links/[redacted]" || all[1].ContextMap()["uri"] != "/other/s3cr3t" {
+		t.Fatalf("uris: %+v", all)
 	}
 }

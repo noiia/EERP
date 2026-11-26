@@ -730,7 +730,7 @@ function Canvas(props: DiagramCanvasProps) {
     if (rest.length) props.onEdgesDelete?.(rest)
   }
 
-  const exportAs = async (kind: 'png' | 'pdf', simpleBoxes = false) => {
+  const exportAs = async (kind: 'png' | 'svg' | 'pdf', simpleBoxes = false) => {
     const viewport = container.current?.querySelector<HTMLElement>('.react-flow__viewport')
     if (!viewport) return
     setExportError(null)
@@ -744,11 +744,12 @@ function Canvas(props: DiagramCanvasProps) {
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
       const bounds = getNodesBounds(instance.current?.getNodes() ?? rfNodes)
       // html-to-image and jspdf load on the first export, not with the diagram.
-      const { exportPdf, exportPng } = await import('./export')
+      const m = await import('./export')
       // The diagram's own background: a dark theme's light text stays readable in the image.
       const background = outer.palette.background.paper
-      if (kind === 'png') await exportPng(viewport, bounds, title, background)
-      else await exportPdf(viewport, bounds, { title, date: new Date(), legend, background }, title)
+      if (kind === 'png') await m.exportPng(viewport, bounds, title, background)
+      else if (kind === 'svg') await m.exportSvg(viewport, bounds, title, background)
+      else await m.exportPdf(viewport, bounds, { title, date: new Date(), legend, background }, title)
     } catch (e: unknown) {
       setExportError(serializeError(toApiError(e)))
     } finally {
@@ -773,10 +774,12 @@ function Canvas(props: DiagramCanvasProps) {
         <ExportMenu
           options={[
             { key: 'png', label: t(props.simpleExport ? 'Export PNG (complete)' : 'Export PNG'), icon: 'file-image', onClick: () => void exportAs('png') },
+            { key: 'svg', label: t(props.simpleExport ? 'Export SVG (complete)' : 'Export SVG'), icon: 'file-image', onClick: () => void exportAs('svg') },
             { key: 'pdf', label: t(props.simpleExport ? 'Export PDF (complete)' : 'Export PDF'), icon: 'file-pdf', onClick: () => void exportAs('pdf') },
             ...(props.simpleExport
               ? [
                   { key: 'png-simple', label: t('Export PNG (simple)'), icon: 'file-image', onClick: () => void exportAs('png', true) },
+                  { key: 'svg-simple', label: t('Export SVG (simple)'), icon: 'file-image', onClick: () => void exportAs('svg', true) },
                   { key: 'pdf-simple', label: t('Export PDF (simple)'), icon: 'file-pdf', onClick: () => void exportAs('pdf', true) },
                 ]
               : []),

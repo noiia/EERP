@@ -29,6 +29,7 @@ type Repository struct {
 	atts     *orm.Repository[Attachment]
 	folders  *orm.Repository[Folder]
 	files    *orm.Repository[File]
+	links    *orm.Repository[Link]
 }
 
 func NewRepository(db *orm.DB) *Repository {
@@ -42,6 +43,7 @@ func NewRepository(db *orm.DB) *Repository {
 		atts:     orm.MustRepo[Attachment](db),
 		folders:  orm.MustRepo[Folder](db),
 		files:    orm.MustRepo[File](db),
+		links:    orm.MustRepo[Link](db),
 	}
 }
 
@@ -213,6 +215,7 @@ func (r *Repository) DeleteTeam(ctx context.Context, tenant, team uuid.UUID) ([]
 		msgs := `(SELECT id FROM chat_message WHERE channel_id IN ` + chans + `)`
 		for _, q := range []string{
 			`DELETE FROM team_file_share WHERE file_id IN (SELECT id FROM team_file WHERE tenant_id=$1 AND team_id=$2)`,
+			`DELETE FROM team_file_link WHERE tenant_id=$1 AND team_id=$2`,
 			`DELETE FROM chat_reaction WHERE message_id IN ` + msgs,
 			`DELETE FROM chat_attachment WHERE message_id IN ` + msgs,
 			`DELETE FROM chat_message_file WHERE message_id IN ` + msgs,
@@ -1014,12 +1017,15 @@ func (r *Repository) ReplaceFileContent(ctx context.Context, f File, previousKey
 	return result.RowsAffected() == 1, nil
 }
 
-// DeleteFile removes the file and its shares, returning its object key.
+// DeleteFile removes the file, its shares and links, returning its object key.
 func (r *Repository) DeleteFile(ctx context.Context, tenant, id uuid.UUID) (string, error) {
 	var key string
 	err := orm.Transact(ctx, r.db, func(tx *orm.Tx) error {
-		if _, err := tx.Exec(ctx, `DELETE FROM team_file_share WHERE tenant_id=$1 AND file_id=$2`, tenant, id); err != nil {
-			return err
+		for _, q := range []string{`DELETE FROM team_file_share WHERE tenant_id=$1 AND file_id=$2`,
+			`DELETE FROM team_file_link WHERE tenant_id=$1 AND file_id=$2`} {
+			if _, err := tx.Exec(ctx, q, tenant, id); err != nil {
+				return err
+			}
 		}
 		return tx.QueryRow(ctx, `DELETE FROM team_file WHERE tenant_id=$1 AND id=$2 RETURNING object_key`, tenant, id).Scan(&key)
 	})
@@ -1064,6 +1070,7 @@ func (r *Repository) DeleteFolderTree(ctx context.Context, tenant, folder uuid.U
 		}
 		for _, q := range []string{
 			`DELETE FROM team_file_share WHERE file_id IN (SELECT id FROM team_file WHERE tenant_id=$1 AND folder_id = ANY($2))`,
+			`DELETE FROM team_file_link WHERE file_id IN (SELECT id FROM team_file WHERE tenant_id=$1 AND folder_id = ANY($2))`,
 			`DELETE FROM team_file WHERE tenant_id=$1 AND folder_id = ANY($2)`,
 			`DELETE FROM team_folder WHERE tenant_id=$1 AND id = ANY($2)`,
 		} {

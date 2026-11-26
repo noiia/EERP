@@ -483,13 +483,13 @@ export function GanttRenderer<T extends HasId>({
   // PNG/PDF of the timeline as drawn: folded rows (collapsed) are not in it.
   const [exportError, setExportError] = useState<SerializedError | null>(null)
   const roadmapRef = useRef<HTMLDivElement>(null)
-  const exportImage = async (kind: 'png' | 'pdf', roadmapView = false) => {
+  const exportImage = async (kind: 'png' | 'svg' | 'pdf', roadmapView = false) => {
     const el = roadmapView ? roadmapRef.current : gridRef.current
     if (!el) return
     setExportError(null)
     try {
       // html-to-image and jspdf load on the first export, not with the Gantt.
-      const { exportElementPdf, exportElementPng } = await import('./diagram/export')
+      const m = await import('./diagram/export')
       const title = roadmapView ? `${t('Roadmap')} ${isoDate(new Date())}` : `${t('Gantt')} ${fromIso} – ${isoDate(addDays(range.end, -1))}`
       const background = theme.palette.background.paper
       const legend = roadmapView
@@ -499,8 +499,9 @@ export function GanttRenderer<T extends HasId>({
             { color: theme.palette.primary.main, label: t('Upcoming') },
           ]
         : [{ color: theme.palette.error.main, label: t('Today') }]
-      if (kind === 'png') await exportElementPng(el, title, background)
-      else await exportElementPdf(el, { title, date: new Date(), legend, background }, title)
+      if (kind === 'png') await m.exportElementPng(el, title, background)
+      else if (kind === 'svg') await m.exportElementSvg(el, title, background)
+      else await m.exportElementPdf(el, { title, date: new Date(), legend, background }, title)
     } catch (e: unknown) {
       setExportError(serializeError(toApiError(e)))
     }
@@ -1063,6 +1064,7 @@ export function GanttRenderer<T extends HasId>({
           <ExportMenu
             options={[
               { key: 'png', label: t('Export PNG'), icon: 'file-image', onClick: () => void exportImage('png', true) },
+              { key: 'svg', label: t('Export SVG'), icon: 'file-image', onClick: () => void exportImage('svg', true) },
               { key: 'pdf', label: t('Export PDF'), icon: 'file-pdf', onClick: () => void exportImage('pdf', true) },
             ]}
           />
@@ -1141,6 +1143,7 @@ export function GanttRenderer<T extends HasId>({
             <ExportMenu
               options={[
                 { key: 'png', label: t('Export PNG'), icon: 'file-image', onClick: () => void exportImage('png') },
+                { key: 'svg', label: t('Export SVG'), icon: 'file-image', onClick: () => void exportImage('svg') },
                 { key: 'pdf', label: t('Export PDF'), icon: 'file-pdf', onClick: () => void exportImage('pdf') },
                 ...(exchange && exchangePin
                   ? exchange.formats.map((f) => ({

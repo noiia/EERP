@@ -399,6 +399,15 @@ export function FilesPane({
       )
     : listing?.path
 
+  // The office viewer's Share button, for those who may share the file.
+  const shareButton = (id: string, owner: string) =>
+    canEdit(owner) ? (
+      <Tooltip title={t('Share')}>
+        <IconButton aria-label={t('Share')} onClick={() => setDlg({ kind: 'share', id })}>
+          <FontAwesomeIcon icon={faShareNodes} />
+        </IconButton>
+      </Tooltip>
+    ) : undefined
   const actions = (kind: 'file' | 'folder', id: string, label: string, owner: string): Action[] => [
     ...(kind === 'file'
       ? [{ label: t('Download'), icon: faDownload, href: `/api/teams/files/${id}/download` }]
@@ -621,6 +630,7 @@ export function FilesPane({
                     url={`/api/teams/files/${f.id}/download`}
                     source={{ kind: 'team-file', id: f.id }}
                     onClosed={reload}
+                    headerActions={shareButton(f.id, f.uploaded_by)}
                   />,
                   f.path,
                 )}
@@ -646,6 +656,7 @@ export function FilesPane({
           name={newDocument.name}
           url={`/api/teams/files/${newDocument.id}/download`}
           source={{ kind: 'team-file', id: newDocument.id }}
+          headerActions={shareButton(newDocument.id, me ?? '')}
           onClose={() => {
             setNewDocument(null)
             reload()

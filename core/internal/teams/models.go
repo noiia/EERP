@@ -127,6 +127,21 @@ type Share struct {
 	UserID   uuid.UUID `db:"user_id,index"`
 }
 
+// Link is a secret download link to one file: any staff user of the tenant
+// holding the token downloads the file's current content until ExpiresAt.
+// Only the token's sha256 is stored; revoking soft-deletes the row.
+type Link struct {
+	model.BaseModel
+	TenantID       uuid.UUID  `db:"tenant_id,index"`
+	TeamID         uuid.UUID  `db:"team_id,index"`
+	FileID         uuid.UUID  `db:"file_id"`
+	CreatedBy      uuid.UUID  `db:"created_by"`
+	TokenHash      string     `db:"token_hash"`
+	ExpiresAt      time.Time  `db:"expires_at"`
+	DownloadCount  int        `db:"download_count"`
+	LastDownloadAt *time.Time `db:"last_download_at"`
+}
+
 // Group is a team's hand-managed set of members, used in channel access lists.
 type Group struct {
 	model.BaseModel
@@ -164,6 +179,7 @@ func (MessageFile) TableName() string   { return "chat_message_file" }
 func (Folder) TableName() string        { return "team_folder" }
 func (File) TableName() string          { return "team_file" }
 func (Share) TableName() string         { return "team_file_share" }
+func (Link) TableName() string          { return "team_file_link" }
 func (Group) TableName() string         { return "team_group" }
 func (GroupMember) TableName() string   { return "team_group_member" }
 func (ChannelAccess) TableName() string { return "chat_channel_access" }
