@@ -96,11 +96,14 @@ export function OfficeDialog({
   url,
   source,
   onClose,
+  headerActions,
 }: {
   name: string
   url: string
   source: OfficeSource
   onClose: () => void
+  /** Host buttons shown in the header, before Download (e.g. Teams' Share). */
+  headerActions?: ReactNode
 }) {
   useDocumentTitle(name)
   const t = useT()
@@ -303,6 +306,7 @@ export function OfficeDialog({
               Euro-Office · {t(editable ? 'Editing' : 'Read only')}
             </Typography>
           </Box>
+          {headerActions}
           <Button
             component="a"
             href={url}
@@ -409,12 +413,14 @@ export function OfficeFileLink({
   source,
   children,
   onClosed,
+  headerActions,
 }: {
   name: string
   url: string
   source: OfficeSource
   children?: ReactNode
   onClosed?: () => void
+  headerActions?: ReactNode
 }) {
   const [open, setOpen] = useState(false)
   return (
@@ -444,6 +450,7 @@ export function OfficeFileLink({
           name={name}
           url={url}
           source={source}
+          headerActions={headerActions}
           onClose={() => {
             setOpen(false)
             onClosed?.()

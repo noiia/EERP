@@ -20,6 +20,7 @@ describe('routeOf', () => {
     [['direct', 'd1'], undefined, { view: { kind: 'direct', id: 'd1' } }],
     [['t1'], undefined, { teamId: 't1', view: { kind: 'channel', id: undefined } }],
     [['t1', 'channels', 'c1', '__PAGE__'], undefined, { teamId: 't1', view: { kind: 'channel', id: 'c1' } }],
+    [['links', 'abc'], undefined, null],
     [['t1', 'files'], 'f1', { teamId: 't1', view: { kind: 'files', id: 'f1' } }],
   ])('%j', (segments, folder, want) => expect(routeOf(segments, folder)).toEqual(want))
 })

@@ -26,6 +26,7 @@ vi.mock('./client', () => ({
   getShares: () => Promise.resolve([]),
   setShares: () => Promise.resolve([]),
   directory: () => Promise.resolve([]),
+  getLinks: () => Promise.resolve([]),
 }))
 
 import { preloadLazyComponents, useSessionStore } from '@eerp/core-front'
@@ -259,6 +260,25 @@ describe('FilesPane', () => {
         expect(screen.queryByRole('button', { name: 'New document' })).toBeNull()
     },
   )
+
+  it.each([
+    ['member', 'me', true],
+    ['member', 'other', false],
+    ['owner', 'other', true],
+  ] as const)('the office viewer offers Share to a %s on a file by %s: %s', async (role, by, shown) => {
+    c.listFiles.mockResolvedValue({
+      ...listing,
+      files: [{ ...listing.files[0], name: 'Plan.docx', uploaded_by: by }],
+    })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 503 })))
+    render(<FilesPane teamId="t1" role={role} />)
+    fireEvent.click(await screen.findByRole('link', { name: 'Plan.docx' }))
+    const viewer = await screen.findByRole('dialog', { name: 'Plan.docx' })
+    const share = within(viewer).queryByRole('button', { name: 'Share' })
+    if (!shown) return expect(share).toBeNull()
+    fireEvent.click(share!)
+    expect(await screen.findByRole('dialog', { name: 'Share file' })).toBeInTheDocument()
+  })
 
   it('says so when file storage is not configured', async () => {
     c.listFiles.mockRejectedValue(Object.assign(new Error(''), { status: 404 }))
