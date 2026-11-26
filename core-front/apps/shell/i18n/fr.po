@@ -3016,6 +3016,9 @@ msgstr "Aucune ligne de base"
 msgid "Dependency cycle: no critical path"
 msgstr "Cycle de dépendances : aucun chemin critique"
 
+msgid "The export timed out while loading the tasks."
+msgstr "L'export a expiré pendant le chargement des tâches."
+
 msgid "PBS"
 msgstr "PBS"
 

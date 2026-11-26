@@ -108,6 +108,18 @@ values print by label (read once for the whole diagram), dates and numbers in th
 image is rendered at 3× when the browsers' canvas limits allow (16 000 px a side, 150 M pixels), else 2×,
 else 1×.
 
+No export loses text: for the capture only, `revealClippedText` (`views/diagram/export.ts`) wraps every
+text cut by an ellipsis or a line clamp and grows the boxes clipping it, in every project export (diagrams,
+Gantt, RACI, risk views). On a diagram canvas a grown box then pushes the boxes below it in its column down
+by its growth, keeping their gaps (`pushDown`, `collide.ts`), so none covers another; the positions are
+never saved.
+
+The Gantt's export is the whole plan, not the window on screen: three one-row reads find the first and
+last day the list's scheduled tasks cover, the timeline is redrawn over that span at the current zoom
+(whole columns, a fixed width per day: 48 px in Day, 16 in Week, 5 in Month), every row unfolded and every
+title on one line, and the capture waits until that span's tasks and their dependency links are read
+(60 s at most). It holds the Gantt's 1 000-task cap; the screen returns to its own range afterwards.
+
 Folds decide what an export holds: the WBS exports the boxes on screen, so a folded branch is
 left out. The WBS **Layers** menu folds whole levels at once: one checkbox per task level, named
 by its shape ("Layer X", "Layer X.Y", "Layer X.Y.Z"…); unticking level *k* folds every box of
