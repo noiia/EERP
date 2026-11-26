@@ -188,10 +188,13 @@ func (r *Registry) bootLocked(ctx context.Context, onProgress func(done, total i
 		wg.Wait()
 	}
 
-	// Go-type modules — registration order (unchanged from LoadGoModules).
+	// Go-type modules — in module.json `depends` order, registration order otherwise.
+	depends := make(map[string][]string, len(modules))
+	for _, mod := range modules {
+		depends[mod.Name] = mod.Depends
+	}
 	goMu.Lock()
-	goMods := make([]GoModule, len(goModules))
-	copy(goMods, goModules)
+	goMods := orderGoModules(goModules, depends)
 	goMu.Unlock()
 	ensuredThisBoot := map[string]int{}
 	for i, m := range goMods {

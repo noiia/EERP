@@ -95,5 +95,4 @@ enables the `-to` boot test.
 - `-to` builds a past release: expect minutes, not seconds.
 - A crashed run can leave scratch databases: list them with `SELECT datname FROM pg_database WHERE datname LIKE 'eerp\_upgrade\_%'` and drop each with `DROP DATABASE "<name>" WITH (FORCE)`.
 - A check a module left `NOT VALID` (an old row violates it) is reported as a warning, not a failure.
-- On a brand-new empty database the core's first provisioning pass fails on module ordering (warehouse/notify before auth's `users` table), so the tool retries it once. This is a pre-existing core issue, not the tool's.
 - The default admin is seeded in `production` mode, so its known password must be changed at first sign-in.

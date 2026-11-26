@@ -11,7 +11,6 @@ import (
 	"core/orm"
 
 	"github.com/bytecodealliance/wasmtime-go/v50"
-	"go.uber.org/zap"
 )
 
 // provision runs today's boot migration (all modules + default admin) on dbName,
@@ -33,12 +32,5 @@ func provision(ctx context.Context, cfg *types.Config, dbName string) error {
 		return fmt.Errorf("wrap host log: %w", err)
 	}
 	p := dbmanage.Provisioner{Engine: engine, Linker: linker, ModuleRoots: c.ModuleRoot, Environment: "production"}
-	// Boot is idempotent. On a database with no tables yet, the first pass can run a module's
-	// Migrate (notify, warehouse) before auth's users table exists, depending on Go's package
-	// init order in this binary; the second pass finds every table and succeeds.
-	if err := p.Provision(ctx, app.DB, nil); err != nil {
-		common.Logger.Warn("first provision attempt failed, retrying", zap.Error(err))
-		return p.Provision(ctx, app.DB, nil)
-	}
-	return nil
+	return p.Provision(ctx, app.DB, nil)
 }

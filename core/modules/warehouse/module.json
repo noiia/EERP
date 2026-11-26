@@ -8,7 +8,7 @@
     "description": "Warehouse module — products and product variants",
     "app_mode": true,
     "menu_icon": "warehouse",
-    "depends": [],
+    "depends": ["auth"],
     "static_files": {
         "views": [
             "warehouse_views.ts"

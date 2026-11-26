@@ -36,3 +36,6 @@ func RegisterSchemaOnly() []error {
 func LoadGoModule(ctx context.Context, db *orm.DB, m GoModule, ensured map[string]int) ([]string, error) {
 	return loadGoModule(ctx, db, m, ensured)
 }
+
+// OrderGoModules exposes orderGoModules for the boot-order test.
+var OrderGoModules = orderGoModules
