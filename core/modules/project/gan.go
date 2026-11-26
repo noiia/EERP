@@ -319,7 +319,7 @@ type ganPendingDep struct {
 
 func (w *ganWalker) walk(el ganTaskEl, parentKey string) error {
 	if len(w.tasks)+len(w.milestones) >= ganMaxTasks {
-		return fmt.Errorf("%w: more than %d tasks", errNotGan, ganMaxTasks)
+		return fmt.Errorf("%w: %w: more than %d tasks", errNotGan, errPlanTooBig, ganMaxTasks)
 	}
 	// The file's own id is what a row is named by: Key() falls back to it for a
 	// row EERP does not know, and Parent, PlanDep and PlanAssign all hold Key()s.

@@ -3,7 +3,6 @@ package project
 import (
 	"bytes"
 	"context"
-	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -41,9 +40,8 @@ import (
 // because the request asked for a route EERP does not have, and there is nothing
 // about the upload that has been looked at yet to refuse.
 
-// exchangeContentType is what a plan file is served as. GanttProject's .gan is
-// XML, and it is the only file family registered; a second format adds a method to
-// Format rather than a second value here.
+// exchangeContentType is what a plan file is served as: both registered families
+// (.gan and MSPDI) are XML.
 const exchangeContentType = "application/xml"
 
 // The two refusals about the upload itself. Both are 422 with the file named as
@@ -257,11 +255,9 @@ func (h *Handler) ApplyExchange(c *echo.Context) error {
 // upload reads the posted file and decodes it as the request's format.
 //
 // A file that is not the format, and a request that carries no file at all, are
-// the same answer: it is the request's file that is wrong. The task ceiling is
-// checked on the raw bytes as well as on the decoded plan, because the .gan
-// decoder refuses an oversized file with the very error a screenshot answers with
-// (gan.go's ganMaxTasks), and a manager has to be told their plan is too big
-// rather than that they attached a PNG.
+// the same answer: it is the request's file that is wrong. A decoder that stops
+// at the task ceiling wraps errPlanTooBig, so a manager is told their plan is too
+// big rather than that they attached a PNG.
 func (r *exchangeCall) upload(c *echo.Context) (*upload, error) {
 	form, err := c.MultipartForm()
 	if err != nil {
@@ -277,7 +273,7 @@ func (r *exchangeCall) upload(c *echo.Context) (*upload, error) {
 	}
 	plan, warnings, err := r.format.Decode(bytes.NewReader(raw))
 	if err != nil {
-		if countTasks(raw) > ganMaxTasks {
+		if errors.Is(err, errPlanTooBig) {
 			return nil, errTooManyTasks
 		}
 		return nil, errInvalidFile
@@ -303,31 +299,6 @@ func readUpload(fh *multipart.FileHeader) ([]byte, error) {
 	}
 	defer func() { _ = f.Close() }()
 	return io.ReadAll(f)
-}
-
-// countTasks is how many <task> elements a file holds, counted on its bytes.
-//
-// It exists for one reason: the ceiling and "this is not a .gan file" share an
-// error inside the decoder, and the route has to tell the two apart. Counting the
-// elements the format itself counts (gan.go's ganMaxTasks is tasks plus
-// milestones, and both are <task> elements) is the only reading of a file the
-// handler is allowed when its own decoder has already refused to look at it.
-//
-// shortcut: "<task>" is .gan's word for a row, and it is the one format notion
-// this generic handler holds; when a second Format lands, have Decode return a
-// distinct over-the-ceiling error (or a Count method on Format) and delete this.
-func countTasks(raw []byte) int {
-	dec := xml.NewDecoder(bytes.NewReader(raw))
-	var n int
-	for {
-		tok, err := dec.Token()
-		if err != nil {
-			return n
-		}
-		if se, ok := tok.(xml.StartElement); ok && se.Name.Local == "task" {
-			n++
-		}
-	}
 }
 
 // ── What a removal takes with it ─────────────────────────────────────────────

@@ -1,6 +1,7 @@
 package project
 
 import (
+	"errors"
 	"io"
 	"strings"
 	"time"
@@ -259,6 +260,10 @@ const (
 	FieldBaselines   Field = "baselines"
 	FieldCapacity    Field = "capacity"
 )
+
+// errPlanTooBig is wrapped by a decoder that stopped at the ganMaxTasks ceiling,
+// so the route can answer TOO_MANY_TASKS rather than INVALID_FILE.
+var errPlanTooBig = errors.New("the plan holds too many tasks")
 
 // formats is the registry the routes resolve :format against. Each format file
 // fills it from its init().
