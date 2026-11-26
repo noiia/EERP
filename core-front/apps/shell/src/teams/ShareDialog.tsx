@@ -1,12 +1,17 @@
 'use client'
 import { useEffect, useState } from 'react'
+import Alert from '@mui/material/Alert'
 import Autocomplete from '@mui/material/Autocomplete'
 import Button from '@mui/material/Button'
+import Chip from '@mui/material/Chip'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
+import FormControlLabel from '@mui/material/FormControlLabel'
+import Radio from '@mui/material/Radio'
+import RadioGroup from '@mui/material/RadioGroup'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
@@ -44,6 +49,7 @@ export function ShareDialog({ open, fileId, onClose, onSaved }: { open: boolean;
   const [expires, setExpires] = useState(() => daysFromNow(7))
   const [created, setCreated] = useState('')
   const [linkError, setLinkError] = useState('')
+  const [isPublic, setIsPublic] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -52,6 +58,7 @@ export function ShareDialog({ open, fileId, onClose, onSaved }: { open: boolean;
     getLinks(fileId).then(setLinks).catch(() => setLinks([]))
     setCreated('')
     setLinkError('')
+    setIsPublic(false)
   }, [open, fileId])
 
   const save = () => {
@@ -62,7 +69,7 @@ export function ShareDialog({ open, fileId, onClose, onSaved }: { open: boolean;
 
   const create = () => {
     setLinkError('')
-    createLink(fileId, linkExpiry(expires))
+    createLink(fileId, linkExpiry(expires), isPublic)
       .then((l) => {
         const url = `${window.location.origin}${l.url ?? ''}`
         setCreated(url)
@@ -100,6 +107,15 @@ export function ShareDialog({ open, fileId, onClose, onSaved }: { open: boolean;
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
           <T text="Anyone signed in to this workspace with the link can download this file until it expires." />
         </Typography>
+        <RadioGroup row value={isPublic ? 'public' : 'members'} onChange={(e) => setIsPublic(e.target.value === 'public')}>
+          <FormControlLabel value="members" control={<Radio size="small" />} label={t('Workspace members only')} />
+          <FormControlLabel value="public" control={<Radio size="small" />} label={t('Anyone with the link')} />
+        </RadioGroup>
+        {isPublic && (
+          <Alert severity="warning" sx={{ my: 1 }}>
+            <T text="Anyone who gets this link can download the file without signing in." />
+          </Alert>
+        )}
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
           <TextField
             type="date"
@@ -125,6 +141,7 @@ export function ShareDialog({ open, fileId, onClose, onSaved }: { open: boolean;
         {linkError && <Typography color="error" variant="body2" sx={{ mt: 1 }}>{linkError}</Typography>}
         {links.map((l) => (
           <Stack key={l.id} direction="row" spacing={1} sx={{ alignItems: 'center', mt: 1 }}>
+            {l.public && <Chip size="small" color="warning" label={t('Public')} />}
             <Typography variant="body2" sx={{ flex: 1 }}>
               {t('Expires on')} {new Date(l.expires_at).toLocaleDateString()} · {l.created_by_name} · {l.download_count} {t('downloads')}
             </Typography>

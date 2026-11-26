@@ -454,3 +454,15 @@ msgstr "Télécharger le fichier"
 
 msgid "This link opens one shared file. If it has expired or been revoked, the download answers File not found."
 msgstr "Ce lien ouvre un fichier partagé. S'il a expiré ou a été révoqué, le téléchargement répond Fichier introuvable."
+
+msgid "Workspace members only"
+msgstr "Membres de l'espace de travail uniquement"
+
+msgid "Anyone with the link"
+msgstr "Toute personne disposant du lien"
+
+msgid "Anyone who gets this link can download the file without signing in."
+msgstr "Toute personne qui reçoit ce lien peut télécharger le fichier sans se connecter."
+
+msgid "Public"
+msgstr "Public"

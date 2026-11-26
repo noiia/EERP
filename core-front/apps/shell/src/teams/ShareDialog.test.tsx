@@ -25,7 +25,8 @@ const inDays = (n: number) => {
 
 beforeEach(() => {
   getLinks.mockResolvedValue([
-    { id: 'l1', expires_at: '2030-01-02T10:00:00Z', created_by_name: 'Alice', created_at: '2030-01-01T10:00:00Z', download_count: 3, last_download_at: null },
+    { id: 'l1', expires_at: '2030-01-02T10:00:00Z', created_by_name: 'Alice', created_at: '2030-01-01T10:00:00Z', download_count: 3, last_download_at: null, public: false },
+    { id: 'l9', expires_at: '2030-01-03T10:00:00Z', created_by_name: 'Bob', created_at: '2030-01-01T10:00:00Z', download_count: 0, last_download_at: null, public: true },
   ])
   createLink.mockReset()
   revokeLink.mockClear()
@@ -57,7 +58,7 @@ describe('ShareDialog', () => {
     createLink.mockResolvedValue({ id: 'l2', url: '/app/teams/links/tok', expires_at: '2030-01-08T22:59:00Z', created_by_name: 'Alice', created_at: '', download_count: 0, last_download_at: null })
     render(<ShareDialog open fileId="f1" onClose={vi.fn()} onSaved={vi.fn()} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Create link' }))
-    await waitFor(() => expect(createLink).toHaveBeenCalledWith('f1', linkExpiry(ymd(inDays(7)))))
+    await waitFor(() => expect(createLink).toHaveBeenCalledWith('f1', linkExpiry(ymd(inDays(7))), false))
     const url = `${window.location.origin}/app/teams/links/tok`
     expect(await screen.findByDisplayValue(url)).toBeInTheDocument()
     expect(writeText).toHaveBeenCalledWith(url)
@@ -66,9 +67,28 @@ describe('ShareDialog', () => {
   it('lists live links and revokes one', async () => {
     render(<ShareDialog open fileId="f1" onClose={vi.fn()} onSaved={vi.fn()} />)
     expect(await screen.findByText(/3 downloads/)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Revoke' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Revoke' })[0]!)
     await waitFor(() => expect(revokeLink).toHaveBeenCalledWith('l1'))
     await waitFor(() => expect(screen.queryByText(/3 downloads/)).not.toBeInTheDocument())
+  })
+
+  it('makes a public link only when asked, with a warning', async () => {
+    Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } })
+    createLink.mockResolvedValue({ id: 'l3', url: '/api/v1/file-links/pub', expires_at: '2030-01-08T22:59:00Z', created_by_name: 'Alice', created_at: '', download_count: 0, last_download_at: null, public: true })
+    render(<ShareDialog open fileId="f1" onClose={vi.fn()} onSaved={vi.fn()} />)
+    expect(await screen.findByRole('radio', { name: 'Workspace members only' })).toBeChecked()
+    expect(screen.queryByText(/without signing in/)).toBeNull()
+    fireEvent.click(screen.getByRole('radio', { name: 'Anyone with the link' }))
+    expect(screen.getByText('Anyone who gets this link can download the file without signing in.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Create link' }))
+    await waitFor(() => expect(createLink).toHaveBeenCalledWith('f1', linkExpiry(ymd(inDays(7))), true))
+    expect(await screen.findByDisplayValue(`${window.location.origin}/api/v1/file-links/pub`)).toBeInTheDocument()
+  })
+
+  it('marks public links in the list', async () => {
+    render(<ShareDialog open fileId="f1" onClose={vi.fn()} onSaved={vi.fn()} />)
+    expect(await screen.findByText(/0 downloads/)).toBeInTheDocument()
+    expect(screen.getAllByText('Public')).toHaveLength(1)
   })
 
   it('shows why a link was refused', async () => {

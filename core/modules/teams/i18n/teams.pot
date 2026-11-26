@@ -453,3 +453,15 @@ msgstr ""
 
 msgid "This link opens one shared file. If it has expired or been revoked, the download answers File not found."
 msgstr ""
+
+msgid "Workspace members only"
+msgstr ""
+
+msgid "Anyone with the link"
+msgstr ""
+
+msgid "Anyone who gets this link can download the file without signing in."
+msgstr ""
+
+msgid "Public"
+msgstr ""
