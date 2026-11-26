@@ -133,3 +133,51 @@ func (h *Handler) RevokeLink(c *echo.Context) error {
 	}
 	return c.NoContent(http.StatusNoContent)
 }
+
+// DownloadLink serves GET /links/:token/download to any staff user of the
+// link's tenant. Every failure is the same 404, so a token can't be probed;
+// the link also dies once its creator can no longer read the file.
+func (h *Handler) DownloadLink(c *echo.Context) error {
+	ctx := c.Request().Context()
+	id := auth.MustIdentity(ctx)
+	l, err := h.repo.ResolveLink(ctx, HashToken(c.Param("token")))
+	if errors.Is(err, orm.ErrNotFound) || (err == nil && l.TenantID != id.TenantID) {
+		return notFound(c, "file")
+	}
+	if err != nil {
+		return err
+	}
+	f, err := h.repo.FindFile(ctx, l.TenantID, l.FileID)
+	if errors.Is(err, orm.ErrNotFound) {
+		return notFound(c, "file")
+	}
+	if err != nil {
+		return err
+	}
+	role, err := h.repo.RoleOf(ctx, l.TenantID, f.TeamID, l.CreatedBy)
+	if errors.Is(err, orm.ErrNotFound) {
+		return notFound(c, "file")
+	}
+	if err != nil {
+		return err
+	}
+	if visible, err := h.visibleFolder(ctx, l.TenantID, f.TeamID, l.CreatedBy, role, f.FolderID); err != nil {
+		return err
+	} else if !visible {
+		return notFound(c, "file")
+	}
+	if err := h.repo.CountDownload(ctx, l.TenantID, l.ID); err != nil {
+		return err
+	}
+	c.Response().Header().Set("Cache-Control", "private, no-store")
+	c.Response().Header().Set("X-Content-Type-Options", "nosniff")
+	return h.streamFile(c, f)
+}
+
+// MountLinks registers the download-link route, rate-limited by limit. Needs S3.
+func MountLinks(g *echo.Group, h *Handler, limit echo.MiddlewareFunc) {
+	if h.objects == nil {
+		return
+	}
+	g.GET("/links/:token/download", h.DownloadLink, limit)
+}

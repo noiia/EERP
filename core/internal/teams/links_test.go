@@ -201,3 +201,126 @@ func TestLinkRoutes_ListAndRevoke(t *testing.T) {
 		t.Fatalf("after revoke: %s", rec.Body)
 	}
 }
+
+// newLink uploads content as f.member and creates a link to it; returns the file id and token.
+func (f chatFixture) newLink(t *testing.T, folder, content string) (uuid.UUID, string) {
+	t.Helper()
+	code, file := f.upload(t, f.member, folder, "doc.txt", content)
+	if code != 201 {
+		t.Fatalf("upload: %d", code)
+	}
+	rec := serve(t, f.h.CreateLink, "POST", linkBody(time.Now().Add(time.Hour)), f.as(f.member), map[string]string{"file": file.String()})
+	var out struct{ Token string }
+	if err := jsonDecode(rec, &out); err != nil || rec.Code != 201 {
+		t.Fatalf("create link: %d %s", rec.Code, rec.Body)
+	}
+	return file, out.Token
+}
+
+func TestDownloadLink_AnyStaffOfTenant(t *testing.T) {
+	f := newChatFixture(t, true)
+	_, token := f.newLink(t, "", "hello")
+	rec := serve(t, f.h.DownloadLink, "GET", "", f.as(f.staff), map[string]string{"token": token}) // not a team member
+	if rec.Code != 200 || rec.Body.String() != "hello" {
+		t.Fatalf("download: %d %s", rec.Code, rec.Body)
+	}
+	h := rec.Header()
+	if h.Get("Cache-Control") != "private, no-store" || h.Get("X-Content-Type-Options") != "nosniff" ||
+		h.Get("Content-Disposition") != `attachment; filename=doc.txt` || h.Get("ETag") == "" {
+		t.Fatalf("headers: %v", h)
+	}
+	l, err := f.repo.ResolveLink(context.Background(), teams.HashToken(token))
+	if err != nil || l.DownloadCount != 1 {
+		t.Fatalf("count: %+v %v", l, err)
+	}
+}
+
+func TestDownloadLink_404s(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name  string
+		mutate func(t *testing.T, f chatFixture, file uuid.UUID, token string) (caller uuidOrTenant, tok string)
+	}{
+		{"unknown token", func(t *testing.T, f chatFixture, _ uuid.UUID, _ string) (uuidOrTenant, string) {
+			return uuidOrTenant{user: f.staff}, "nope"
+		}},
+		{"revoked", func(t *testing.T, f chatFixture, _ uuid.UUID, tok string) (uuidOrTenant, string) {
+			l, _ := f.repo.ResolveLink(ctx, teams.HashToken(tok))
+			_ = f.repo.RevokeLink(ctx, f.tenant, l.ID)
+			return uuidOrTenant{user: f.staff}, tok
+		}},
+		{"expired", func(t *testing.T, f chatFixture, _ uuid.UUID, tok string) (uuidOrTenant, string) {
+			_, _ = f.app.DB.Exec(ctx, `UPDATE team_file_link SET expires_at=now()-interval '1 minute' WHERE token_hash=$1`, teams.HashToken(tok))
+			return uuidOrTenant{user: f.staff}, tok
+		}},
+		{"file deleted", func(t *testing.T, f chatFixture, file uuid.UUID, tok string) (uuidOrTenant, string) {
+			_, _ = f.repo.DeleteFile(ctx, f.tenant, file)
+			return uuidOrTenant{user: f.staff}, tok
+		}},
+		{"other tenant", func(t *testing.T, f chatFixture, _ uuid.UUID, tok string) (uuidOrTenant, string) {
+			return uuidOrTenant{user: uuid.New(), tenant: uuid.New()}, tok
+		}},
+		{"creator removed from team", func(t *testing.T, f chatFixture, _ uuid.UUID, tok string) (uuidOrTenant, string) {
+			if err := f.repo.RemoveMember(ctx, f.tenant, f.team, f.member); err != nil {
+				t.Fatal(err)
+			}
+			return uuidOrTenant{user: f.staff}, tok
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newChatFixture(t, true)
+			file, token := f.newLink(t, "", "x")
+			who, tok := tc.mutate(t, f, file, token)
+			id := f.as(who.user)
+			if who.tenant != uuid.Nil {
+				id.TenantID = who.tenant
+			}
+			rec := serve(t, f.h.DownloadLink, "GET", "", id, map[string]string{"token": tok})
+			if rec.Code != 404 {
+				t.Fatalf("got %d %s", rec.Code, rec.Body)
+			}
+		})
+	}
+}
+
+type uuidOrTenant struct{ user, tenant uuid.UUID }
+
+func TestDownloadLink_CreatorLostPrivateFolder(t *testing.T) {
+	f := newChatFixture(t, true)
+	folder := f.folder(t, f.owner, f.team, `{"name":"private"}`)
+	_, token := f.newLink(t, folder.String(), "secret")
+	rec := serve(t, f.h.CreateChannel, "POST", `{"name":"hush"}`, f.as(f.owner), map[string]string{"id": f.team.String()})
+	var ch struct{ ID uuid.UUID }
+	if err := jsonDecode(rec, &ch); err != nil || rec.Code != 201 {
+		t.Fatalf("channel: %d %s", rec.Code, rec.Body)
+	}
+	cp := map[string]string{"id": f.team.String(), "channel": ch.ID.String()}
+	if c := f.call(t, f.h.RenameChannel, "PUT", `{"folder_id":"`+folder.String()+`"}`, f.owner, cp); c != 200 {
+		t.Fatalf("link folder: %d", c)
+	}
+	if c := f.call(t, f.h.PutChannelAccess, "PUT", `{"user_ids":["`+f.guest.String()+`"],"group_ids":[]}`, f.owner, cp); c != 200 {
+		t.Fatalf("restrict: %d", c)
+	}
+	if rec := serve(t, f.h.DownloadLink, "GET", "", f.as(f.staff), map[string]string{"token": token}); rec.Code != 404 {
+		t.Fatalf("got %d", rec.Code)
+	}
+}
+
+func TestDownloadLink_ServesLatestContent(t *testing.T) {
+	f := newChatFixture(t, true)
+	ctx := context.Background()
+	fileID, token := f.newLink(t, "", "v1")
+	file, err := f.repo.FindFile(ctx, f.tenant, fileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.store.objs["new-key"] = []byte("v2")
+	if ok, err := f.repo.ReplaceFileContent(ctx, teams.File{TenantID: f.tenant, ObjectKey: "new-key", Mime: file.Mime, Size: 2,
+		BaseModel: file.BaseModel}, file.ObjectKey); err != nil || !ok {
+		t.Fatalf("replace: %v %v", ok, err)
+	}
+	rec := serve(t, f.h.DownloadLink, "GET", "", f.as(f.staff), map[string]string{"token": token})
+	if rec.Code != 200 || rec.Body.String() != "v2" {
+		t.Fatalf("got %d %s", rec.Code, rec.Body)
+	}
+}

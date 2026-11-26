@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"core/internal/pictures"
 	"core/internal/types"
 )
 
@@ -127,5 +128,34 @@ func TestApp_MCPOAuth(t *testing.T) {
 	}
 	if rec := mcpCall(mcpToken, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`); rec.Code != 401 || rec.Header().Get("WWW-Authenticate") == "" {
 		t.Errorf("revoked token: %d %q", rec.Code, rec.Header().Get("WWW-Authenticate"))
+	}
+}
+
+// TestApp_TeamsDownloadLinkRoutes: the link download route is mounted behind the
+// JWT (an unknown token is the generic 404), and the link routes are MCP operations.
+func TestApp_TeamsDownloadLinkRoutes(t *testing.T) {
+	c := buildAppWith(t, func(cfg *types.Config) { cfg.MCPEnabled = true })
+	if !pictures.S3Configured(c.a.cfg) {
+		t.Skip("teams file routes need s3_*")
+	}
+	if code, body := c.do("GET", "/api/v1/teams/links/unknown/download", nil); code != 404 || !strings.Contains(string(body), "No such file.") {
+		t.Fatalf("unknown token: %d %s", code, body)
+	}
+	token := c.token
+	c.token = ""
+	if code, _ := c.do("GET", "/api/v1/teams/links/unknown/download", nil); code != 401 {
+		t.Fatalf("anonymous: %d", code)
+	}
+	c.token = token
+	req := httptest.NewRequest("POST", "/api/v1/mcp", bytes.NewBufferString(
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"eerp_list_operations","arguments":{"search":"/links"}}}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	rec := httptest.NewRecorder()
+	c.h.ServeHTTP(rec, req)
+	if !strings.Contains(rec.Body.String(), "GET /api/v1/teams/files/:file/links") ||
+		!strings.Contains(rec.Body.String(), "GET /api/v1/teams/links/:token/download") {
+		t.Fatalf("MCP operations: %d %s", rec.Code, rec.Body.String())
 	}
 }

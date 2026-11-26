@@ -728,7 +728,9 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		}
 	}
 	teamsHandler := teams.NewHandler(teams.NewRepository(app.DB), userRepo, presenceHub, notifySvc, teamsObjects)
-	teams.Mount(srv.Echo().Group("/api/v1/teams", jwtMw, teams.ActiveGate(moduleRuntime.IsActive)), teamsHandler, uploadLimit)
+	teamsGroup := srv.Echo().Group("/api/v1/teams", jwtMw, teams.ActiveGate(moduleRuntime.IsActive))
+	teams.Mount(teamsGroup, teamsHandler, uploadLimit)
+	teams.MountLinks(teamsGroup, teamsHandler, ormserver.AuthRateLimiter(publicRateLimit(configContent)))
 	officeService, err := office.New(configContent, teamsObjects, userRepo)
 	if err != nil {
 		return fmt.Errorf("configure Euro-Office: %w", err)
