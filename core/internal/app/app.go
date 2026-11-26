@@ -324,6 +324,8 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		// few thousand tasks is far past the JSON cap, and its two POSTs get
 		// uploadLimit from MountExchange.
 		BodyLimitExempt: []string{"/api/v1/pictures", "/api/v1/attachments", "/api/v1/teams/channels", "/api/v1/teams/*/files", "/api/v1/project/*/exchange", dbRestorePath},
+		// A Teams download link's token is a bearer secret: never in the request log.
+		LogRedact: []string{"/api/v1/teams/links/"},
 	}
 	uploadLimit := ormserver.BodyLimit(configContent.UploadBodyLimitOrDefault())
 	if len(configContent.AllowedOrigins) == 0 {

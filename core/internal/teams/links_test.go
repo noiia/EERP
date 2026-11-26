@@ -260,6 +260,12 @@ func TestDownloadLink_404s(t *testing.T) {
 		{"other tenant", func(t *testing.T, f chatFixture, _ uuid.UUID, tok string) (uuidOrTenant, string) {
 			return uuidOrTenant{user: uuid.New(), tenant: uuid.New()}, tok
 		}},
+		{"creator deleted", func(t *testing.T, f chatFixture, _ uuid.UUID, tok string) (uuidOrTenant, string) {
+			if _, err := f.app.DB.Exec(ctx, `UPDATE users SET deleted_at=now() WHERE id=$1`, f.member); err != nil {
+				t.Fatal(err)
+			}
+			return uuidOrTenant{user: f.staff}, tok
+		}},
 		{"creator removed from team", func(t *testing.T, f chatFixture, _ uuid.UUID, tok string) (uuidOrTenant, string) {
 			if err := f.repo.RemoveMember(ctx, f.tenant, f.team, f.member); err != nil {
 				t.Fatal(err)

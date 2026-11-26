@@ -10,7 +10,12 @@ import { T } from '@eerp/core-front'
 export function LinkDownload({ token }: { token: string }) {
   const href = `/api/teams/links/${encodeURIComponent(token)}/download`
   const link = useRef<HTMLAnchorElement>(null)
-  useEffect(() => link.current?.click(), [])
+  const started = useRef(false) // StrictMode runs effects twice: one download, one count
+  useEffect(() => {
+    if (started.current) return
+    started.current = true
+    link.current?.click()
+  }, [])
   return (
     <Card sx={{ maxWidth: 480, mx: 'auto', mt: 6 }}>
       <CardContent>

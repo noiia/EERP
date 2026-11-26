@@ -67,10 +67,12 @@ func (r *Repository) FindLink(ctx context.Context, tenant, id uuid.UUID) (Link, 
 		WHERE tenant_id=$1 AND id=$2 AND `+liveLink, tenant, id))
 }
 
-// ResolveLink finds a live link by token hash in any tenant: the caller checks the tenant.
+// ResolveLink finds a live link by token hash in any tenant (the caller checks
+// the tenant); a link whose creator was deleted is dead.
 func (r *Repository) ResolveLink(ctx context.Context, tokenHash string) (Link, error) {
-	return scanLink(r.db.QueryRow(ctx, `SELECT `+linkColumns+` FROM team_file_link
-		WHERE token_hash=$1 AND `+liveLink, tokenHash))
+	return scanLink(r.db.QueryRow(ctx, `SELECT `+linkColumns+` FROM team_file_link l
+		WHERE token_hash=$1 AND `+liveLink+`
+		AND EXISTS (SELECT 1 FROM users u WHERE u.id = l.created_by AND u.deleted_at IS NULL)`, tokenHash))
 }
 
 func (r *Repository) RevokeLink(ctx context.Context, tenant, id uuid.UUID) error {
