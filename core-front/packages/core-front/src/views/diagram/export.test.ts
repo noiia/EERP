@@ -1,15 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const pdf = vi.hoisted(() => ({ addImage: vi.fn(), text: vi.fn(), save: vi.fn(), rect: vi.fn(), getTextWidth: vi.fn(() => 10), setFillColor: vi.fn() }))
-vi.mock('html-to-image', () => ({ toPng: vi.fn(async () => 'data:image/png;base64,AAA') }))
+vi.mock('html-to-image', () => ({ toPng: vi.fn(async () => 'data:image/png;base64,AAA'), toSvg: vi.fn(async () => 'data:image/svg+xml,AAA') }))
 vi.mock('jspdf', () => ({
   jsPDF: vi.fn(function () {
     return { ...pdf, internal: { pageSize: { getWidth: () => 420, getHeight: () => 297 } } }
   }),
 }))
 
-import { toPng } from 'html-to-image'
-import { diagramToPng, elementToPng, pixelRatioFor, exportPdf, exportPng, pdfColor, pdfFormat, type DiagramBounds } from './export'
+import { toPng, toSvg } from 'html-to-image'
+import { diagramToPng, diagramToSvg, elementToPng, elementToSvg, pixelRatioFor, exportPdf, exportPng, pdfColor, pdfFormat, type DiagramBounds } from './export'
 
 const bounds = { x: 10, y: 20, width: 800, height: 400 }
 
@@ -53,6 +53,20 @@ describe('elementToPng', () => {
     const o = vi.mocked(toPng).mock.calls[0][1]!
     expect(o).toMatchObject({ width: 300, height: 120, pixelRatio: 600 / 96, backgroundColor: '#000' })
     expect(o.style).toBeUndefined()
+  })
+})
+
+describe('SVG export', () => {
+  it('captures the diagram and an element as SVG, with the same framing as PNG', async () => {
+    const el = document.createElement('div')
+    expect(await diagramToSvg(el, bounds, '#000')).toBe('data:image/svg+xml,AAA')
+    expect(vi.mocked(toSvg).mock.calls[0][1]).toMatchObject({ width: 880, height: 480, backgroundColor: '#000' })
+    expect(vi.mocked(toSvg).mock.calls[0][1]!.style).toBeDefined()
+    Object.defineProperty(el, 'scrollWidth', { value: 300 })
+    Object.defineProperty(el, 'scrollHeight', { value: 120 })
+    await elementToSvg(el)
+    expect(vi.mocked(toSvg).mock.calls[1][1]).toMatchObject({ width: 300, height: 120, backgroundColor: '#ffffff' })
+    expect(toPng).not.toHaveBeenCalled()
   })
 })
 

@@ -319,7 +319,7 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
   )
 
   // The grid already shows every title in full (wrapped), so the export captures it as is.
-  const doExport = (kind: 'png' | 'pdf') => {
+  const doExport = (kind: 'png' | 'svg' | 'pdf') => {
     const el = table.current
     if (!el) return
     setExporting(true)
@@ -327,7 +327,7 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
     const bg = th.palette.background.paper
     const meta = { title: [projectName, t('RACI')].filter(Boolean).join(' — '), date: new Date(), legend: [], background: bg }
     import('../diagram/export')
-      .then((m) => (kind === 'png' ? m.exportElementPng(el, name, bg) : m.exportElementPdf(el, meta, name)))
+      .then((m) => (kind === 'png' ? m.exportElementPng(el, name, bg) : kind === 'svg' ? m.exportElementSvg(el, name, bg) : m.exportElementPdf(el, meta, name)))
       .catch((e: unknown) => setError(serializeError(toApiError(e))))
       .finally(() => setExporting(false))
   }
@@ -471,6 +471,7 @@ export function Raci({ tasks, config, projectId }: RaciProps) {
             disabled={exporting}
             options={[
               { key: 'png', label: t('Export PNG'), icon: 'file-image', onClick: () => doExport('png') },
+              { key: 'svg', label: t('Export SVG'), icon: 'file-image', onClick: () => doExport('svg') },
               { key: 'pdf', label: t('Export PDF'), icon: 'file-pdf', onClick: () => doExport('pdf') },
             ]}
           />
