@@ -104,9 +104,11 @@ export function ShareDialog({ open, fileId, onClose, onSaved }: { open: boolean;
 
         <Divider sx={{ my: 2 }} />
         <Typography variant="subtitle2"><T text="Download links" /></Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-          <T text="Anyone signed in to this workspace with the link can download this file until it expires." />
-        </Typography>
+        {!isPublic && (
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            <T text="Anyone signed in to this workspace with the link can download this file until it expires." />
+          </Typography>
+        )}
         <RadioGroup row value={isPublic ? 'public' : 'members'} onChange={(e) => setIsPublic(e.target.value === 'public')}>
           <FormControlLabel value="members" control={<Radio size="small" />} label={t('Workspace members only')} />
           <FormControlLabel value="public" control={<Radio size="small" />} label={t('Anyone with the link')} />
