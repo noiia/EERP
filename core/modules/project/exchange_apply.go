@@ -55,7 +55,7 @@ var conflictChanged = &rejection{status: http.StatusConflict, code: "PROJECT_CHA
 //
 // The caller comes from ctx (the rules read it for their visibility checks), so this is
 // only ever called behind the route's own gate.
-func (h *Handler) applyPlan(ctx context.Context, tenant, pid uuid.UUID, file Plan,
+func (h *Handler) applyPlan(ctx context.Context, tenant, pid uuid.UUID, file Plan, f Format,
 	base string, keys []string, users map[string]uuid.UUID, filename string) (int, error) {
 	who, ok := auth.IdentityFromContext(ctx)
 	if !ok {
@@ -83,7 +83,7 @@ func (h *Handler) applyPlan(ctx context.Context, tenant, pid uuid.UUID, file Pla
 		if planHash(cur) != base {
 			return conflictChanged
 		}
-		a, err := newApplier(h, ctx, tx, tenant, pid, cur, file, users, keys)
+		a, err := newApplier(h, ctx, tx, tenant, pid, cur, file, f, users, keys)
 		if err != nil {
 			return err
 		}
@@ -164,8 +164,8 @@ var (
 // from the same two plans is the only way to be sure of that. The base was just checked
 // against the locked project, so this is the same comparison the preview made.
 func newApplier(h *Handler, ctx context.Context, tx *orm.Tx, tenant, pid uuid.UUID,
-	cur, file Plan, users map[string]uuid.UUID, keys []string) (*applier, error) {
-	d := &diff{cur: cur, file: file, users: users}
+	cur, file Plan, f Format, users map[string]uuid.UUID, keys []string) (*applier, error) {
+	d := &diff{cur: cur, file: file, users: users, format: f}
 	rows, _ := d.run()
 
 	want, err := selection(rows, keys)

@@ -194,8 +194,11 @@ type assignValue struct {
 // Rows come back in the order the wizard shows them: the file's task order, with
 // a removal beside the neighbour it used to sit next to, and within a task its
 // create, move, updates, dependencies, assignees, then removals.
-func diffPlans(cur, file Plan, users map[string]uuid.UUID) ([]Change, []Warning) {
-	d := &diff{cur: cur, file: file, users: users}
+//
+// f is the file's format: a field it does not carry is never compared, so a file
+// that cannot hold, say, a priority never offers to clear one.
+func diffPlans(cur, file Plan, users map[string]uuid.UUID, f Format) ([]Change, []Warning) {
+	d := &diff{cur: cur, file: file, users: users, format: f}
 	return d.run()
 }
 
@@ -218,6 +221,7 @@ func (d *diff) run() ([]Change, []Warning) {
 type diff struct {
 	cur, file Plan
 	users     map[string]uuid.UUID
+	format    Format
 
 	warnings []Warning
 	rows     []diffRow
@@ -454,13 +458,21 @@ func (d *diff) taskRows() {
 // hours nor a completion in EERP, so its rows are its name and its deadline: what
 // the file invents for the rest is not a change to anything.
 func (d *diff) updateRows(i, c int) {
-	d.nameRow(i, c)
-	d.datesRow(i, c)
+	if d.format.Carries(FieldName) {
+		d.nameRow(i, c)
+	}
+	if d.format.Carries(FieldDates) {
+		d.datesRow(i, c)
+	}
 	if d.file.Tasks[i].Milestone {
 		return
 	}
-	d.hoursRow(i, c)
-	d.closedRow(i, c)
+	if d.format.Carries(FieldHours) {
+		d.hoursRow(i, c)
+	}
+	if d.format.Carries(FieldClosed) {
+		d.closedRow(i, c)
+	}
 }
 
 func (d *diff) nameRow(i, c int) {
@@ -974,7 +986,9 @@ func (d *diff) knownEnds(pred, succ string, fromFile bool) (string, string, bool
 
 func (d *diff) depRows() {
 	d.dependencyRows()
-	d.linkRows()
+	if d.format.Carries(FieldMilestone) {
+		d.linkRows()
+	}
 }
 
 // dependencyRows reports the links EERP does not have and the ones it has and the

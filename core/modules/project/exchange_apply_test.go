@@ -226,7 +226,7 @@ func exRenamed(p Plan, from, to string) Plan {
 func exPreview(t *testing.T, f *fixture, pid uuid.UUID, file Plan) (string, []Change, []Warning) {
 	t.Helper()
 	cur := exLoad(t, f, pid, file.Weekend)
-	changes, warnings := diffPlans(cur, file, exUsers(t, f))
+	changes, warnings := diffPlans(cur, file, exUsers(t, f), ganFormat{})
 	return planHash(cur), changes, warnings
 }
 
@@ -260,7 +260,7 @@ func exApply(t *testing.T, f *fixture, who auth.Identity, pid uuid.UUID, file Pl
 // from the project, the caller stamped on the context), with its error handed back.
 func exTryApply(f *fixture, who auth.Identity, pid uuid.UUID, file Plan, name string, keys []string) (int, error) {
 	base, _, _ := exPreview(f.t, f, pid, file)
-	return f.handler().applyPlan(ctxFor(who), who.TenantID, pid, file, base, keys, exUsers(f.t, f), name)
+	return f.handler().applyPlan(ctxFor(who), who.TenantID, pid, file, ganFormat{}, base, keys, exUsers(f.t, f), name)
 }
 
 // exRejection is err as the route would answer it.
@@ -609,7 +609,7 @@ func TestApply_StaleBase409(t *testing.T) {
 	// while the manager was reading the wizard.
 	stale, _, _ := exPreview(t, f, pid, e.basic)
 	f.exec(`UPDATE project_task SET planned_hours = 5 WHERE id = $1`, uuid.MustParse(ganExcavationRef))
-	_, err := f.handler().applyPlan(ctxFor(f.caller(e.mgr)), f.tenant, pid, e.partner, stale,
+	_, err := f.handler().applyPlan(ctxFor(f.caller(e.mgr)), f.tenant, pid, e.partner, ganFormat{}, stale,
 		[]string{key}, exUsers(t, f), "partner_edited.gan")
 	rej := exRejection(t, err)
 	if rej.status != http.StatusConflict || rej.code != "PROJECT_CHANGED" {
@@ -624,7 +624,7 @@ func TestApply_StaleBase409(t *testing.T) {
 	// the hash really does move when the project changes.
 	fresh, _, _ := exPreview(t, f, pid, e.partner)
 	exApply(t, f, f.caller(e.mgr), pid, e.partner, "partner_edited.gan", key)
-	_, err = f.handler().applyPlan(ctxFor(f.caller(e.mgr)), f.tenant, pid, e.partner, fresh,
+	_, err = f.handler().applyPlan(ctxFor(f.caller(e.mgr)), f.tenant, pid, e.partner, ganFormat{}, fresh,
 		[]string{key}, exUsers(t, f), "partner_edited.gan")
 	if rej := exRejection(t, err); rej.status != http.StatusConflict || rej.code != "PROJECT_CHANGED" {
 		t.Fatalf("replaying a spent base: %d %s, want 409 PROJECT_CHANGED", rej.status, rej.code)
@@ -1296,7 +1296,7 @@ func TestApply_RefusedPlacementNamesTheCreate(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		a, err := newApplier(f.handler(), ctx, tx, f.tenant, pid, cur, file, users, []string{"new:7", "new:8"})
+		a, err := newApplier(f.handler(), ctx, tx, f.tenant, pid, cur, file, ganFormat{}, users, []string{"new:7", "new:8"})
 		if err != nil {
 			return err
 		}

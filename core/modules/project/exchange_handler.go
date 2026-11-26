@@ -209,7 +209,7 @@ func (h *Handler) PreviewExchange(c *echo.Context) error {
 	if err != nil {
 		return err
 	}
-	changes, warnings := diffPlans(cur, up.file, users)
+	changes, warnings := diffPlans(cur, up.file, users, r.format)
 	if err := r.fillDependents(changes, removalKeys(cur)); err != nil {
 		return err
 	}
@@ -245,7 +245,7 @@ func (h *Handler) ApplyExchange(c *echo.Context) error {
 	if err != nil {
 		return err
 	}
-	n, err := h.applyPlan(r.ctx, r.tenant, r.pid, up.file, up.base, up.keys, users, up.filename)
+	n, err := h.applyPlan(r.ctx, r.tenant, r.pid, up.file, r.format, up.base, up.keys, users, up.filename)
 	if err != nil {
 		return respond(c, err)
 	}

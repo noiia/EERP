@@ -5,6 +5,7 @@ import (
 	"context"
 	"math"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -402,7 +403,7 @@ func TestLoadPlan_DeletedParentLeavesChildAtTopLevel(t *testing.T) {
 	if len(warnings) != 0 {
 		t.Errorf("Decode(Encode(exportPlan)) warnings = %+v, want none", warnings)
 	}
-	changes, diffWarnings := diffPlans(exLoad(t, f, p, file.Weekend), file, exUsers(t, f))
+	changes, diffWarnings := diffPlans(exLoad(t, f, p, file.Weekend), file, exUsers(t, f), ganFormat{})
 	if len(changes) != 0 {
 		t.Errorf("re-importing what EERP wrote is not empty: %s", strings.Join(dfxKeys(changes), " "))
 		for _, row := range changes {
@@ -865,7 +866,7 @@ func TestExport_ReimportIsEmpty(t *testing.T) {
 		t.Errorf("file name = %q, want %q: the label has to survive the escaping", file.Name, label)
 	}
 
-	changes, diffWarnings := diffPlans(exLoad(t, f, p, file.Weekend), file, exUsers(t, f))
+	changes, diffWarnings := diffPlans(exLoad(t, f, p, file.Weekend), file, exUsers(t, f), ganFormat{})
 	if len(changes) != 0 {
 		t.Errorf("re-importing what EERP wrote is not empty: %s", strings.Join(dfxKeys(changes), " "))
 		for _, row := range changes {
@@ -874,5 +875,68 @@ func TestExport_ReimportIsEmpty(t *testing.T) {
 	}
 	if len(diffWarnings) != 0 {
 		t.Errorf("re-importing what EERP wrote warned: %+v", diffWarnings)
+	}
+}
+
+// TestLoadPlan_Extras: the plan carries priority, notes, actual hours, the newest
+// eleven baselines (0 = newest) and each assignee's capacity (40 without a row).
+func TestLoadPlan_Extras(t *testing.T) {
+	f := newFixture(t)
+	mgr := uuid.New()
+	p := f.project(mgr, "everyone")
+	task := f.task(p, nil, nil)
+	exTaskDates(f, task, "2026-01-05", "2026-01-09")
+	f.exec(`UPDATE project_task SET priority = true, description = 'Read the spec' WHERE id = $1`, task)
+
+	var newest uuid.UUID
+	for i := 0; i < 12; i++ {
+		b := f.id(`INSERT INTO project_baseline (tenant_id, project_id, name, created_by, created_at)
+			VALUES ($1, $2, $3, $4, now() - make_interval(days => $5)) RETURNING id`,
+			f.tenant, p, "B"+strconv.Itoa(i), mgr, 12-i)
+		f.exec(`INSERT INTO project_baseline_task (tenant_id, baseline_id, project_id, task_id, date_start, deadline, planned_hours)
+			VALUES ($1, $2, $3, $4, $5, $6, $7)`, f.tenant, b, p, task, exDate("2026-01-05"), exDate("2026-01-06"), float64(i))
+		newest = b
+	}
+	_ = newest
+
+	ann := exStaff(f, "ann.extras@x.test", "Ann Lee", "", "")
+	bob := exStaff(f, "bob.extras@x.test", "Bob", "", "")
+	f.assign(p, task, ann)
+	f.assign(p, task, bob)
+	f.exec(`INSERT INTO project_capacity (tenant_id, user_id, hours_per_week) VALUES ($1, $2, 24)`, f.tenant, ann)
+
+	plan := exLoad(t, f, p, DefaultWeekend)
+	got := exPlanTask(t, plan, task.String())
+	if !got.Priority || got.Notes != "Read the spec" {
+		t.Errorf("task priority/notes = %v/%q, want true/%q", got.Priority, got.Notes, "Read the spec")
+	}
+	if len(plan.Baselines) != 11 {
+		t.Fatalf("baselines = %d, want the newest 11", len(plan.Baselines))
+	}
+	b0 := plan.Baselines[0]
+	if b0.Number != 0 || b0.Tasks[task.String()].Work != 11 || b0.Tasks[task.String()].Duration != 2 {
+		t.Errorf("baseline 0 = %+v, want the newest (work 11, 2 days)", b0)
+	}
+	if plan.Baselines[10].Number != 10 || plan.Baselines[10].Tasks[task.String()].Work != 1 {
+		t.Errorf("baseline 10 = %+v, want the 11th newest (work 1)", plan.Baselines[10])
+	}
+	hours := map[string]float64{}
+	for _, r := range plan.Resources {
+		hours[r.Email] = r.HoursPerWeek
+	}
+	if len(plan.Resources) != 2 || hours["ann.extras@x.test"] != 24 || hours["bob.extras@x.test"] != 40 {
+		t.Errorf("resources = %+v, want ann 24 and bob 40", plan.Resources)
+	}
+}
+
+// TestPlanHash_Extras: the base moves when a description changes.
+func TestPlanHash_Extras(t *testing.T) {
+	f := newFixture(t)
+	p := f.project(uuid.New(), "everyone")
+	task := f.task(p, nil, nil)
+	before := planHash(exLoad(t, f, p, DefaultWeekend))
+	f.exec(`UPDATE project_task SET description = 'changed' WHERE id = $1`, task)
+	if planHash(exLoad(t, f, p, DefaultWeekend)) == before {
+		t.Error("a description change left the hash alone")
 	}
 }
