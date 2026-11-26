@@ -40,7 +40,7 @@ vi.mock('@xyflow/react', () => ({
   getNodesBounds: () => ({ x: 0, y: 0, width: 100, height: 50 }),
 }))
 const exportPdf = vi.fn()
-vi.mock('./export', () => ({ exportPng: vi.fn(), exportPdf: (...a: unknown[]) => exportPdf(...a) }))
+vi.mock('./export', () => ({ exportPng: vi.fn(), exportPdf: (...a: unknown[]) => exportPdf(...a), revealClippedText: () => () => {} }))
 
 import { ObsRenderer, OBS_BOX_SIZE } from './obs-renderer'
 import { FarTitle } from './obs-box'

@@ -1,5 +1,5 @@
 import { getViewportForBounds } from '@xyflow/react'
-import { toPng } from 'html-to-image'
+import { toPng, toSvg } from 'html-to-image'
 import { jsPDF } from 'jspdf'
 
 export interface DiagramBounds { x: number; y: number; width: number; height: number }
@@ -130,14 +130,79 @@ export function prepareEdgesForCapture(node: HTMLElement, bounds: DiagramBounds)
   }
 }
 
+/** Shows every clipped text in full for a capture, and returns the restore. A text cut by an
+ * ellipsis (`noWrap`, a Chip label) or a line clamp wraps instead, and each box between it and
+ * `root` that then clips it (a fixed height, `overflow: hidden`) grows to its content, so an
+ * exported image never loses a title. Run it before measuring the capture's size: a React Flow
+ * canvas needs a frame afterwards to re-measure its nodes and re-route the edges. */
+export function revealClippedText(root: HTMLElement): () => void {
+  const restores: Array<() => void> = []
+  const set = (el: HTMLElement, prop: string, value: string) => {
+    const old = el.style.getPropertyValue(prop)
+    restores.push(() => (old ? el.style.setProperty(prop, old) : el.style.removeProperty(prop)))
+    el.style.setProperty(prop, value)
+  }
+  // A text that fits keeps its single line (wrapped, a viewer whose font runs a little wider
+  // would break it inside its box), but loses its ellipsis and clip: in that viewer it runs a
+  // few pixels long instead of turning into "Tas…". Only a text cut right now wraps.
+  const clipped: HTMLElement[] = []
+  for (const el of Array.from(root.querySelectorAll<HTMLElement>('*'))) {
+    const cs = getComputedStyle(el)
+    const clamp = cs.getPropertyValue('-webkit-line-clamp')
+    if (cs.textOverflow === 'ellipsis' && el.scrollWidth <= el.clientWidth) {
+      set(el, 'text-overflow', 'clip')
+      set(el, 'overflow', 'visible')
+      // Its own parent often clips too (a label's button, a box): nothing overflows it here, so
+      // unclipping changes nothing on screen.
+      const p = el.parentElement
+      if (p && p !== root && getComputedStyle(p).overflowX === 'hidden' && p.scrollWidth <= p.clientWidth) set(p, 'overflow', 'visible')
+    } else if (cs.textOverflow === 'ellipsis' || (clamp !== '' && clamp !== 'none' && el.scrollHeight > el.clientHeight)) {
+      clipped.push(el)
+    }
+  }
+  for (const el of clipped) {
+    set(el, 'white-space', 'normal')
+    set(el, 'overflow-wrap', 'anywhere')
+    set(el, 'text-overflow', 'clip')
+    set(el, 'overflow', 'visible')
+    set(el, '-webkit-line-clamp', 'none')
+    if (getComputedStyle(el).display === '-webkit-box') set(el, 'display', 'block')
+  }
+  // Innermost first: a grown box's own size is what its parent then reads.
+  for (const el of clipped) {
+    for (let p = el.parentElement; p && p !== root; p = p.parentElement) {
+      const tall = p.scrollHeight > p.clientHeight + 1
+      if (!tall && p.scrollWidth <= p.clientWidth + 1) continue
+      const cs = getComputedStyle(p)
+      if (cs.overflowX !== 'visible' || cs.overflowY !== 'visible') set(p, 'overflow', 'visible')
+      if (tall) {
+        set(p, 'min-height', `${p.offsetHeight}px`)
+        set(p, 'height', 'auto')
+        set(p, 'max-height', 'none')
+      }
+    }
+  }
+  return () => {
+    for (let i = restores.length - 1; i >= 0; i--) restores[i]()
+  }
+}
+
 /** PNG data URL of the whole diagram (not just the visible part), via the xyflow export recipe;
  * at `ratio` image pixels per CSS pixel (default 600 dpi), capped by the canvas limits (pixelRatioFor). */
-export async function diagramToPng(viewport: HTMLElement, bounds: DiagramBounds, background = WHITE, ratio?: number): Promise<string> {
+export const diagramToPng = (viewport: HTMLElement, bounds: DiagramBounds, background = WHITE, ratio?: number) =>
+  captureDiagram(toPng, viewport, bounds, background, ratio)
+
+/** SVG data URL of the whole diagram: vector, so it has no resolution to pick (the boxes ride in as
+ * `<foreignObject>` HTML, which browsers and Inkscape render; some vector editors show only the lines). */
+export const diagramToSvg = (viewport: HTMLElement, bounds: DiagramBounds, background = WHITE) =>
+  captureDiagram(toSvg, viewport, bounds, background)
+
+async function captureDiagram(render: typeof toPng, viewport: HTMLElement, bounds: DiagramBounds, background: string, ratio?: number): Promise<string> {
   const { w, h } = size(bounds)
   const v = getViewportForBounds(bounds, w, h, 0.1, 4, 0.05)
   const restore = prepareEdgesForCapture(viewport, bounds)
   try {
-    return await toPng(viewport, {
+    return await render(viewport, {
       backgroundColor: background,
       width: w,
       height: h,
@@ -147,6 +212,13 @@ export async function diagramToPng(viewport: HTMLElement, bounds: DiagramBounds,
   } finally {
     restore()
   }
+}
+
+function download(href: string, filename: string): void {
+  const a = document.createElement('a')
+  a.download = filename
+  a.href = href
+  a.click()
 }
 
 /** jsPDF only takes hex (or names): an `rgb()`/`rgba()` theme color becomes hex, its alpha blended over white. */
@@ -159,10 +231,11 @@ export function pdfColor(css: string): string {
 }
 
 export async function exportPng(viewport: HTMLElement, bounds: DiagramBounds, filename: string, background?: string): Promise<void> {
-  const a = document.createElement('a')
-  a.download = `${filename}.png`
-  a.href = await diagramToPng(viewport, bounds, background)
-  a.click()
+  download(await diagramToPng(viewport, bounds, background), `${filename}.png`)
+}
+
+export async function exportSvg(viewport: HTMLElement, bounds: DiagramBounds, filename: string, background?: string): Promise<void> {
+  download(await diagramToSvg(viewport, bounds, background), `${filename}.svg`)
 }
 
 export async function exportPdf(
@@ -212,22 +285,37 @@ async function writePdf(
 /** PNG data URL of a plain element at its natural size (no viewport transform: for HTML/SVG content that is
  * not an xyflow canvas); same pixel-ratio rule as diagramToPng. The edge preparation applies too — a no-op
  * for the mind-map and Ishikawa elements, whose lines are plain SVG with explicit attributes. */
-export async function elementToPng(el: HTMLElement, background = WHITE, ratio?: number): Promise<string> {
+export const elementToPng = (el: HTMLElement, background = WHITE, ratio?: number) => captureElement(toPng, el, background, ratio)
+
+/** SVG data URL of a plain element at its natural size (see diagramToSvg). */
+export const elementToSvg = (el: HTMLElement, background = WHITE) => captureElement(toSvg, el, background)
+
+async function captureElement(render: typeof toPng, el: HTMLElement, background: string, ratio?: number): Promise<string> {
+  const restoreText = revealClippedText(el)
+  try {
+    return await captureRevealed(render, el, background, ratio)
+  } finally {
+    restoreText()
+  }
+}
+
+async function captureRevealed(render: typeof toPng, el: HTMLElement, background: string, ratio?: number): Promise<string> {
   const width = Math.ceil(el.scrollWidth)
   const height = Math.ceil(el.scrollHeight)
   const restore = prepareEdgesForCapture(el, { x: 0, y: 0, width: el.scrollWidth, height: el.scrollHeight })
   try {
-    return await toPng(el, { backgroundColor: background, width, height, pixelRatio: pixelRatioFor(width, height, ratio) })
+    return await render(el, { backgroundColor: background, width, height, pixelRatio: pixelRatioFor(width, height, ratio) })
   } finally {
     restore()
   }
 }
 
 export async function exportElementPng(el: HTMLElement, filename: string, background?: string): Promise<void> {
-  const a = document.createElement('a')
-  a.download = `${filename}.png`
-  a.href = await elementToPng(el, background)
-  a.click()
+  download(await elementToPng(el, background), `${filename}.png`)
+}
+
+export async function exportElementSvg(el: HTMLElement, filename: string, background?: string): Promise<void> {
+  download(await elementToSvg(el, background), `${filename}.svg`)
 }
 
 export async function exportElementPdf(

@@ -6,6 +6,9 @@ import {
   postMessage,
   createDocument,
   setShares,
+  getLinks,
+  createLink,
+  revokeLink,
 } from './client'
 
 const fetchMock = vi.fn()
@@ -80,5 +83,20 @@ describe('teams client', () => {
       code: 'NOT_FOUND',
       message: 'No such folder.',
     })
+  })
+
+  it('manages file download links', async () => {
+    fetchMock.mockImplementation(async () => ok({ data: [] }))
+    await getLinks('f1')
+    expect(fetchMock.mock.calls[0]![0]).toBe('/api/teams/files/f1/links')
+    fetchMock.mockImplementation(async () => ok({ id: 'l1' }))
+    await createLink('f1', '2030-01-01T00:00:00.000Z', true)
+    expect(fetchMock.mock.calls[1]).toEqual([
+      '/api/teams/files/f1/links',
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({ expires_at: '2030-01-01T00:00:00.000Z', public: true }) }),
+    ])
+    fetchMock.mockImplementation(async () => new Response(null, { status: 204 }))
+    await revokeLink('l1')
+    expect(fetchMock.mock.calls[2]).toEqual(['/api/teams/files/links/l1', expect.objectContaining({ method: 'DELETE' })])
   })
 })

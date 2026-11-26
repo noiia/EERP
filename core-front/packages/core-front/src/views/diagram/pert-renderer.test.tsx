@@ -37,7 +37,7 @@ vi.mock('@xyflow/react', () => ({
   Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
   getNodesBounds: () => ({ x: 0, y: 0, width: 100, height: 50 }),
 }))
-vi.mock('./export', () => ({ exportPng: vi.fn(), exportPdf: vi.fn() }))
+vi.mock('./export', () => ({ exportPng: vi.fn(), exportPdf: vi.fn(), revealClippedText: () => () => {} }))
 const push = vi.hoisted(() => vi.fn())
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }))
 

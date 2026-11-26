@@ -50,6 +50,26 @@ export function separateBoxes(boxes: (Rect & { id: string; fixed?: boolean })[],
   return out
 }
 
+/** Re-lays boxes that grew taller (`grownH` over their laid-out `h`) without overlapping:
+ * a box moves down just enough to keep, below each box above it in its column (overlapping
+ * x range), the vertical gap it had before. Nothing moves sideways or up, so the layout
+ * reads the same. Returns the new top-left of every box. */
+export function pushDown(boxes: (Rect & { id: string; grownH: number })[]): Record<string, Point> {
+  const ordered = [...boxes].sort((a, b) => a.y - b.y)
+  const out: Record<string, Point> = {}
+  const done: { b: Rect & { grownH: number }; y: number }[] = []
+  for (const b of ordered) {
+    let y = b.y
+    for (const { b: m, y: my } of done) {
+      if (m.y + m.h > b.y || m.x >= b.x + b.w || b.x >= m.x + m.w) continue
+      y = Math.max(y, my + m.grownH + (b.y - (m.y + m.h)))
+    }
+    out[b.id] = { x: b.x, y }
+    done.push({ b, y })
+  }
+  return out
+}
+
 // The map's arrows leave a box's right side and enter the next one's left side as React
 // Flow's default bezier: these control points are its getBezierPath ones, so a point at
 // `t` here lies on the drawn arrow.

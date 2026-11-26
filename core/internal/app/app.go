@@ -324,6 +324,8 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		// few thousand tasks is far past the JSON cap, and its two POSTs get
 		// uploadLimit from MountExchange.
 		BodyLimitExempt: []string{"/api/v1/pictures", "/api/v1/attachments", "/api/v1/teams/channels", "/api/v1/teams/*/files", "/api/v1/project/*/exchange", dbRestorePath},
+		// A Teams download link's token is a bearer secret: never in the request log.
+		LogRedact: []string{"/api/v1/teams/links/", "/api/v1/file-links/"},
 	}
 	uploadLimit := ormserver.BodyLimit(configContent.UploadBodyLimitOrDefault())
 	if len(configContent.AllowedOrigins) == 0 {
@@ -728,7 +730,15 @@ func (a *App) mountRoutes(moduleRuntime *module.Registry) error {
 		}
 	}
 	teamsHandler := teams.NewHandler(teams.NewRepository(app.DB), userRepo, presenceHub, notifySvc, teamsObjects)
-	teams.Mount(srv.Echo().Group("/api/v1/teams", jwtMw, teams.ActiveGate(moduleRuntime.IsActive)), teamsHandler, uploadLimit)
+	teamsGroup := srv.Echo().Group("/api/v1/teams", jwtMw, teams.ActiveGate(moduleRuntime.IsActive))
+	teams.Mount(teamsGroup, teamsHandler, uploadLimit)
+	// Keyed by user: colleagues behind one office NAT don't share a bucket.
+	teams.MountLinks(teamsGroup, teamsHandler, ormserver.RateLimiterBy(publicRateLimit(configContent), func(c *echo.Context) string {
+		return auth.MustIdentity(c.Request().Context()).UserID.String()
+	}))
+	// Public download links: no JWT, the token is the only key (ADR-037).
+	teams.MountPublicLinks(srv.Echo().Group("/api/v1/file-links",
+		ormserver.AuthRateLimiter(publicRateLimit(configContent)), teams.PublicGate(moduleRuntime.IsActive)), teamsHandler)
 	officeService, err := office.New(configContent, teamsObjects, userRepo)
 	if err != nil {
 		return fmt.Errorf("configure Euro-Office: %w", err)

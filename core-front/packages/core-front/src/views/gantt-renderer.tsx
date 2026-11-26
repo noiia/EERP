@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -57,7 +57,7 @@ import { colorTagsFieldOf, useRecordColors } from './use-record-colors'
 // (equal horizontal stripes for several) and a button beside its name edits
 // them. Bars carry no text, so no color can make a label unreadable.
 
-type Zoom = 'day' | 'week' | 'month'
+export type Zoom = 'day' | 'week' | 'month'
 
 // The zoom is kept per entity for the browser tab's session, so going to a record and
 // back to the Gantt keeps the scale the user picked. Storage can throw (private mode).
@@ -149,6 +149,22 @@ const BASELINE_CHUNK = 100
 const HEADER_H = 24
 const ROW_H = 32
 const ROW_GAP = 4
+/** Dependency arrows (px): line thickness and arrowhead length, drawn as HTML boxes (see the overlay). */
+const ARROW_STROKE = 1.5
+const ARROW_HEAD = 6
+const ARROW_LINE_SX = { position: 'absolute', bgcolor: 'text.secondary' } as const
+const arrowHead = (side: 'borderLeft' | 'borderRight') =>
+  ({
+    position: 'absolute',
+    width: 0,
+    height: 0,
+    borderTop: `${ARROW_HEAD / 2}px solid transparent`,
+    borderBottom: `${ARROW_HEAD / 2}px solid transparent`,
+    [side]: `${ARROW_HEAD}px solid`,
+    [`${side}Color`]: 'text.secondary',
+  }) as const
+const ARROW_HEAD_RIGHT_SX = arrowHead('borderLeft')
+const ARROW_HEAD_LEFT_SX = arrowHead('borderRight')
 
 function addDays(d: Date, n: number): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n)
@@ -181,6 +197,11 @@ function viewRange(zoom: Zoom, anchor: Date, phone = false) {
     zoom === 'month'
       ? new Date(start.getFullYear(), start.getMonth() + (phone ? 3 : 6), start.getDate())
       : addDays(start, zoom === 'day' ? (phone ? 7 : 14) : phone ? 42 : 84)
+  return { start, end, columns: columnsOf(zoom, start, end) }
+}
+
+/** Header columns inside [start, end): every day, every Monday, or every 1st of the month. */
+function columnsOf(zoom: Zoom, start: Date, end: Date): Date[] {
   let c =
     zoom === 'day' ? start
     : zoom === 'week' ? monday(addDays(start, 6))
@@ -189,8 +210,23 @@ function viewRange(zoom: Zoom, anchor: Date, phone = false) {
   for (; c < end; c = zoom === 'month' ? new Date(c.getFullYear(), c.getMonth() + 1, 1) : addDays(c, zoom === 'day' ? 1 : 7)) {
     columns.push(c)
   }
-  return { start, end, columns }
+  return columns
 }
+
+/** The export's range: every day from `first` to `last`, widened to whole columns of the zoom. */
+export function spanRange(zoom: Zoom, first: Date, last: Date) {
+  const start = alignAnchor(zoom, first)
+  const end =
+    zoom === 'month' ? new Date(last.getFullYear(), last.getMonth() + 1, 1)
+    : zoom === 'week' ? addDays(monday(last), 7)
+    : addDays(last, 1)
+  return { start, end, columns: columnsOf(zoom, start, end) }
+}
+
+/** Export width of one day (px) per zoom: a column label always fits its column. */
+export const EXPORT_PX_PER_DAY: Record<Zoom, number> = { day: 48, week: 16, month: 5 }
+/** How long an export waits for the whole span's tasks and links. */
+const EXPORT_LOAD_TIMEOUT_MS = 60_000
 
 function shiftAnchor(zoom: Zoom, anchor: Date, dir: number, phone = false): Date {
   if (zoom === 'month') return new Date(anchor.getFullYear(), anchor.getMonth() + (phone ? 3 : 6) * dir, 1)
@@ -256,6 +292,8 @@ function shiftValue(raw: string, days: number, datetime: boolean): string {
 /** The tighter of a search-bar bound and the range's own bound. */
 const minBound = (user: string | undefined, ours: string) => (user && user < ours ? user : ours)
 const maxBound = (user: string | undefined, ours: string) => (user && user > ours ? user : ours)
+/** A lower bound every real date passes: as a range filter it only leaves NULLs out. */
+const EARLIEST_DAY = '1900-01-01'
 
 /** 'place' drags an Unscheduled card onto the timeline. */
 type DragMode = 'move' | 'start' | 'end' | 'place'
@@ -330,12 +368,14 @@ export function GanttRenderer<T extends HasId>({
   const [zoom, setZoom] = useState<Zoom>(() => readZoom(descriptor.entity))
   const [anchor, setAnchor] = useState(() => alignAnchor(readZoom(descriptor.entity), new Date()))
   const phone = usePhone()
-  const range = viewRange(zoom, anchor, phone)
+  // Set while an image export runs: the whole project's span, every row unfolded, at a fixed width per day.
+  const [exportSpan, setExportSpan] = useState<{ first: Date; last: Date } | null>(null)
+  const range = exportSpan ? spanRange(zoom, exportSpan.first, exportSpan.last) : viewRange(zoom, anchor, phone)
   const totalDays = dayDiff(range.end, range.start)
   // The slider spans one view either side of its base; moving out of that (Today, Previous…) recenters it.
   const [sliderBase, setSliderBase] = useState(range.start)
   let sliderValue = dayDiff(range.start, sliderBase)
-  if (Math.abs(sliderValue) > totalDays) {
+  if (!exportSpan && Math.abs(sliderValue) > totalDays) {
     setSliderBase(range.start)
     sliderValue = 0
   }
@@ -346,7 +386,7 @@ export function GanttRenderer<T extends HasId>({
   const startDatetime = isDatetime(startField)
   const endDatetime = isDatetime(endField)
 
-  const [server, setServer] = useState<{ records: T[]; capped: boolean } | null>(null)
+  const [server, setServer] = useState<{ records: T[]; capped: boolean; range: string } | null>(null)
   const [loadError, setLoadError] = useState<SerializedError | null>(null)
   const serverKey = serverOptions && relationOps?.listPage ? JSON.stringify(serverOptions) : null
   // Bumped after a quick create: the visible range is read again.
@@ -389,7 +429,7 @@ export function GanttRenderer<T extends HasId>({
         const byId = new Map<string, T>()
         for (const r of [...inRange.rows, ...noStart.records, ...noEnd.records] as T[]) byId.set(r.id, r)
         setLoadError(null)
-        setServer({ records: [...byId.values()], capped: inRange.capped })
+        setServer({ records: [...byId.values()], capped: inRange.capped, range: `${fromIso}|${untilIso}` })
       })
       .catch((e: unknown) => {
         if (!cancelled) setLoadError(serializeError(toApiError(e)))
@@ -466,7 +506,7 @@ export function GanttRenderer<T extends HasId>({
     const p = parentField ? (r.record as Record<string, unknown>)[parentField] : null
     return typeof p === 'string' && p !== '' ? p : null
   }
-  const tree = ganttTree(allRows, (r) => r.record.id, parentOf, new Set(collapsed))
+  const tree = ganttTree(allRows, (r) => r.record.id, parentOf, new Set(exportSpan ? [] : collapsed))
   const rows = tree.map((n) => n.row)
   const allIds = new Set(allRows.map((r) => r.record.id))
   const parentIds = [...new Set(allRows.map(parentOf).filter((p): p is string => !!p && allIds.has(p)))]
@@ -480,17 +520,64 @@ export function GanttRenderer<T extends HasId>({
   // The phone toolbar's More menu: the pinned-scope controls (Critical path, Baseline)
   // don't fit the 390px row, so they sit in it (the diagram canvas' pattern).
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
-  // PNG/PDF of the timeline as drawn: folded rows (collapsed) are not in it.
+  // PNG/SVG/PDF of the whole timeline: every task of the list (every row unfolded) from the
+  // first day one covers to the last, at the zoom's column size, with every dependency arrow.
   const [exportError, setExportError] = useState<SerializedError | null>(null)
   const roadmapRef = useRef<HTMLDivElement>(null)
-  const exportImage = async (kind: 'png' | 'pdf', roadmapView = false) => {
+  // Settled by the effect below the link reads, once the export's span has its tasks and links.
+  const exportLoaded = useRef<{ resolve: () => void; reject: (e: unknown) => void } | null>(null)
+
+  /** The first and last day the list's scheduled tasks cover: three one-row server probes
+   * (earliest start, latest start, latest end), else the loaded records. Null when none. */
+  const projectSpan = async (): Promise<{ first: Date; last: Date } | null> => {
+    const listPage = relationOps?.listPage
+    const days: Date[] = []
+    if (serverKey != null && listPage) {
+      const opts = JSON.parse(serverKey) as EntityListOptions
+      // Both dates set (a range filter leaves NULLs out): an unscheduled task has no bar.
+      const scheduled = mergeListOptions(opts, {
+        gte: { [startField]: maxBound(opts.gte?.[startField], EARLIEST_DAY), [endField]: maxBound(opts.gte?.[endField], EARLIEST_DAY) },
+      })
+      const probe = async (field: string, desc: boolean, datetime: boolean) => {
+        const res = await listPage(descriptor.entity, { ...scheduled, order: desc ? `-${field}` : field, page: 1, pageSize: 1 })
+        const day = dayOf((res.records[0] as Record<string, unknown> | undefined)?.[field], datetime)
+        if (day) days.push(day)
+      }
+      await Promise.all([probe(startField, false, startDatetime), probe(startField, true, startDatetime), probe(endField, true, endDatetime)])
+    } else {
+      for (const r of records as Record<string, unknown>[]) {
+        const s = dayOf(r[startField], startDatetime)
+        const e = dayOf(r[endField], endDatetime)
+        if (s && e) days.push(s, e)
+      }
+    }
+    if (!days.length) return null
+    const times = days.map((d) => d.getTime())
+    return { first: new Date(Math.min(...times)), last: new Date(Math.max(...times)) }
+  }
+
+  const exportImage = async (kind: 'png' | 'svg' | 'pdf', roadmapView = false) => {
     const el = roadmapView ? roadmapRef.current : gridRef.current
     if (!el) return
     setExportError(null)
+    let timer: ReturnType<typeof setTimeout> | undefined
     try {
       // html-to-image and jspdf load on the first export, not with the Gantt.
-      const { exportElementPdf, exportElementPng } = await import('./diagram/export')
-      const title = roadmapView ? `${t('Roadmap')} ${isoDate(new Date())}` : `${t('Gantt')} ${fromIso} – ${isoDate(addDays(range.end, -1))}`
+      const m = await import('./diagram/export')
+      let title = roadmapView ? `${t('Roadmap')} ${isoDate(new Date())}` : `${t('Gantt')} ${fromIso} – ${isoDate(addDays(range.end, -1))}`
+      const span = roadmapView ? null : await projectSpan()
+      if (span) {
+        const loaded = new Promise<void>((resolve, reject) => {
+          exportLoaded.current = { resolve, reject }
+          timer = setTimeout(() => reject(new Error(t('The export timed out while loading the tasks.'))), EXPORT_LOAD_TIMEOUT_MS)
+        })
+        setExportSpan(span)
+        await loaded
+        // Let the widened, unfolded timeline paint before the capture.
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+        const full = spanRange(zoom, span.first, span.last)
+        title = `${t('Gantt')} ${isoDate(full.start)} – ${isoDate(addDays(full.end, -1))}`
+      }
       const background = theme.palette.background.paper
       const legend = roadmapView
         ? [
@@ -499,10 +586,15 @@ export function GanttRenderer<T extends HasId>({
             { color: theme.palette.primary.main, label: t('Upcoming') },
           ]
         : [{ color: theme.palette.error.main, label: t('Today') }]
-      if (kind === 'png') await exportElementPng(el, title, background)
-      else await exportElementPdf(el, { title, date: new Date(), legend, background }, title)
+      if (kind === 'png') await m.exportElementPng(el, title, background)
+      else if (kind === 'svg') await m.exportElementSvg(el, title, background)
+      else await m.exportElementPdf(el, { title, date: new Date(), legend, background }, title)
     } catch (e: unknown) {
       setExportError(serializeError(toApiError(e)))
+    } finally {
+      clearTimeout(timer)
+      exportLoaded.current = null
+      setExportSpan(null)
     }
   }
 
@@ -661,6 +753,8 @@ export function GanttRenderer<T extends HasId>({
   // Dependency links touching the visible rows, read in id chunks. Keyed on the
   // id set (not the date order): a move never changes the links, arrows follow `rows`.
   const [links, setLinks] = useState<Record<string, unknown>[]>([])
+  // The row ids `links` were last read for (the export waits until they match the rows).
+  const [linksFor, setLinksFor] = useState<string | null>(null)
   const depKey = dependencies && relationOps?.listPage ? JSON.stringify(dependencies) : null
   const rowIdsKey = allRows
     .map((r) => r.record.id)
@@ -670,6 +764,7 @@ export function GanttRenderer<T extends HasId>({
     const listPage = relationOps?.listPage
     if (depKey == null || !listPage || rowIdsKey === '') {
       setLinks([])
+      setLinksFor(rowIdsKey)
       return
     }
     const dep = JSON.parse(depKey) as GanttDependenciesConfig
@@ -694,16 +789,30 @@ export function GanttRenderer<T extends HasId>({
     }
     void load()
       .then((rs) => {
-        if (!cancelled) setLinks(rs)
+        if (cancelled) return
+        setLinks(rs)
+        setLinksFor(rowIdsKey)
       })
       // Arrows are decoration: a refused read (no right on the link entity) just draws none.
       .catch(() => {
-        if (!cancelled) setLinks([])
+        if (cancelled) return
+        setLinks([])
+        setLinksFor(rowIdsKey)
       })
     return () => {
       cancelled = true
     }
   }, [depKey, rowIdsKey])
+
+  // An export waits for its span's tasks (the range read) and their links before the capture.
+  const exportReady =
+    !!exportSpan && (serverKey == null || server?.range === `${fromIso}|${untilIso}`) && (depKey == null || linksFor === rowIdsKey)
+  useEffect(() => {
+    const waiter = exportLoaded.current
+    if (!exportSpan || !waiter) return
+    if (loadError) waiter.reject(new Error(loadError.message))
+    else if (exportReady) waiter.resolve()
+  }, [exportSpan, exportReady, loadError])
 
   // The pinned scope, or null when the list is not pinned: the schedule and the
   // baselines exist for a pinned project only (the search bar's single-value pin).
@@ -1015,7 +1124,6 @@ export function GanttRenderer<T extends HasId>({
 
   const now = new Date()
   const todayIdx = dayDiff(new Date(now.getFullYear(), now.getMonth(), now.getDate()), range.start)
-  const markerId = useId()
   const visibleMilestones = milestoneRows.filter((m) => {
     const d = dayDiff(m.day, range.start)
     return d >= 0 && d < totalDays
@@ -1043,7 +1151,7 @@ export function GanttRenderer<T extends HasId>({
   const msRow = milestoneRows.length > 0 ? 1 : 0
   const rowY = (i: number) => HEADER_H + ROW_GAP + (i + msRow) * (ROW_H + ROW_GAP) + ROW_H / 2
   const rowIndex = new Map(rows.map((r, i) => [r.record.id, i]))
-  const clampX = (days: number) => pct(Math.min(Math.max(days, 0), totalDays))
+  const clampDays = (days: number) => Math.min(Math.max(days, 0), totalDays)
   const arrows: { id: string; x1: number; y1: number; x2: number; y2: number }[] = []
   if (dependencies) {
     for (const link of links) {
@@ -1063,6 +1171,7 @@ export function GanttRenderer<T extends HasId>({
           <ExportMenu
             options={[
               { key: 'png', label: t('Export PNG'), icon: 'file-image', onClick: () => void exportImage('png', true) },
+              { key: 'svg', label: t('Export SVG'), icon: 'file-image', onClick: () => void exportImage('svg', true) },
               { key: 'pdf', label: t('Export PDF'), icon: 'file-pdf', onClick: () => void exportImage('pdf', true) },
             ]}
           />
@@ -1141,6 +1250,7 @@ export function GanttRenderer<T extends HasId>({
             <ExportMenu
               options={[
                 { key: 'png', label: t('Export PNG'), icon: 'file-image', onClick: () => void exportImage('png') },
+                { key: 'svg', label: t('Export SVG'), icon: 'file-image', onClick: () => void exportImage('svg') },
                 { key: 'pdf', label: t('Export PDF'), icon: 'file-pdf', onClick: () => void exportImage('pdf') },
                 ...(exchange && exchangePin
                   ? exchange.formats.map((f) => ({
@@ -1183,7 +1293,11 @@ export function GanttRenderer<T extends HasId>({
               touchAction: 'pan-y',
               userSelect: 'none',
               display: 'grid',
-              gridTemplateColumns: phone ? '88px minmax(0, 1fr)' : 'minmax(96px, 200px) minmax(0, 1fr)',
+              // An export: every title on one line, the timeline at a fixed width per day.
+              gridTemplateColumns: exportSpan
+                ? `max-content ${totalDays * EXPORT_PX_PER_DAY[zoom]}px`
+                : phone ? '88px minmax(0, 1fr)' : 'minmax(96px, 200px) minmax(0, 1fr)',
+              ...(exportSpan ? { width: 'max-content' } : {}),
               gridAutoRows: 'min-content',
               rowGap: `${ROW_GAP}px`,
               minHeight: 240,
@@ -1343,29 +1457,27 @@ export function GanttRenderer<T extends HasId>({
                   style={{ left: pct(todayIdx + 0.5) }}
                 />
               ) : null}
-              {arrows.length > 0 ? (
-                <Box
-                  component="svg"
-                  aria-hidden
-                  sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible', color: 'text.secondary' }}
-                >
-                  <defs>
-                    <marker id={markerId} viewBox="0 0 6 6" refX="6" refY="3" markerWidth="6" markerHeight="6" orient="auto">
-                      <path d="M0,0 L6,3 L0,6 z" fill="currentColor" />
-                    </marker>
-                  </defs>
-                  {arrows.map((a) => {
-                    const xm = clampX((a.x1 + a.x2) / 2)
-                    return (
-                      <g key={a.id} data-testid={`gantt-arrow-${a.id}`} stroke="currentColor" strokeWidth={1.5}>
-                        <line x1={clampX(a.x1)} y1={a.y1} x2={xm} y2={a.y1} />
-                        <line x1={xm} y1={a.y1} x2={xm} y2={a.y2} />
-                        <line x1={xm} y1={a.y2} x2={clampX(a.x2)} y2={a.y2} markerEnd={`url(#${markerId})`} />
-                      </g>
-                    )
-                  })}
-                </Box>
-              ) : null}
+              {/* Plain positioned boxes, like the bars, not an inline <svg>: an SVG export carries the
+                  page as HTML in a <foreignObject>, where a nested svg (its marker refs, % coordinates,
+                  currentColor) is what viewers drop — anything that shows the bars shows these. */}
+              {arrows.map((a) => {
+                const x1 = clampDays(a.x1)
+                const x2 = clampDays(a.x2)
+                const xm = clampDays((a.x1 + a.x2) / 2)
+                const right = x2 >= xm
+                return (
+                  <Box key={a.id} data-testid={`gantt-arrow-${a.id}`} aria-hidden sx={{ position: 'absolute', inset: 0 }}>
+                    <Box sx={ARROW_LINE_SX} style={{ left: pct(Math.min(x1, xm)), width: pct(Math.abs(xm - x1)), top: a.y1 - ARROW_STROKE / 2, height: ARROW_STROKE }} />
+                    <Box sx={ARROW_LINE_SX} style={{ left: pct(xm), marginLeft: -ARROW_STROKE / 2, width: ARROW_STROKE, top: Math.min(a.y1, a.y2), height: Math.abs(a.y2 - a.y1) }} />
+                    <Box sx={ARROW_LINE_SX} style={{ left: pct(Math.min(xm, x2)), width: pct(Math.abs(x2 - xm)), top: a.y2 - ARROW_STROKE / 2, height: ARROW_STROKE }} />
+                    <Box
+                      data-testid={`gantt-arrow-head-${a.id}`}
+                      sx={right ? ARROW_HEAD_RIGHT_SX : ARROW_HEAD_LEFT_SX}
+                      style={{ left: pct(x2), marginLeft: right ? -ARROW_HEAD : 0, top: a.y2 - ARROW_HEAD / 2 }}
+                    />
+                  </Box>
+                )
+              })}
             </Box>
           </Box>
           <Box sx={{ display: 'grid', gridTemplateColumns: phone ? '88px minmax(0, 1fr)' : 'minmax(96px, 200px) minmax(0, 1fr)', px: 1 }}>

@@ -427,3 +427,47 @@ msgstr "Taille (la plus grande)"
 
 msgid "Size (smallest)"
 msgstr "Taille (la plus petite)"
+
+msgid "Download links"
+msgstr "Liens de téléchargement"
+
+msgid "Anyone signed in to this workspace with the link can download this file until it expires."
+msgstr "Toute personne connectée à cet espace de travail disposant du lien peut télécharger ce fichier jusqu'à son expiration."
+
+msgid "Expires on"
+msgstr "Expire le"
+
+msgid "Create link"
+msgstr "Créer un lien"
+
+msgid "Link copied"
+msgstr "Lien copié"
+
+msgid "Revoke"
+msgstr "Révoquer"
+
+
+msgid "Download file"
+msgstr "Télécharger le fichier"
+
+
+msgid "Workspace members only"
+msgstr "Membres de l'espace de travail uniquement"
+
+msgid "Anyone with the link"
+msgstr "Toute personne disposant du lien"
+
+msgid "Anyone who gets this link can download the file without signing in."
+msgstr "Toute personne qui reçoit ce lien peut télécharger le fichier sans se connecter."
+
+msgid "Public"
+msgstr "Public"
+
+msgid "Copy this link"
+msgstr "Copiez ce lien"
+
+msgid "Downloads"
+msgstr "Téléchargements"
+
+msgid "This link has expired, been revoked, or does not exist."
+msgstr "Ce lien a expiré, a été révoqué ou n'existe pas."

@@ -32,6 +32,9 @@ type Config struct {
 	// one segment, e.g. "/api/v1/teams/*/files"). Such routes must apply
 	// their own cap with BodyLimit(size) — e.g. file uploads.
 	BodyLimitExempt []string
+	// LogRedact lists path prefixes whose remainder is a secret (a download link
+	// token): the request log writes "<prefix>[redacted]" instead of the URI.
+	LogRedact []string
 }
 
 // Server wraps an Echo instance and the App.
@@ -85,7 +88,7 @@ func newEcho(app *orm.App, cfg Config) *echo.Echo {
 	e.Use(middleware.RequestID())
 
 	if app != nil && app.Logger != nil {
-		e.Use(zapMiddleware(app.Logger))
+		e.Use(zapMiddleware(app.Logger, cfg.LogRedact))
 	}
 
 	e.Use(middleware.Recover())
@@ -160,6 +163,23 @@ func AuthRateLimiter(perMinute int) echo.MiddlewareFunc {
 		ExpiresIn: 3 * time.Minute,
 	})
 	return middleware.RateLimiter(store)
+}
+
+// RateLimiterBy is AuthRateLimiter keyed by key(c) instead of the client IP —
+// e.g. the signed-in user, so colleagues behind one office NAT don't share a bucket.
+func RateLimiterBy(perMinute int, key func(c *echo.Context) string) echo.MiddlewareFunc {
+	if perMinute <= 0 {
+		perMinute = 20
+	}
+	store := middleware.NewRateLimiterMemoryStoreWithConfig(middleware.RateLimiterMemoryStoreConfig{
+		Rate:      float64(perMinute) / 60.0,
+		Burst:     perMinute,
+		ExpiresIn: 3 * time.Minute,
+	})
+	return middleware.RateLimiterWithConfig(middleware.RateLimiterConfig{
+		Store:               store,
+		IdentifierExtractor: func(c *echo.Context) (string, error) { return key(c), nil },
+	})
 }
 
 // RegisterRoutes mounts each handler's routes under /api/v1 with optional
@@ -240,7 +260,7 @@ const SlowRequest = time.Second
 // or a request slower than SlowRequest; a fast success (the bulk: page reads, polling,
 // health checks) is Debug, visible with -debug. nginx already keeps the access log of
 // every failed request, so logging each success here too only doubled the volume.
-func zapMiddleware(logger *zap.Logger) echo.MiddlewareFunc {
+func zapMiddleware(logger *zap.Logger, redact []string) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			req := c.Request()
@@ -258,7 +278,7 @@ func zapMiddleware(logger *zap.Logger) echo.MiddlewareFunc {
 
 			log("request",
 				zap.String("method", req.Method),
-				zap.String("uri", req.RequestURI),
+				zap.String("uri", redactURI(req.RequestURI, redact)),
 				zap.Int("status", status),
 				zap.Duration("latency", latency),
 				zap.String("request_id", c.Response().Header().Get(echo.HeaderXRequestID)),
@@ -364,4 +384,14 @@ func parseByteSize(v string) int64 {
 		return def
 	}
 	return n * mult
+}
+
+// redactURI hides what follows a secret path prefix.
+func redactURI(uri string, prefixes []string) string {
+	for _, p := range prefixes {
+		if strings.HasPrefix(uri, p) {
+			return p + "[redacted]"
+		}
+	}
+	return uri
 }

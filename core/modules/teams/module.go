@@ -33,6 +33,7 @@ func (m *teamsModule) Register() error {
 		orm.Register[teams.Folder](orm.WithTableName("team_folder"), orm.WithExcluded()),
 		orm.Register[teams.File](orm.WithTableName("team_file"), orm.WithExcluded()),
 		orm.Register[teams.Share](orm.WithTableName("team_file_share"), orm.WithExcluded()),
+		orm.Register[teams.Link](orm.WithTableName("team_file_link"), orm.WithExcluded()),
 		orm.Register[teams.Group](orm.WithTableName("team_group"), orm.WithExcluded()),
 		orm.Register[teams.GroupMember](orm.WithTableName("team_group_member"), orm.WithExcluded()),
 		orm.Register[teams.ChannelAccess](orm.WithTableName("chat_channel_access"), orm.WithExcluded()),
@@ -52,6 +53,8 @@ func (m *teamsModule) Migrate(ctx context.Context, db *orm.DB) error {
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_channel_member ON chat_channel_member (channel_id, user_id) WHERE deleted_at IS NULL`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_reaction ON chat_reaction (message_id, user_id, emoji) WHERE deleted_at IS NULL`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_team_file_share ON team_file_share (file_id, user_id) WHERE deleted_at IS NULL`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_team_file_link_token ON team_file_link (token_hash)`,
+		`CREATE INDEX IF NOT EXISTS idx_team_file_link_file ON team_file_link (file_id) WHERE deleted_at IS NULL`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_team_group_name ON team_group (team_id, lower(name)) WHERE deleted_at IS NULL`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_team_group_member ON team_group_member (group_id, user_id) WHERE deleted_at IS NULL`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_channel_access_user ON chat_channel_access (channel_id, user_id) WHERE user_id IS NOT NULL AND deleted_at IS NULL`,
@@ -62,6 +65,8 @@ func (m *teamsModule) Migrate(ctx context.Context, db *orm.DB) error {
 		// owners_only: the folder lost its private conversation; only team owners see it until relinked.
 		`ALTER TABLE team_folder ADD COLUMN IF NOT EXISTS owners_only boolean`,
 		notNullFalse("team_folder", "owners_only"),
+		`ALTER TABLE team_file_link ADD COLUMN IF NOT EXISTS public boolean`,
+		notNullFalse("team_file_link", "public"),
 		`DO $$ BEGIN
 			IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_chat_channel_access_one') THEN
 				ALTER TABLE chat_channel_access ADD CONSTRAINT ck_chat_channel_access_one CHECK ((user_id IS NULL) <> (group_id IS NULL));

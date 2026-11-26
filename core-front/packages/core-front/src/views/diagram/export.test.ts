@@ -1,15 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const pdf = vi.hoisted(() => ({ addImage: vi.fn(), text: vi.fn(), save: vi.fn(), rect: vi.fn(), getTextWidth: vi.fn(() => 10), setFillColor: vi.fn() }))
-vi.mock('html-to-image', () => ({ toPng: vi.fn(async () => 'data:image/png;base64,AAA') }))
+vi.mock('html-to-image', () => ({ toPng: vi.fn(async () => 'data:image/png;base64,AAA'), toSvg: vi.fn(async () => 'data:image/svg+xml,AAA') }))
 vi.mock('jspdf', () => ({
   jsPDF: vi.fn(function () {
     return { ...pdf, internal: { pageSize: { getWidth: () => 420, getHeight: () => 297 } } }
   }),
 }))
 
-import { toPng } from 'html-to-image'
-import { diagramToPng, elementToPng, pixelRatioFor, exportPdf, exportPng, pdfColor, pdfFormat, type DiagramBounds } from './export'
+import { toPng, toSvg } from 'html-to-image'
+import { diagramToPng, diagramToSvg, elementToPng, elementToSvg, pixelRatioFor, exportPdf, exportPng, pdfColor, pdfFormat, revealClippedText, type DiagramBounds } from './export'
 
 const bounds = { x: 10, y: 20, width: 800, height: 400 }
 
@@ -53,6 +53,20 @@ describe('elementToPng', () => {
     const o = vi.mocked(toPng).mock.calls[0][1]!
     expect(o).toMatchObject({ width: 300, height: 120, pixelRatio: 600 / 96, backgroundColor: '#000' })
     expect(o.style).toBeUndefined()
+  })
+})
+
+describe('SVG export', () => {
+  it('captures the diagram and an element as SVG, with the same framing as PNG', async () => {
+    const el = document.createElement('div')
+    expect(await diagramToSvg(el, bounds, '#000')).toBe('data:image/svg+xml,AAA')
+    expect(vi.mocked(toSvg).mock.calls[0][1]).toMatchObject({ width: 880, height: 480, backgroundColor: '#000' })
+    expect(vi.mocked(toSvg).mock.calls[0][1]!.style).toBeDefined()
+    Object.defineProperty(el, 'scrollWidth', { value: 300 })
+    Object.defineProperty(el, 'scrollHeight', { value: 120 })
+    await elementToSvg(el)
+    expect(vi.mocked(toSvg).mock.calls[1][1]).toMatchObject({ width: 300, height: 120, backgroundColor: '#ffffff' })
+    expect(toPng).not.toHaveBeenCalled()
   })
 })
 
@@ -284,5 +298,77 @@ describe('diagramToPng keeps every line, dash and arrowhead the canvas shows', (
     expect(viewport.querySelector('marker')).toBeNull()
     expect(root.querySelector('marker[id="m-default"]')).not.toBeNull()
     expect(viewport.outerHTML).toBe(before)
+  })
+})
+
+describe('revealClippedText', () => {
+  const setup = () => {
+    const root = document.createElement('div')
+    const box = document.createElement('div')
+    box.style.height = '64px'
+    box.style.overflow = 'hidden'
+    const title = document.createElement('p')
+    title.style.whiteSpace = 'nowrap'
+    title.style.textOverflow = 'ellipsis'
+    title.style.overflow = 'hidden'
+    title.textContent = 'A very long title that would be cut'
+    box.appendChild(title)
+    root.appendChild(box)
+    document.body.appendChild(root)
+    // jsdom has no layout: the title reports itself cut, the box its wrapped title as taller than itself.
+    Object.defineProperty(title, 'scrollWidth', { configurable: true, value: 300 })
+    Object.defineProperty(title, 'clientWidth', { configurable: true, value: 100 })
+    Object.defineProperty(box, 'scrollHeight', { configurable: true, value: 120 })
+    Object.defineProperty(box, 'clientHeight', { configurable: true, value: 64 })
+    Object.defineProperty(box, 'offsetHeight', { configurable: true, value: 64 })
+    return { root, box, title }
+  }
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('wraps an ellipsized title and grows the box clipping it, then restores both', () => {
+    const { root, box, title } = setup()
+    const restore = revealClippedText(root)
+    expect(title.style.whiteSpace).toBe('normal')
+    expect(title.style.textOverflow).toBe('clip')
+    expect(title.style.overflow).toBe('visible')
+    expect(box.style.overflow).toBe('visible')
+    expect(box.style.height).toBe('auto')
+    expect(box.style.minHeight).toBe('64px')
+    restore()
+    expect(title.style.whiteSpace).toBe('nowrap')
+    expect(title.style.textOverflow).toBe('ellipsis')
+    expect(title.style.overflow).toBe('hidden')
+    expect(box.style.height).toBe('64px')
+    expect(box.style.overflow).toBe('hidden')
+    expect(box.style.minHeight).toBe('')
+  })
+
+  it('keeps a title that fits on its one line, with no ellipsis or clip a wider font could trigger', () => {
+    const { root, box, title } = setup()
+    Object.defineProperty(title, 'scrollWidth', { configurable: true, value: 100 })
+    const restore = revealClippedText(root)
+    expect(title.style.whiteSpace).toBe('nowrap')
+    expect(title.style.textOverflow).toBe('clip')
+    expect(title.style.overflow).toBe('visible')
+    expect(box.style.height).toBe('64px')
+    expect(box.style.overflow).toBe('visible')
+    restore()
+    expect(title.style.textOverflow).toBe('ellipsis')
+    expect(title.style.overflow).toBe('hidden')
+    expect(box.style.overflow).toBe('hidden')
+  })
+
+  it('applies to every element capture and leaves the element as it was', async () => {
+    const { root, title } = setup()
+    let during = ''
+    vi.mocked(toSvg).mockImplementationOnce(async () => {
+      during = title.style.whiteSpace
+      return 'data:image/svg+xml,AAA'
+    })
+    await elementToSvg(root)
+    expect(during).toBe('normal')
+    expect(title.style.whiteSpace).toBe('nowrap')
   })
 })

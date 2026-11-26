@@ -2644,16 +2644,25 @@ msgstr ""
 msgid "Export PDF"
 msgstr ""
 
+msgid "Export SVG"
+msgstr ""
+
 msgid "Export PNG (simple)"
 msgstr ""
 
 msgid "Export PDF (simple)"
 msgstr ""
 
+msgid "Export SVG (simple)"
+msgstr ""
+
 msgid "Export PNG (complete)"
 msgstr ""
 
 msgid "Export PDF (complete)"
+msgstr ""
+
+msgid "Export SVG (complete)"
 msgstr ""
 
 msgid "Export XLSX"
@@ -2870,6 +2879,9 @@ msgid "No baseline"
 msgstr ""
 
 msgid "Dependency cycle: no critical path"
+msgstr ""
+
+msgid "The export timed out while loading the tasks."
 msgstr ""
 
 msgid "PBS"

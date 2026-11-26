@@ -1,13 +1,36 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 const setShares = vi.fn().mockResolvedValue([])
+const createLink = vi.fn()
+const revokeLink = vi.fn().mockResolvedValue(undefined)
+const getLinks = vi.fn()
 vi.mock('./client', () => ({
   directory: () => Promise.resolve([{ id: 'u1', display_name: 'Alice', email: 'a@x' }, { id: 'u2', display_name: 'Bob', email: 'b@x' }]),
   getShares: () => Promise.resolve([{ user_id: 'u1', display_name: 'Alice', email: 'a@x' }]),
   setShares: (...a: unknown[]) => setShares(...a),
+  getLinks: (...a: unknown[]) => getLinks(...a),
+  createLink: (...a: unknown[]) => createLink(...a),
+  revokeLink: (...a: unknown[]) => revokeLink(...a),
 }))
-import { ShareDialog } from './ShareDialog'
+import { ShareDialog, linkExpiry } from './ShareDialog'
+
+const ymd = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+const inDays = (n: number) => {
+  const d = new Date()
+  d.setDate(d.getDate() + n)
+  return d
+}
+
+beforeEach(() => {
+  getLinks.mockResolvedValue([
+    { id: 'l1', expires_at: '2030-01-02T10:00:00Z', created_by_name: 'Alice', created_at: '2030-01-01T10:00:00Z', download_count: 3, last_download_at: null, public: false },
+    { id: 'l9', expires_at: '2030-01-03T10:00:00Z', created_by_name: 'Bob', created_at: '2030-01-01T10:00:00Z', download_count: 0, last_download_at: null, public: true },
+  ])
+  createLink.mockReset()
+  revokeLink.mockClear()
+})
 
 describe('ShareDialog', () => {
   it('preselects current shares and saves the chosen ids', async () => {
@@ -20,5 +43,81 @@ describe('ShareDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(setShares).toHaveBeenCalledWith('f1', ['u1', 'u2']))
     expect(onSaved).toHaveBeenCalled()
+  })
+
+  it('defaults the link expiry to 7 days, at most 90', async () => {
+    render(<ShareDialog open fileId="f1" onClose={vi.fn()} onSaved={vi.fn()} />)
+    const date = (await screen.findByLabelText('Expires on')) as HTMLInputElement
+    expect(date.value).toBe(ymd(inDays(7)))
+    expect(date.max).toBe(ymd(inDays(90)))
+  })
+
+  it('creates a link, copies it and shows it once', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+    createLink.mockResolvedValue({ id: 'l2', url: '/app/teams/links/tok', expires_at: '2030-01-08T22:59:00Z', created_by_name: 'Alice', created_at: '', download_count: 0, last_download_at: null })
+    render(<ShareDialog open fileId="f1" onClose={vi.fn()} onSaved={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Create link' }))
+    await waitFor(() => expect(createLink).toHaveBeenCalledWith('f1', linkExpiry(ymd(inDays(7))), false))
+    const url = `${window.location.origin}/app/teams/links/tok`
+    expect(await screen.findByDisplayValue(url)).toBeInTheDocument()
+    expect(writeText).toHaveBeenCalledWith(url)
+    expect(await screen.findByLabelText('Link copied')).toBeInTheDocument()
+  })
+
+  it('says to copy the link by hand when the clipboard refuses', async () => {
+    Object.assign(navigator, { clipboard: { writeText: vi.fn().mockRejectedValue(new Error('denied')) } })
+    createLink.mockResolvedValue({ id: 'l2', url: '/app/teams/links/tok', expires_at: '2030-01-08T22:59:00Z', created_by_name: 'Alice', created_at: '', download_count: 0, last_download_at: null, public: false })
+    render(<ShareDialog open fileId="f1" onClose={vi.fn()} onSaved={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Create link' }))
+    expect(await screen.findByLabelText('Copy this link')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Link copied')).toBeNull()
+  })
+
+  it('lists live links and revokes one', async () => {
+    render(<ShareDialog open fileId="f1" onClose={vi.fn()} onSaved={vi.fn()} />)
+    expect(await screen.findByText(/Downloads: 3/)).toBeInTheDocument()
+    fireEvent.click(screen.getAllByRole('button', { name: 'Revoke' })[0]!)
+    await waitFor(() => expect(revokeLink).toHaveBeenCalledWith('l1'))
+    await waitFor(() => expect(screen.queryByText(/Downloads: 3/)).not.toBeInTheDocument())
+  })
+
+  it('makes a public link only when asked, with a warning', async () => {
+    Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } })
+    createLink.mockResolvedValue({ id: 'l3', url: '/api/v1/file-links/pub', expires_at: '2030-01-08T22:59:00Z', created_by_name: 'Alice', created_at: '', download_count: 0, last_download_at: null, public: true })
+    render(<ShareDialog open fileId="f1" onClose={vi.fn()} onSaved={vi.fn()} />)
+    expect(await screen.findByRole('radio', { name: 'Workspace members only' })).toBeChecked()
+    expect(screen.queryByText(/without signing in/)).toBeNull()
+    expect(screen.getByText(/Anyone signed in to this workspace/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('radio', { name: 'Anyone with the link' }))
+    expect(screen.queryByText(/Anyone signed in to this workspace/)).toBeNull()
+    expect(screen.getByText('Anyone who gets this link can download the file without signing in.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Create link' }))
+    await waitFor(() => expect(createLink).toHaveBeenCalledWith('f1', linkExpiry(ymd(inDays(7))), true))
+    expect(await screen.findByDisplayValue(`${window.location.origin}/api/v1/file-links/pub`)).toBeInTheDocument()
+  })
+
+  it('marks public links in the list', async () => {
+    render(<ShareDialog open fileId="f1" onClose={vi.fn()} onSaved={vi.fn()} />)
+    expect(await screen.findByText(/Downloads: 0/)).toBeInTheDocument()
+    expect(screen.getAllByText('Public')).toHaveLength(1)
+  })
+
+  it('shows why a link was refused', async () => {
+    createLink.mockRejectedValue(new Error('expires_at must be in the future and at most 90 days away.'))
+    render(<ShareDialog open fileId="f1" onClose={vi.fn()} onSaved={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Create link' }))
+    expect(await screen.findByText(/at most 90 days away/)).toBeInTheDocument()
+  })
+})
+
+describe('linkExpiry', () => {
+  it('is the end of the picked local day, capped just under 90 days from now', () => {
+    const day = ymd(inDays(7))
+    const end = new Date(linkExpiry(day))
+    expect(ymd(end)).toBe(day)
+    expect(end.getHours()).toBe(23)
+    const capped = new Date(linkExpiry(ymd(inDays(90)))).getTime()
+    expect(capped).toBeLessThan(Date.now() + 90 * 24 * 3600 * 1000)
   })
 })

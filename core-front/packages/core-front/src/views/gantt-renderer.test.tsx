@@ -8,10 +8,11 @@ vi.mock('next/navigation', () => ({
 
 const exportElementPng = vi.hoisted(() => vi.fn<(el: HTMLElement, name: string, bg?: string) => Promise<void>>(async () => {}))
 const exportElementPdf = vi.hoisted(() => vi.fn<(el: HTMLElement, meta: unknown, name: string) => Promise<void>>(async () => {}))
-vi.mock('./diagram/export', () => ({ exportElementPng, exportElementPdf }))
+const exportElementSvg = vi.hoisted(() => vi.fn<(el: HTMLElement, name: string, bg?: string) => Promise<void>>(async () => {}))
+vi.mock('./diagram/export', () => ({ exportElementPng, exportElementPdf, exportElementSvg }))
 
 import { createTheme, ThemeProvider } from '@mui/material/styles'
-import { GanttRenderer } from './gantt-renderer'
+import { GanttRenderer, spanRange } from './gantt-renderer'
 import { useUndoToastStore } from './undo-toast'
 import type { ViewDescriptor } from './descriptor'
 import type { EntityActions } from './stores'
@@ -117,19 +118,28 @@ describe('GanttRenderer', () => {
       expect(screen.queryByTestId('gantt-row-c')).toBeNull()
     })
 
-    it('exports the timeline as drawn, folded rows left out, as PNG or PDF', async () => {
+    it('exports every task over the whole span, folded rows included, as PNG, PDF or SVG', async () => {
       renderGantt([grandchild, child, parent], tree)
       fireEvent.click(screen.getByRole('button', { name: 'Collapse Child' }))
+      let unfolded = false
+      exportElementPng.mockImplementationOnce(async (el) => {
+        unfolded = within(el).queryByText('Grandchild') !== null
+      })
       fireEvent.click(screen.getByRole('button', { name: 'Export' }))
       fireEvent.click(screen.getByRole('menuitem', { name: 'Export PNG' }))
       await waitFor(() => expect(exportElementPng).toHaveBeenCalledTimes(1))
       const [el, name] = exportElementPng.mock.calls[0]
-      expect(within(el).getByText('Child')).toBeInTheDocument()
-      expect(within(el).queryByText('Grandchild')).toBeNull()
-      expect(name).toBe('Gantt 2026-03-02 – 2026-05-24')
+      expect(unfolded).toBe(true)
+      // The tasks' own span (2–8 March) in whole weeks, not the 12-week view.
+      expect(name).toBe('Gantt 2026-03-02 – 2026-03-08')
+      // The screen is back as it was: the fold and the view range.
+      await waitFor(() => expect(within(el).queryByText('Grandchild')).toBeNull())
       fireEvent.click(screen.getByRole('button', { name: 'Export' }))
       fireEvent.click(screen.getByRole('menuitem', { name: 'Export PDF' }))
       await waitFor(() => expect(exportElementPdf).toHaveBeenCalledWith(el, expect.objectContaining({ title: name }), name))
+      fireEvent.click(screen.getByRole('button', { name: 'Export' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Export SVG' }))
+      await waitFor(() => expect(exportElementSvg).toHaveBeenCalledWith(el, name, expect.any(String)))
     })
 
     it('shows no chevron or toggle without a parent field', () => {
@@ -826,6 +836,18 @@ describe('GanttRenderer', () => {
       expect(listPage).toHaveBeenCalledWith('dep', expect.objectContaining({ in: { task_id: ['1', '3'] }, page: 1 }))
     })
 
+    it('draws each arrow as HTML boxes (no inline svg an SVG export viewer could drop), head at the target bar', async () => {
+      const listPage = vi.fn<ListPage>(async () => ({ records: [{ id: 'd1', depends_on_id: '1', task_id: '3' }], total: 1 }))
+      depRender([alpha, gamma], listPage)
+      const arrow = await screen.findByTestId('gantt-arrow-d1')
+      expect(arrow.querySelector('svg, line, marker')).toBeNull()
+      // Three segments plus the head; Week zoom from 2 March: 84 days, Gamma starts on day 7.
+      expect(arrow.children).toHaveLength(4)
+      const head = screen.getByTestId('gantt-arrow-head-d1')
+      expect(parseFloat(head.style.left)).toBeCloseTo((7 / 84) * 100, 3)
+      expect(head.style.marginLeft).toBe('-6px')
+    })
+
     it('loads links in chunks of 100 ids, paging each until a short page, never again on a move', async () => {
       const many = Array.from({ length: 150 }, (_, i) => ({ ...alpha, id: `t${i}` }))
       const listPage = vi.fn<ListPage>(async (_e: string, o?: EntityListOptions) =>
@@ -843,6 +865,71 @@ describe('GanttRenderer', () => {
       await new Promise((r) => setTimeout(r, 50))
       expect(listPage).toHaveBeenCalledTimes(3)
     }, 20_000)
+  })
+
+  describe('spanRange', () => {
+    it('widens the tasks\' days to whole columns of the zoom', () => {
+      const first = new Date(2026, 0, 7) // a Wednesday: every zoom starts on a Monday or a 1st
+      const last = new Date(2026, 2, 11)
+      const day = spanRange('day', first, last)
+      expect([day.start, day.end, day.columns.length]).toEqual([new Date(2026, 0, 5), new Date(2026, 2, 12), 66])
+      const week = spanRange('week', first, last)
+      expect([week.start, week.end]).toEqual([new Date(2026, 0, 5), new Date(2026, 2, 16)])
+      expect(week.columns).toHaveLength(10)
+      const month = spanRange('month', first, last)
+      expect([month.start, month.end]).toEqual([new Date(2026, 0, 1), new Date(2026, 3, 1)])
+      expect(month.columns).toHaveLength(3)
+    })
+  })
+
+  describe('full export', () => {
+    const deps = { entity: 'dep', fromField: 'depends_on_id', toField: 'task_id' }
+    const early: Task = { id: 'e', name: 'Early', date_start: '2026-01-05', deadline: '2026-01-09' }
+    const late: Task = { id: 'l', name: 'Late', date_start: '2026-06-01', deadline: '2026-07-10' }
+
+    it('spans the first to the last task at the zoom, loads every task in it and draws every link', async () => {
+      const listPage = vi.fn<ListPage>(async (entity: string, o?: EntityListOptions) => {
+        if (entity === 'dep') {
+          const ids = o?.in?.task_id ?? []
+          return ids.includes('l') ? { records: [{ id: 'd1', depends_on_id: 'e', task_id: 'l' }], total: 1 } : { records: [], total: 0 }
+        }
+        if (o?.pageSize === 1) {
+          const one = o.order === 'date_start' ? early : late
+          return { records: [one], total: 2 }
+        }
+        if (o?.empty) return { records: [], total: 0 }
+        // The range read: both tasks only once the range reaches July.
+        return (o?.lt?.date_start ?? '') > '2026-07-01' ? { records: [early, late], total: 2 } : { records: [], total: 0 }
+      })
+      let captured = { early: false, late: false, arrow: false }
+      exportElementSvg.mockImplementationOnce(async (el) => {
+        captured = {
+          early: within(el).queryByText('Early') !== null,
+          late: within(el).queryByText('Late') !== null,
+          arrow: within(el).queryByTestId('gantt-arrow-d1') !== null,
+        }
+      })
+      const ops = { list: vi.fn(), get: vi.fn(), create: vi.fn(), remove: vi.fn(), listPage }
+      render(
+        <RelationOpsProvider ops={ops}>
+          <GanttRenderer descriptor={descriptor} initialData={[]} actions={actions} startField="date_start" endField="deadline" serverOptions={{ filter: { project_id: 'p1' } }} dependencies={deps} />
+        </RelationOpsProvider>,
+      )
+      await waitFor(() => expect(listPage).toHaveBeenCalled())
+      fireEvent.click(screen.getByRole('button', { name: 'Export' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Export SVG' }))
+      await waitFor(() => expect(exportElementSvg).toHaveBeenCalledTimes(1))
+      expect(captured).toEqual({ early: true, late: true, arrow: true })
+      // Monday 5 January to the end of the week holding 10 July.
+      expect(exportElementSvg.mock.calls[0][1]).toBe('Gantt 2026-01-05 – 2026-07-12')
+      // The probes keep the list's filter and leave unscheduled tasks out.
+      expect(listPage).toHaveBeenCalledWith('task', expect.objectContaining({
+        filter: { project_id: 'p1' },
+        order: '-deadline',
+        pageSize: 1,
+        gte: { date_start: '1900-01-01', deadline: '1900-01-01' },
+      }))
+    })
   })
 
   describe('color groups', () => {
@@ -1275,7 +1362,7 @@ describe('GanttRenderer', () => {
       await act(async () => {})
       // The image exports stay; no plan file is offered.
       fireEvent.click(screen.getByRole('button', { name: 'Export' }))
-      expect(screen.getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Export PNG', 'Export PDF'])
+      expect(screen.getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Export PNG', 'Export SVG', 'Export PDF'])
     })
 
     it('Export lists every format as a download of the pinned project', async () => {

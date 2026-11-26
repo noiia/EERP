@@ -7,7 +7,7 @@ import { TeamsWorkspace } from './TeamsWorkspace'
 /** The workspace a /teams/… URL shows (segments below /teams), or null for the dashboard. */
 export function routeOf(segments: string[], folder?: string): { teamId?: string; view: WorkspaceView } | null {
   const [a, b, c] = segments.filter((s) => !s.startsWith('__'))
-  if (a === undefined) return null
+  if (a === undefined || a === 'links') return null // the dashboard, or a download link's own page
   if (a === 'shared') return { view: { kind: 'shared' } }
   if (a === 'direct') return { view: { kind: 'direct', id: b } }
   if (b === 'files') return { teamId: a, view: { kind: 'files', id: folder } }

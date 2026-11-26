@@ -218,7 +218,9 @@ and prepares a project review.
 Generic tools automatically cover models registered on the CRUD surface:
 contacts, CRM, sales, invoices, product catalog, inventory, property management,
 events, website pages and workflows, and all project entities. The operation
-catalog also includes dedicated routes for teams, conversations, notes,
+catalog also includes dedicated routes for teams, conversations, team file
+download links (create, list, revoke, download — [ADR-037](adr/ADR-037-teams.md); the
+anonymous public-link route `/api/v1/file-links` is not exposed), notes,
 attachments, images, PDF reports, mail, filters, preferences, settings, users,
 roles, module management and automated backups (`/api/v1/backups`: status,
 settings, history, run, cancel and clean-up, [ADR-044](adr/ADR-044-automated-backups.md);

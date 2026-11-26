@@ -197,3 +197,14 @@ describe('Euro-Office integration', () => {
     expect(destroy).not.toHaveBeenCalled()
   })
 })
+
+describe('OfficeDialog header actions', () => {
+  it('renders the host actions in the viewer header', () => {
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})))
+    render(
+      <OfficeFileLink name="Plan.docx" url="/download" source={source} headerActions={<button>Share it</button>} />,
+    )
+    fireEvent.click(screen.getByRole('link', { name: 'Plan.docx' }))
+    expect(screen.getByRole('button', { name: 'Share it' })).toBeInTheDocument()
+  })
+})

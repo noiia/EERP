@@ -18,6 +18,8 @@ import TeamChannelPage from './[id]/channels/[channel]/page'
 import FilesPage from './[id]/files/page'
 import SharedPage from './shared/page'
 import DirectChannelPage from './direct/[channel]/page'
+import LinkPage from './links/[token]/page'
+import { render, screen } from '@testing-library/react'
 
 describe('teams pages', () => {
   beforeEach(() => {
@@ -74,5 +76,27 @@ describe('teams pages', () => {
     active.mockResolvedValue(new Set())
     await expect(FilesPage({ params: Promise.resolve({ id: 't1' }) })).rejects.toThrow('NOT_FOUND')
     await expect(SharedPage()).rejects.toThrow('NOT_FOUND')
+  })
+
+  it('a download link page signs in first, names the file and links to the BFF download', async () => {
+    const { requireAuth } = await import('@/lib/session')
+    apiRequest.mockResolvedValue({ name: 'doc.txt', size: 5 })
+    render(await LinkPage({ params: Promise.resolve({ token: 'abc' }) }))
+    expect(requireAuth).toHaveBeenCalledWith('/teams/links/abc')
+    expect(apiRequest).toHaveBeenCalledWith('GET', '/teams/links/abc')
+    expect(screen.getByText('doc.txt')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Download file' })).toHaveAttribute('href', '/api/teams/links/abc/download')
+  })
+
+  it('a dead download link says so instead of offering a download', async () => {
+    apiRequest.mockRejectedValue(new Error('404'))
+    render(await LinkPage({ params: Promise.resolve({ token: 'abc' }) }))
+    expect(screen.getByText('This link has expired, been revoked, or does not exist.')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Download file' })).toBeNull()
+  })
+
+  it('a download link page is a 404 while the module is inactive', async () => {
+    active.mockResolvedValue(new Set())
+    await expect(LinkPage({ params: Promise.resolve({ token: 'abc' }) })).rejects.toThrow('NOT_FOUND')
   })
 })

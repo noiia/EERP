@@ -683,6 +683,11 @@ func (h *Handler) DownloadFile(c *echo.Context) error {
 	if !ok {
 		return err
 	}
+	return h.streamFile(c, f)
+}
+
+// streamFile sends the file's current object as an attachment.
+func (h *Handler) streamFile(c *echo.Context, f File) error {
 	body, contentType, err := h.objects.Get(c.Request().Context(), f.ObjectKey)
 	if err != nil {
 		return fmt.Errorf("teams: read object: %w", err)

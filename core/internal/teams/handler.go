@@ -146,5 +146,8 @@ func Mount(g *echo.Group, h *Handler, upload echo.MiddlewareFunc) {
 	g.GET("/files/:file/download", h.DownloadFile)
 	g.GET("/files/:file/shares", h.GetShares)
 	g.PUT("/files/:file/shares", h.PutShares)
+	g.GET("/files/:file/links", h.ListLinks)
+	g.POST("/files/:file/links", h.CreateLink)
+	g.DELETE("/files/links/:link", h.RevokeLink)
 	g.GET("/shared", h.ListShared)
 }
