@@ -79,7 +79,11 @@ func TestRun_RealDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = zr.Close() }()
-	if len(zr.File) != 1 || zr.File[0].Name != "dump.dump" || zr.File[0].UncompressedSize64 == 0 {
-		t.Errorf("zip entries = %v", zr.File)
+	entries := map[string]uint64{}
+	for _, f := range zr.File {
+		entries[f.Name] = f.UncompressedSize64
+	}
+	if len(entries) != 2 || entries["dump.dump"] == 0 || entries["version.json"] == 0 {
+		t.Errorf("zip entries = %v, want dump.dump and version.json", entries)
 	}
 }
