@@ -888,16 +888,13 @@ func TestLoadPlan_Extras(t *testing.T) {
 	exTaskDates(f, task, "2026-01-05", "2026-01-09")
 	f.exec(`UPDATE project_task SET priority = true, description = 'Read the spec' WHERE id = $1`, task)
 
-	var newest uuid.UUID
 	for i := 0; i < 12; i++ {
 		b := f.id(`INSERT INTO project_baseline (tenant_id, project_id, name, created_by, created_at)
 			VALUES ($1, $2, $3, $4, now() - make_interval(days => $5)) RETURNING id`,
 			f.tenant, p, "B"+strconv.Itoa(i), mgr, 12-i)
 		f.exec(`INSERT INTO project_baseline_task (tenant_id, baseline_id, project_id, task_id, date_start, deadline, planned_hours)
 			VALUES ($1, $2, $3, $4, $5, $6, $7)`, f.tenant, b, p, task, exDate("2026-01-05"), exDate("2026-01-06"), float64(i))
-		newest = b
 	}
-	_ = newest
 
 	ann := exStaff(f, "ann.extras@x.test", "Ann Lee", "", "")
 	bob := exStaff(f, "bob.extras@x.test", "Bob", "", "")
@@ -938,5 +935,71 @@ func TestPlanHash_Extras(t *testing.T) {
 	f.exec(`UPDATE project_task SET description = 'changed' WHERE id = $1`, task)
 	if planHash(exLoad(t, f, p, DefaultWeekend)) == before {
 		t.Error("a description change left the hash alone")
+	}
+}
+
+// TestExport_ReimportIsEmpty_Mspdi is TestExport_ReimportIsEmpty through MSPDI, with
+// the data only MS Project carries: a priority, a description, two baselines and a
+// 24 h capacity. EERP's own file must come back as nothing to do.
+func TestExport_ReimportIsEmpty_Mspdi(t *testing.T) {
+	f := newFixture(t)
+	mgr := uuid.New()
+	p := f.project(mgr, "everyone")
+	f.exec(`UPDATE project SET name = $2, date_start = $3 WHERE id = $1`, p, `Bridge & Road <phase "1">`, exDate("2026-03-02"))
+
+	phase := f.task(p, nil, nil)
+	exTaskName(f, phase, "Phase 1")
+	design := f.task(p, &phase, nil)
+	exTaskName(f, design, "Design")
+	exTaskDates(f, design, "2026-03-02", "2026-03-07") // a Saturday deadline
+	f.exec(`UPDATE project_task SET planned_hours = 8.25, priority = true,
+		description = E'Line one\nLine <two> & "three"' WHERE id = $1`, design)
+	build := f.task(p, &phase, nil)
+	exTaskName(f, build, "Build")
+	exTaskDates(f, build, "2026-03-02", "2026-03-04")
+	f.exec(`UPDATE project_task SET closed = true WHERE id = $1`, build)
+	someday := f.task(p, nil, nil) // undated
+	exTaskName(f, someday, "Someday")
+	gate := f.milestone(p)
+	exMilestoneName(f, gate, "Delivery")
+	exMilestoneDeadline(f, gate, "2026-03-06")
+	linked := f.task(p, nil, &gate)
+	exTaskName(f, linked, "Inspect")
+	exTaskDates(f, linked, "2026-03-04", "2026-03-05")
+	f.dependency(p, build, design)
+
+	ann := exStaff(f, "Ann.M@Example.com", "Ann", "Ann", "Lee")
+	f.member(p, ann)
+	f.assign(p, design, ann)
+	f.exec(`INSERT INTO project_capacity (tenant_id, user_id, hours_per_week) VALUES ($1, $2, 24)`, f.tenant, ann)
+	for i, name := range []string{"Kick-off", "Re-plan"} {
+		b := f.id(`INSERT INTO project_baseline (tenant_id, project_id, name, created_by, created_at)
+			VALUES ($1, $2, $3, $4, now() - make_interval(days => $5)) RETURNING id`, f.tenant, p, name, mgr, 2-i)
+		f.exec(`INSERT INTO project_baseline_task (tenant_id, baseline_id, project_id, task_id, date_start, deadline, planned_hours)
+			SELECT $1, $2, project_id, id, date_start, deadline, planned_hours FROM project_task
+			WHERE project_id = $3 AND deleted_at IS NULL`, f.tenant, b, p)
+	}
+
+	exported := exExport(t, f, p)
+	if len(exported.Baselines) != 2 || len(exported.Resources) != 1 || exported.Resources[0].HoursPerWeek != 24 {
+		t.Fatalf("baselines/resources = %+v / %+v, want 2 baselines and Ann at 24 h", exported.Baselines, exported.Resources)
+	}
+	var buf bytes.Buffer
+	if err := (mspdiFormat{}).Encode(&buf, exported); err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	file, warnings, err := (mspdiFormat{}).Decode(bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("Decode(Encode(exportPlan)): %v\n%s", err, buf.String())
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %+v, want none", warnings)
+	}
+	changes, diffWarnings := diffPlans(exLoad(t, f, p, file.Weekend), file, exUsers(t, f), mspdiFormat{})
+	for _, row := range changes {
+		t.Errorf("re-import row %s: kind=%s field=%s before=%v after=%v", row.Key, row.Kind, row.Field, row.Before, row.After)
+	}
+	if len(diffWarnings) != 0 {
+		t.Errorf("re-import warned: %+v", diffWarnings)
 	}
 }
