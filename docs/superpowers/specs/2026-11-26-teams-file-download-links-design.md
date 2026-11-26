@@ -110,3 +110,31 @@ i18n msgids, the clipboard fallback when the Clipboard API is unavailable.
 - Creator losing access kills the link.
 - Downloads counted on the link row (not chatter); `no-store` caching; no Range in v1.
 - Revoke is a soft delete of the link row.
+
+## Addendum: public links (approved 2026-11-26)
+
+**Intent.** Send a file to someone without an account (a client, a supplier). The creator chooses
+per link; default stays members-only, so a sensitive file is only exposed by a deliberate choice.
+
+**Approaches.** Picked: Go serves public links directly at `GET /api/v1/file-links/:token`
+(the gateway already routes `/api/v1/*` to Go). Rejected: a Next page relaying the bytes (an extra
+hop and page for nothing); loosening the members route (a hole in an authenticated group is riskier
+than a separate one-purpose anonymous route).
+
+**Design.**
+- `team_file_link.public` boolean (default false), fixed at creation — to change who may use a
+  link, revoke it and make a new one; a members-only link can never silently become public.
+- `POST /files/:file/links {expires_at, public}`; same managers, same 90-day cap. List rows carry
+  `public`; the create answer's `url` is `/api/v1/file-links/<token>` for a public link,
+  `/app/teams/links/<token>` otherwise.
+- `GET /api/v1/file-links/:token`: no JWT, own group (independent of the website tenant), public
+  rate limit, `ActiveGate`; only links with `public = true`; same checks as the members route
+  minus the tenant comparison (live, unexpired, unrevoked, file exists, creator live and still
+  sees the file); every failure the same 404; same response headers; counts downloads.
+- A public link also works through the members route.
+- Logs: Go `LogRedact` adds `/api/v1/file-links/`; nginx skips `/api/v1/file-links/`.
+- MCP: `file-links` is not an admitted root, so the anonymous route stays off MCP.
+- Share dialog: radio *Workspace members only* (default) / *Anyone with the link*, a warning
+  under the second, a *Public* marker on listed links.
+
+**Non-goals.** Passwords, download-count limits, per-visitor tracking.

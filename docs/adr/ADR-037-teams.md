@@ -225,6 +225,14 @@ sequenceDiagram
   button in the office viewer header (`OfficeDialog`'s `headerActions`), and the page
   `/app/teams/links/<token>`, which signs the visitor in and downloads through the Teams BFF.
 - Deleting the file, its folder tree or the team deletes its links in the same transaction.
+- **Public links** (added the same day): the creator may pick *Anyone with the link* instead of the
+  default *Workspace members only*. The choice is stored as `team_file_link.public`, fixed at
+  creation (no update route — revoke and create another to change it), so a members-only link can
+  never silently become public. Public links are served anonymously by Go at
+  `GET /api/v1/file-links/:token` (own group: public rate limit + `ActiveGate`, no JWT, independent
+  of the website tenant), with the same checks minus the tenant comparison, and they also work
+  through the members route. The create answer's `url` is that route for a public link,
+  `/app/teams/links/<token>` otherwise. The route is not an MCP root.
 
 ## Consequences
 
@@ -260,3 +268,7 @@ sequenceDiagram
   request log redacts `/api/v1/teams/links/` (`ormserver.Config.LogRedact`) and nginx's failed-request
   log skips the three link paths (`$eerp_loggable` in `infra/nginx/nginx.conf`); a new route
   carrying a token in its path needs the same two entries.
+- A public link is a bearer secret: anyone it is forwarded to can download the file until it
+  expires or is revoked, and its download count can't tell who. Keep public links short-lived.
+- `/api/v1/file-links/` is in Go's `LogRedact` and nginx's `$eerp_loggable` exclusion too; keep
+  both in sync with any new token-carrying path.
